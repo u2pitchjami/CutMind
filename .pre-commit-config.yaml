@@ -1,0 +1,30 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.12
+    hooks:
+      - id: ruff
+        args: [--fix]        # auto-fix lint (imports, pyupgrade, etc.)
+      - id: ruff-format       # formateur (remplace Black)
+
+  - repo: https://github.com/PyCQA/docformatter
+    rev: v1.7.7
+    hooks:
+      - id: docformatter
+        args:
+          - --in-place
+          - --recursive
+          - --wrap-summaries=120
+          - --wrap-descriptions=120
+          - --make-summary-multi-line
+          - --pre-summary-newline
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.17.1
+    hooks:
+    - id: mypy
+      args: [--config-file=pyproject.toml]
+      pass_filenames: false   # ⬅️ IMPORTANT : on laisse mypy décider quoi analyser (files=…)
+      exclude: ^(docker|z_old)/
+      additional_dependencies:
+        - types-requests
+        - types-PyYAML

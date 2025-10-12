@@ -1,0 +1,127 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "comfyui_video_router"
+version = "0.1.0"
+description = "comfyui_video_router"
+requires-python = ">=3.11"  # cohérent avec mypy/ruff
+
+[tool.setuptools]
+# plus robuste que lister les packages à la main
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["*"]
+exclude = ["tests*", "z_old*", "docker*"]
+
+# --- Pylint (si tu le gardes ponctuellement, pas en pre-commit) -------------
+[tool.pylint.MASTER]
+ignore = ["z_old", "docker"]
+
+# --- Mypy -------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+pretty = true
+show_error_codes = true
+ignore_missing_imports = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_return_any = true
+disallow_untyped_calls = true
+disallow_any_generics = true
+warn_unused_configs = true
+warn_no_return = true
+files = ["."]
+explicit_package_bases = true
+exclude = "^(z_old|docker)/"  # regex unique (mypy attend une regex, pas une liste)
+
+[[tool.mypy.overrides]]
+module = "sklearn.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "numpy.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "pymysql*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "pymysql.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "pytz"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "dotenv"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "psutil"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "yaml"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "requests"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "langdetect"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "watchdog.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "Levenshtein"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+# --- Ruff (v0.6+) -----------------------------------------------------------
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+exclude = [
+  ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache",
+  "dist", "build", "docker", "z_old"
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003", "B010"]
+unfixable = [
+  "B010"
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["."]
+combine-as-imports = true
+force-sort-within-sections = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+skip-magic-trailing-comma = false

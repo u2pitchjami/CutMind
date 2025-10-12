@@ -1,0 +1,4 @@
+logger_setup==0.17
+python-dotenv==1.1.0
+Requests==2.32.3
+ffmpeg-python

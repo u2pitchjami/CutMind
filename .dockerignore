@@ -1,0 +1,60 @@
+# --- Système & Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.sqlite3
+*.db
+
+# --- IDE / Environnement ---
+.vscode/
+.idea/
+*.swp
+*.bak
+
+# --- Docker / Env ---
+.dockerignore
+Dockerfile
+docker-compose.yml
+.env
+.envrc
+
+# --- Git / CI ---
+.git/
+.gitignore
+
+# --- Données BrainOps ---
+logs/
+vault/
+exports/
+notes/
+tests/
+datasets/
+docker/
+z_old/
+
+# --- Archives / Temporaires ---
+*.zip
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+*.bak
+*.tmp
+
+# Fichiers de config dev / lint / tools
+.pre-commit-config.yaml
+pyproject.toml
+.pylintrc
+.mypy.ini
+.tox/
+.coveragerc
+.nose.cfg
+pytest.ini
+.editorconfig
+.mypy*/
+.ruff*/
+*.egg-info/
+Makefile
+
