@@ -22,14 +22,34 @@ def route_workflow(video_path: Path) -> Path | None:
         return WORKFLOW_MAP["Autres"]
     return None
 
-
 def load_workflow(path: Path) -> Any:
     """Charge le workflow ComfyUI depuis un fichier JSON."""
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
+def optimal_batch_size(total_frames: int, min_size: int = 60, max_size: int = 80) -> int:
+    """Calcule la taille de batch optimale pour répartir les frames sans batch final trop petit."""
+    # if total_frames <= 0:
+    #     raise ValueError("Le nombre total de frames doit être positif.")
 
-def inject_video_path(workflow: dict[str, Any], video_path: Path) -> dict[str, Any]:
+    best_size = min_size
+    smallest_remainder = total_frames
+
+    for size in range(min_size, max_size + 1):
+        remainder = total_frames % size
+
+        # Évite les batchs finaux trop petits (< 60 % du batch)
+        if remainder != 0 and remainder < (size * 0.6):
+            continue
+
+        if remainder < smallest_remainder:
+            smallest_remainder = remainder
+            best_size = size
+
+    logger.info("Batch optimal trouvé: %d (reste: %d)", best_size, smallest_remainder)
+    return best_size
+
+def inject_video_path(workflow: dict[str, Any], video_path: Path, frames_per_batch: int) -> dict[str, Any]:
     """
     Injecte dynamiquement le chemin de la vidéo source et le nom de fichier
     dans les nœuds ComfyUI VHS_LoadVideoPath et VHS_VideoCombine (nouveau format API).
@@ -54,6 +74,12 @@ def inject_video_path(workflow: dict[str, Any], video_path: Path) -> dict[str, A
         node_id = node.get("id")  # utile seulement si tu as ajouté l'ID comme montré précédemment
         node_type = node.get("class_type")  # ✅ On lit class_type au lieu de type
         inputs = node.get("inputs", {})
+
+        # 📥 Injection dans VHS_BatchManager
+        if node_type == "VHS_BatchManager":
+            if "frames_per_batch" in inputs:
+                logger.info(f"✅ Injection frames_per_batch dans node ID {node_id}")
+                inputs["frames_per_batch"] = frames_per_batch
 
         # 📥 Injection dans VHS_LoadVideoPath
         if node_type == "VHS_LoadVideoPath":

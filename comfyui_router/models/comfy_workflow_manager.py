@@ -20,7 +20,8 @@ class ComfyWorkflowManager:
             return None
 
         video_job.workflow_path = wf_path
-        workflow = inject_video_path(load_workflow(wf_path), video_job.path)
+        frames_batch = video_job.nb_frames_batch
+        workflow = inject_video_path(load_workflow(wf_path), video_job.path, frames_batch)
         return workflow
 
     def run(self, workflow: dict[str, Any]) -> bool:

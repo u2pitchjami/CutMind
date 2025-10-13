@@ -11,6 +11,41 @@ from comfyui_router.utils.logger import get_logger
 logger = get_logger("Comfyui Router")
 
 
+def get_total_frames(video_path: Path) -> int:
+    """Retourne le nombre total de frames d'une vidéo via ffprobe."""
+    try:
+        cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=nb_frames,avg_frame_rate,duration",
+            "-of", "json",
+            str(video_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = json.loads(result.stdout)
+        stream = data.get("streams", [{}])[0]
+
+        # Si nb_frames est directement disponible
+        if "nb_frames" in stream and stream["nb_frames"].isdigit():
+            return int(stream["nb_frames"])
+
+        # Sinon, on estime via duration * avg_frame_rate
+        if "duration" in stream and "avg_frame_rate" in stream:
+            rate_num, rate_den = map(int, stream["avg_frame_rate"].split("/"))
+            duration = float(stream["duration"])
+            return int(duration * (rate_num / rate_den))
+
+        logger.warning("Impossible de déterminer le nombre de frames pour %s", video_path)
+        return 0
+
+    except subprocess.CalledProcessError as err:
+        logger.error("Erreur FFprobe: %s", err)
+        return 0
+    except Exception as exc:
+        logger.error("Erreur inattendue: %s", exc)
+        return 0
+
 def is_interlaced(video_path: Path) -> bool:
     """Retourne True si la vidéo est entrelacée."""
     try:
