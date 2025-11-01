@@ -1,3 +1,5 @@
+""" """
+
 from __future__ import annotations
 
 import json
@@ -5,14 +7,16 @@ from pathlib import Path
 from typing import Any
 
 from comfyui_router.ffmpeg.ffmpeg_command import get_resolution
-from comfyui_router.utils.config import WORKFLOW_MAP
-from comfyui_router.utils.logger import get_logger
+from shared.utils.config import WORKFLOW_MAP
+from shared.utils.logger import get_logger
 
-logger = get_logger("Comfyui Router")
+logger = get_logger(__name__)
 
 
 def route_workflow(video_path: Path) -> Path | None:
-    """Retourne le chemin du workflow à utiliser selon la hauteur de la vidéo."""
+    """
+    Retourne le chemin du workflow à utiliser selon la hauteur de la vidéo.
+    """
     _, height = get_resolution(video_path)
     if height >= 1080:
         return WORKFLOW_MAP["1080p"]
@@ -22,13 +26,19 @@ def route_workflow(video_path: Path) -> Path | None:
         return WORKFLOW_MAP["Autres"]
     return None
 
+
 def load_workflow(path: Path) -> Any:
-    """Charge le workflow ComfyUI depuis un fichier JSON."""
+    """
+    Charge le workflow ComfyUI depuis un fichier JSON.
+    """
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
+
 def optimal_batch_size(total_frames: int, min_size: int = 60, max_size: int = 80) -> int:
-    """Calcule la taille de batch optimale pour répartir les frames sans batch final trop petit."""
+    """
+    Calcule la taille de batch optimale pour répartir les frames sans batch final trop petit.
+    """
     # if total_frames <= 0:
     #     raise ValueError("Le nombre total de frames doit être positif.")
 
@@ -49,10 +59,11 @@ def optimal_batch_size(total_frames: int, min_size: int = 60, max_size: int = 80
     logger.info("Batch optimal trouvé: %d (reste: %d)", best_size, smallest_remainder)
     return best_size
 
+
 def inject_video_path(workflow: dict[str, Any], video_path: Path, frames_per_batch: int) -> dict[str, Any]:
     """
-    Injecte dynamiquement le chemin de la vidéo source et le nom de fichier
-    dans les nœuds ComfyUI VHS_LoadVideoPath et VHS_VideoCombine (nouveau format API).
+    Injecte dynamiquement le chemin de la vidéo source et le nom de fichier dans les nœuds ComfyUI VHS_LoadVideoPath et
+    VHS_VideoCombine (nouveau format API).
 
     Args:
         workflow: dict JSON du flow ComfyUI.
@@ -92,6 +103,15 @@ def inject_video_path(workflow: dict[str, Any], video_path: Path, frames_per_bat
             if "filename_prefix" in inputs:
                 logger.info(f"✅ Injection nom fichier dans node ID {node_id}")
                 inputs["filename_prefix"] = filename_only
+
+        # # 📼 Injection dans VHS_VideoCombine
+        elif node_type == "easy saveText":
+            # if "output_file_path" in inputs:
+            #     logger.info(f"✅ Injection nom fichier dans node ID {node_id}")
+            #     inputs["output_file_path"] = "/basedir/smart_cut/temp_frames/"
+            if "file_name" in inputs:
+                logger.info(f"✅ Injection nom fichier dans node ID {node_id}")
+                inputs["file_name"] = filename_only
 
         # 🛠️ Correction éventuelle class_type manquant
         if "type" in node and "class_type" not in node:

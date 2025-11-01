@@ -3,9 +3,9 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "comfyui_video_router"
-version = "0.1.0"
-description = "comfyui_video_router"
+name = "SmartComfyUIVideoRouter"
+version = "1.0.0"
+description = "SmartComfyUIVideoRouter"
 requires-python = ">=3.11"  # cohérent avec mypy/ruff
 
 [tool.setuptools]
@@ -40,6 +40,41 @@ explicit_package_bases = true
 exclude = "^(z_old|docker)/"  # regex unique (mypy attend une regex, pas une liste)
 
 [[tool.mypy.overrides]]
+module = "pymediainfo.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "PIL.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "qwen_vl_utils.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "sentence_transformers.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "cv2.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "torch.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "transformers.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
 module = "sklearn.*"
 ignore_missing_imports = true
 follow_imports = "skip"
@@ -50,27 +85,7 @@ ignore_missing_imports = true
 follow_imports = "skip"
 
 [[tool.mypy.overrides]]
-module = "pymysql*"
-ignore_missing_imports = true
-follow_imports = "skip"
-
-[[tool.mypy.overrides]]
-module = "pymysql.*"
-ignore_missing_imports = true
-follow_imports = "skip"
-
-[[tool.mypy.overrides]]
-module = "pytz"
-ignore_missing_imports = true
-follow_imports = "skip"
-
-[[tool.mypy.overrides]]
 module = "dotenv"
-ignore_missing_imports = true
-follow_imports = "skip"
-
-[[tool.mypy.overrides]]
-module = "psutil"
 ignore_missing_imports = true
 follow_imports = "skip"
 
@@ -80,24 +95,10 @@ ignore_missing_imports = true
 follow_imports = "skip"
 
 [[tool.mypy.overrides]]
-module = "requests"
+module = "requests.*"
 ignore_missing_imports = true
 follow_imports = "skip"
 
-[[tool.mypy.overrides]]
-module = "langdetect"
-ignore_missing_imports = true
-follow_imports = "skip"
-
-[[tool.mypy.overrides]]
-module = "watchdog.*"
-ignore_missing_imports = true
-follow_imports = "skip"
-
-[[tool.mypy.overrides]]
-module = "Levenshtein"
-ignore_missing_imports = true
-follow_imports = "skip"
 
 # --- Ruff (v0.6+) -----------------------------------------------------------
 [tool.ruff]

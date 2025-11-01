@@ -44,3 +44,5 @@ config.env
 *.cfg
 z_old/
 docker/
+z_test/
+z_smartcut

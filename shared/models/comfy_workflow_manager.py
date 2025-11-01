@@ -1,11 +1,15 @@
+""" """
+
+from __future__ import annotations
+
 from typing import Any
 
 from comfyui_router.comfyui.comfyui_command import run_comfy
 from comfyui_router.comfyui.comfyui_workflow import inject_video_path, load_workflow, route_workflow
-from comfyui_router.models.videojob import VideoJob
-from comfyui_router.utils.logger import get_logger
+from shared.models.videojob import VideoJob
+from shared.utils.logger import get_logger
 
-logger = get_logger("Comfyui Router")
+logger = get_logger(__name__)
 
 
 class ComfyWorkflowManager:
@@ -13,7 +17,9 @@ class ComfyWorkflowManager:
         self.logger = logger
 
     def prepare_workflow(self, video_job: VideoJob) -> dict[str, Any] | None:
-        """Définit et charge le workflow adapté."""
+        """
+        Définit et charge le workflow adapté.
+        """
         wf_path = route_workflow(video_job.path)
         if not wf_path:
             self.logger.info(f"❌ Ignorée (résolution trop basse) : {video_job.path.name}")
@@ -25,5 +31,7 @@ class ComfyWorkflowManager:
         return workflow
 
     def run(self, workflow: dict[str, Any]) -> bool:
-        """Envoie le workflow à ComfyUI."""
+        """
+        Envoie le workflow à ComfyUI.
+        """
         return run_comfy(workflow)

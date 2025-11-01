@@ -2,6 +2,8 @@
 2025-09-04 décorateur de scripts main.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from functools import wraps
 import sys

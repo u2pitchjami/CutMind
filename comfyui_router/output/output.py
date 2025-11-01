@@ -1,12 +1,14 @@
+""" """
+
 from __future__ import annotations
 
 from pathlib import Path
 import time
 
-from comfyui_router.utils.config import OUTPUT_DIR
-from comfyui_router.utils.logger import get_logger
+from shared.utils.config import OUTPUT_DIR
+from shared.utils.logger import get_logger
 
-logger = get_logger("Comfyui Router")
+logger = get_logger(__name__)
 
 
 def wait_for_output_v2(
@@ -62,7 +64,6 @@ def wait_for_output_v2(
     return None
 
 
-
 def _is_stable(path: Path, stable_time: int, check_interval: int) -> bool:
     """
     Vérifie que la taille d'un fichier reste stable pendant un certain temps.
@@ -88,8 +89,7 @@ def _is_stable(path: Path, stable_time: int, check_interval: int) -> bool:
 
 def cleanup_outputs(base_stem: str, keep: Path, output_dir: Path) -> None:
     """
-    Supprime les fichiers intermédiaires de ComfyUI (png, mp4 sans audio, etc.)
-    sauf le fichier final.
+    Supprime les fichiers intermédiaires de ComfyUI (png, mp4 sans audio, etc.) sauf le fichier final.
     """
     patterns = [
         f"{base_stem}_*.png",

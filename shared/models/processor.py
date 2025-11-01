@@ -1,19 +1,28 @@
+""" """
+
+from __future__ import annotations
+
 from pathlib import Path
 import shutil
 
-from comfyui_router.ffmpeg.ffmpeg_command import (
-    convert_to_60fps,
-    ensure_deinterlaced,
-    get_fps,
-)
-from comfyui_router.models.comfy_workflow_manager import ComfyWorkflowManager
-from comfyui_router.models.output_manager import OutputManager
-from comfyui_router.models.videojob import VideoJob
+from comfyui_router.ffmpeg.deinterlace import ensure_deinterlaced
+from comfyui_router.ffmpeg.ffmpeg_command import convert_to_60fps, detect_nvenc_available, get_fps
+from comfyui_router.ffmpeg.smart_recut_hybrid import smart_recut_hybrid
 from comfyui_router.output.output import cleanup_outputs
-from comfyui_router.utils.config import OK_DIR, TRASH_DIR, OUTPUT_DIR
-from comfyui_router.utils.logger import get_logger
+from shared.models.comfy_workflow_manager import ComfyWorkflowManager
+from shared.models.config_manager import CONFIG
+from shared.models.output_manager import OutputManager
+from shared.models.videojob import VideoJob
+from shared.utils.config import OK_DIR, OUTPUT_DIR, TRASH_DIR
+from shared.utils.logger import get_logger
+from shared.utils.trash import move_to_trash, purge_old_trash
 
-logger = get_logger("Comfyui Router")
+logger = get_logger(__name__)
+
+
+FORCE_DEINTERLACE = CONFIG.comfyui_router["processor"]["force_deinterlace"]
+CLEANUP = CONFIG.comfyui_router["processor"]["cleanup"]
+PURGE_DAYS = CONFIG.comfyui_router["processor"]["purge_days"]
 
 
 class VideoProcessor:
@@ -22,14 +31,21 @@ class VideoProcessor:
         self.workflow_mgr = ComfyWorkflowManager()
         self.output_mgr = OutputManager()
 
-    def process(self, video_path: Path, force_deinterlace: bool = False) -> None:
+    def process(self, video_path: Path, force_deinterlace: bool = FORCE_DEINTERLACE) -> None:
         self.logger.info(f"🚀 Début traitement ComfyUI : {video_path.name}")
         job = VideoJob(video_path)
         job.analyze()
 
-        # 🧩 Étape 2 : détection / désentrelacement
-        video_path = ensure_deinterlaced(video_path, use_cuda=True, cleanup=True)
+        use_nvenc = detect_nvenc_available()
+        if use_nvenc:
+            cuda = True
+        else:
+            cuda = False
 
+        # 🧩 Étape 2 : détection / désentrelacement
+        video_path = ensure_deinterlaced(video_path, use_cuda=cuda, cleanup=CLEANUP)
+        video_path = smart_recut_hybrid(video_path, use_cuda=cuda, cleanup=CLEANUP)
+        job.path = Path(video_path)
         workflow = self.workflow_mgr.prepare_workflow(job)
         if not workflow:
             return
@@ -55,14 +71,15 @@ class VideoProcessor:
                 job.output_file.unlink()
                 final_output = temp_output
         elif job.fps_out < 59:
-            retry_path = job.path.parent / f"RETRY_{job.path.name}"
+            retry_path = job.path.parent / f"RE_{job.path.name}"
             shutil.move(job.output_file, retry_path)
             self.logger.info(f"↩️ Rejet : {job.path.name} (FPS {job.fps_out:.2f})")
             return
         else:
             shutil.move(job.output_file, final_output)
 
-        shutil.move(job.path, TRASH_DIR / job.path.name)
+        move_to_trash(file_path=job.path, trash_root=TRASH_DIR)
         cleanup_outputs(video_path.stem, final_output, OUTPUT_DIR)
+        purge_old_trash(trash_root=TRASH_DIR, days=PURGE_DAYS)
         self.logger.info(f"🧹 Nettoyage des fichiers intermédiaires terminé pour {video_path.stem}")
         self.logger.info(f"✅ Terminé : {final_output.name}")

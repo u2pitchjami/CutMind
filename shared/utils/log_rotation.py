@@ -1,5 +1,7 @@
 """2025-08-20 - module rotation de logs."""
 
+from __future__ import annotations
+
 import os
 import time
 

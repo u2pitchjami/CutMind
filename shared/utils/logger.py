@@ -10,8 +10,8 @@ import logging.handlers
 import os
 from typing import Any, ParamSpec, Protocol, TypeVar, cast
 
-from comfyui_router.utils.config import LOG_FILE_PATH, LOG_LEVEL, LOG_ROTATION_DAYS
-from comfyui_router.utils.log_rotation import rotate_logs
+from shared.utils.config import LOG_FILE_PATH, LOG_LEVEL, LOG_ROTATION_DAYS
+from shared.utils.log_rotation import rotate_logs
 
 
 # ---------- Protocole (contrat) ----------

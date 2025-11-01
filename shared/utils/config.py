@@ -3,6 +3,7 @@
 # config.py
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
 
@@ -87,6 +88,17 @@ def get_path_required(key: str) -> str:
     return abs_path
 
 
+def load_prompts() -> dict[str, str]:
+    spec = importlib.util.spec_from_file_location("dynamic_prompts", PROMPT_PATH)
+    if spec:
+        module = importlib.util.module_from_spec(spec)
+        if spec.loader is None:
+            raise ImportError(f"Unable to load prompts from {PROMPT_PATH}")
+        spec.loader.exec_module(module)
+        return getattr(module, "PROMPTS", {})
+    raise ImportError(f"Unable to load prompts from {PROMPT_PATH}")
+
+
 # --- Variables d'environnement accessibles globalement ---
 
 INPUT_DIR: Path = Path(get_path_required("INPUT_DIR"))
@@ -107,6 +119,33 @@ LOG_FILE_PATH = get_str("LOG_FILE_PATH", "logs")
 LOG_ROTATION_DAYS = get_int("LOG_ROTATION_DAYS", 100)
 LOG_LEVEL: str = get_str("LOG_LEVEL", "INFO").upper()
 
+# DEV
+DEV_SRC = get_str("DEV_SRC")
+DEV_DST = get_str("DEV_DST")
+DEV_MODE = get_str("DEV_MODE")
+
+COMFYUI_URL = get_str("COMFYUI_URL")
+
+PROMPT_PATH: str = get_str("PROMPT_PATH", "/app/config/prompts.py")
+
+PROMPTS = load_prompts()
+
+# SMARTCUT
+IMPORT_DIR_SC: Path = Path(get_path_required("IMPORT_DIR_SC"))
+TRASH_DIR_SC: Path = Path(get_str("TRASH_DIR_SC", ".trash"))
+ERROR_DIR_SC: Path = Path(get_str("ERROR_DIR_SC", ".error"))
+OUPUT_DIR_SC: Path = Path(get_path_required("OUPUT_DIR_SC"))
+JSON_STATES_DIR_SC: Path = Path(get_path_required("JSON_STATES_DIR_SC"))
+TMP_FRAMES_DIR_SC: Path = Path(get_str("TMP_FRAMES_DIR_SC", ".tmp_frames"))
+BATCH_FRAMES_DIR_SC: Path = Path(get_str("BATCH_FRAMES_DIR_SC", ".batches"))
+MULTIPLE_FRAMES_DIR_SC: Path = Path(get_str("MULTIPLE_FRAMES_DIR_SC", ".multiple"))
+KW_CACHE_FILE_SC = Path(get_str("KW_CACHE_FILE_SC"))
+KW_MAPPING_FILE_SC = Path(get_path_required("KW_MAPPING_FILE_SC"))
+KW_FORBIDDEN_FILE_SC = Path(get_str("KW_FORBIDDEN_FILE_SC"))
+SAFE_FORMATS = [".mp4", ".mkv"]
+
 OK_DIR.mkdir(parents=True, exist_ok=True)
 TRASH_DIR.mkdir(parents=True, exist_ok=True)
+TRASH_DIR_SC.mkdir(parents=True, exist_ok=True)
+ERROR_DIR_SC.mkdir(parents=True, exist_ok=True)
 Path(LOG_FILE_PATH).mkdir(parents=True, exist_ok=True)

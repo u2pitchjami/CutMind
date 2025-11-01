@@ -6,18 +6,6 @@ repos:
         args: [--fix]        # auto-fix lint (imports, pyupgrade, etc.)
       - id: ruff-format       # formateur (remplace Black)
 
-  - repo: https://github.com/PyCQA/docformatter
-    rev: v1.7.7
-    hooks:
-      - id: docformatter
-        args:
-          - --in-place
-          - --recursive
-          - --wrap-summaries=120
-          - --wrap-descriptions=120
-          - --make-summary-multi-line
-          - --pre-summary-newline
-
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.17.1
     hooks:

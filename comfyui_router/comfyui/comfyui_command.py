@@ -1,16 +1,20 @@
+""" """
+
 from __future__ import annotations
 
 from typing import Any
 
 import requests
 
-from comfyui_router.utils.logger import get_logger
+from shared.utils.logger import get_logger
 
-logger = get_logger("Comfyui Router")
+logger = get_logger(__name__)
 
 
 def run_comfy(workflow: dict[str, Any]) -> bool:
-    """Envoie un workflow complet à ComfyUI."""
+    """
+    Envoie un workflow complet à ComfyUI.
+    """
     payload = {"prompt": workflow}
 
     logger.info("==== JSON ENVOYÉ À COMFYUI ====")

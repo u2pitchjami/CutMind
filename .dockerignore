@@ -24,7 +24,7 @@ docker-compose.yml
 .git/
 .gitignore
 
-# --- Données BrainOps ---
+# --- Données  ---
 logs/
 vault/
 exports/
