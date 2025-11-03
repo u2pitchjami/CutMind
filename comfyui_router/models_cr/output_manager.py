@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from comfyui_router.models_cr.videojob import VideoJob
 from comfyui_router.output.output import wait_for_output_v2
 from shared.models.config_manager import CONFIG
-from shared.models.videojob import VideoJob
 from shared.utils.logger import get_logger
 
 logger = get_logger(__name__)

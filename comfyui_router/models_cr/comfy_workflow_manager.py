@@ -6,7 +6,7 @@ from typing import Any
 
 from comfyui_router.comfyui.comfyui_command import run_comfy
 from comfyui_router.comfyui.comfyui_workflow import inject_video_path, load_workflow, route_workflow
-from shared.models.videojob import VideoJob
+from comfyui_router.models_cr.videojob import VideoJob
 from shared.utils.logger import get_logger
 
 logger = get_logger(__name__)

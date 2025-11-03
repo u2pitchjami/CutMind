@@ -8,11 +8,11 @@ import shutil
 from comfyui_router.ffmpeg.deinterlace import ensure_deinterlaced
 from comfyui_router.ffmpeg.ffmpeg_command import convert_to_60fps, detect_nvenc_available, get_fps
 from comfyui_router.ffmpeg.smart_recut_hybrid import smart_recut_hybrid
+from comfyui_router.models_cr.comfy_workflow_manager import ComfyWorkflowManager
+from comfyui_router.models_cr.output_manager import OutputManager
+from comfyui_router.models_cr.videojob import VideoJob
 from comfyui_router.output.output import cleanup_outputs
-from shared.models.comfy_workflow_manager import ComfyWorkflowManager
 from shared.models.config_manager import CONFIG
-from shared.models.output_manager import OutputManager
-from shared.models.videojob import VideoJob
 from shared.utils.config import OK_DIR, OUTPUT_DIR, TRASH_DIR
 from shared.utils.logger import get_logger
 from shared.utils.trash import move_to_trash, purge_old_trash

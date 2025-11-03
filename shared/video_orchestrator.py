@@ -16,13 +16,13 @@ import time
 
 import torch
 
+from comfyui_router.models_cr.processor import VideoProcessor
 from shared.models.config_manager import CONFIG
-from shared.models.processor import VideoProcessor
-from shared.models.smartcut_model import SmartCutSession
 from shared.utils.config import IMPORT_DIR_SC, INPUT_DIR, OUPUT_DIR_SC, OUTPUT_DIR
 from shared.utils.logger import get_logger
 from shared.utils.trash import delete_files
 from shared.utils.wait_for_comfyui import wait_for_comfyui
+from smartcut.models_sc.smartcut_model import SmartCutSession
 from smartcut.smartcut import multi_stage_cut
 
 logger = get_logger("Smartcut Comfyui Router")

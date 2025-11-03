@@ -19,9 +19,9 @@ import time
 import torch
 
 from shared.models.config_manager import CONFIG
-from shared.models.smartcut_model import SmartCutSession
 from shared.utils.config import IMPORT_DIR_SC, JSON_STATES_DIR_SC, OUPUT_DIR_SC
 from shared.utils.logger import get_logger
+from smartcut.models_sc.smartcut_model import SmartCutSession
 from smartcut.smartcut import multi_stage_cut
 
 SCAN_INTERVAL = CONFIG.smartcut["smartcut"]["scan_interval"]  # secondes entre deux scans
@@ -56,7 +56,7 @@ def auto_clean_gpu(max_wait_sec: int = 120) -> None:
         print(f"⚠️ Nettoyage VRAM échoué : {e}")
 
 
-auto_clean_gpu()
+# auto_clean_gpu()
 
 
 def list_videos(directory: Path) -> list[Path]:
@@ -123,10 +123,10 @@ if __name__ == "__main__":
     except ValueError as e:
         print(f"Erreur de config : {e}")
         exit(1)
-    try:
-        auto_clean_gpu()
-    except RuntimeError as e:
-        logger.error(f"Erreur CUDA : {e}")
-        time.sleep(10)  # anti-boucle infernale
-        exit(1)
+    # try:
+    #     auto_clean_gpu()
+    # except RuntimeError as e:
+    #     logger.error(f"Erreur CUDA : {e}")
+    #     time.sleep(10)  # anti-boucle infernale
+    #     exit(1)
     main()

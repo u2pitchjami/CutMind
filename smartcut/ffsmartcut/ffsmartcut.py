@@ -11,9 +11,9 @@ import subprocess
 import ffmpeg  # type: ignore
 
 from shared.models.config_manager import CONFIG
-from shared.models.smartcut_model import SmartCutSession
 from shared.utils.config import SAFE_FORMATS
 from shared.utils.logger import get_logger
+from smartcut.models_sc.smartcut_model import SmartCutSession
 
 logger = get_logger(__name__)
 

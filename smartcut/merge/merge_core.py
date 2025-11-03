@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from uuid import uuid4
+import uuid
 
-from shared.models.smartcut_model import Segment
 from shared.utils.logger import get_logger
 from smartcut.merge.merge_utils import keyword_similarity
+from smartcut.models_sc.smartcut_model import Segment
 
 logger = get_logger(__name__)
 
@@ -15,6 +15,7 @@ logger = get_logger(__name__)
 def merge_similar_segments_optimized_v2(
     segments: list[Segment],
     threshold: float = 0.5,
+    gap_confidence: float = 0.25,
     min_duration: float = 15.0,
     max_duration: float = 120.0,
     rattrapage: bool = True,
@@ -31,8 +32,10 @@ def merge_similar_segments_optimized_v2(
         id=segments[0].id,
         start=segments[0].start,
         end=segments[0].end,
+        description=segments[0].description,
         keywords=list(segments[0].keywords),
         ai_status=segments[0].ai_status,
+        confidence=segments[0].confidence,
     )
     current.compute_duration()
     current.merged_from = [segments[0].uid] if hasattr(segments[0], "uid") else []
@@ -43,8 +46,12 @@ def merge_similar_segments_optimized_v2(
         seg.compute_duration()
         sim = keyword_similarity(current.keywords, seg.keywords)
         new_duration = seg.end - current.start
+        if current.confidence is not None and seg.confidence is not None:
+            conf_gap = abs(current.confidence - seg.confidence)
+        else:
+            conf_gap = 0.0
 
-        if sim >= threshold and new_duration <= max_duration:
+        if sim >= threshold and new_duration <= max_duration and conf_gap < gap_confidence:
             logger.debug(
                 "Fusion segments (%.2fs→%.2fs) [%.2fs total] — %s + %s",
                 current.start,
@@ -56,8 +63,14 @@ def merge_similar_segments_optimized_v2(
             current.end = seg.end
             current.duration = new_duration
             current.keywords = sorted(set(current.keywords) | set(seg.keywords))
+            all_descriptions = [current.description, seg.description]
+            current.description = " ".join(all_descriptions).strip()
             if hasattr(seg, "uid"):
                 current.merged_from.append(seg.uid)
+            if current.confidence is not None and seg.confidence is not None:
+                merged_conf = (current.confidence + seg.confidence) / 2
+                current.confidence = round(merged_conf, 3)
+
         else:
             # 🆕 Nouveau segment (avec UID automatique)
             merged.append(current)
@@ -65,7 +78,9 @@ def merge_similar_segments_optimized_v2(
                 id=seg.id,
                 start=seg.start,
                 end=seg.end,
+                description=seg.description,
                 keywords=list(seg.keywords),
+                confidence=seg.confidence,
                 ai_status=seg.ai_status,
             )
             current.compute_duration()
@@ -93,8 +108,13 @@ def merge_similar_segments_optimized_v2(
                         prev_seg.end = seg.end
                         prev_seg.duration = new_dur
                         prev_seg.keywords = sorted(set(prev_seg.keywords) | set(seg.keywords))
+                        all_descriptions = [prev_seg.description, seg.description]
+                        prev_seg.description = " ".join(all_descriptions).strip()
                         if hasattr(seg, "uid"):
                             prev_seg.merged_from.append(seg.uid)
+                        if prev_seg.confidence is not None and seg.confidence is not None:
+                            merged_conf = (prev_seg.confidence + seg.confidence) / 2
+                            prev_seg.confidence = round(merged_conf, 3)
                         merged_with = True
 
                 # 🔹 Fusion avec suivant
@@ -105,8 +125,13 @@ def merge_similar_segments_optimized_v2(
                         seg.end = next_seg.end
                         seg.duration = new_dur
                         seg.keywords = sorted(set(seg.keywords) | set(next_seg.keywords))
+                        all_descriptions = [seg.description, next_seg.description]
+                        seg.description = " ".join(all_descriptions).strip()
                         if hasattr(next_seg, "uid"):
                             seg.merged_from.append(next_seg.uid)
+                        if seg.confidence is not None and next_seg.confidence is not None:
+                            merged_conf = (seg.confidence + next_seg.confidence) / 2
+                            seg.confidence = round(merged_conf, 3)
                         merged_with = True
                         merged[i + 1] = seg
 
@@ -118,7 +143,7 @@ def merge_similar_segments_optimized_v2(
     # --- 🧩 Étape 3 : réindexation + nouvel UID ---
     for i, seg in enumerate(final_segments, start=1):
         seg.id = i
-        seg.uid = str(uuid4())  # 🆕 UID unique pour le segment fusionné
+        seg.uid = str(uuid.uuid4())  # 🆕 UID unique pour le segment fusionné
         seg.last_updated = datetime.now().isoformat()
 
     logger.info("Fusion terminée : %d segments initiaux → %d segments finaux", len(segments), len(final_segments))

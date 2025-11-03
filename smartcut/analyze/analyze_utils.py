@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from pathlib import Path
 
 from shared.models.config_manager import CONFIG
-from shared.models.smartcut_model import SmartCutSession
 from shared.utils.config import TMP_FRAMES_DIR_SC
 from shared.utils.logger import get_logger
+from smartcut.models_sc.ai_result import AIResult
+from smartcut.models_sc.smartcut_model import SmartCutSession
 from smartcut.norm_keywords.keyword_normalizer import KeywordNormalizer
 
 logger = get_logger(__name__)
@@ -53,21 +55,56 @@ def compute_num_frames(segment_duration: float, base_rate: int = 5) -> int:
     return frames
 
 
-def merge_keywords_across_batches(keyword_lists: list[str]) -> str:
+def merge_keywords_across_batches(batch_outputs: list[AIResult]) -> tuple[str, list[str]]:
     """
-    Fusionne plusieurs listes de mots-clés locales sans IA.
+    Fusionne plusieurs réponses contenant des descriptions et des mots-clés.
 
-    Supprime les doublons et trie les mots.
+    - Gère les formats :
+        - JSON : {"Description": "...", "Keywords": ["mot1", "mot2", ...]}
+        - Texte brut : "mot1, mot2, mot3"
+    - Supprime les doublons et trie les mots.
+    - Concatène les descriptions de manière lisible.
+
+    Retourne :
+        (description_finale: str, keywords_uniques: list[str])
     """
-    all_keywords = []
-    for klist in keyword_lists:
-        for kw in klist.split(","):
-            clean_kw = kw.strip().lower()
-            if clean_kw:
-                all_keywords.append(clean_kw)
 
-    unique_sorted = sorted(set(all_keywords))
-    return ", ".join(unique_sorted)
+    all_keywords: list[str] = []
+    all_descriptions = []
+
+    for item in batch_outputs:
+        # Si c'est déjà un dictionnaire Python
+        if isinstance(item, dict):
+            if "keywords" in item:
+                all_keywords.extend(item["keywords"])
+            if "description" in item:
+                desc = item["description"].strip()
+                if desc:
+                    all_descriptions.append(desc)
+
+        # Si c'est une chaîne
+        elif isinstance(item, str):
+            try:
+                # Tente de parser comme JSON
+                parsed = json.loads(item)
+                if "Keywords" in parsed:
+                    all_keywords.extend(parsed["Keywords"])
+                if "Description" in parsed:
+                    desc = parsed["Description"].strip()
+                    if desc:
+                        all_descriptions.append(desc)
+            except json.JSONDecodeError:
+                # Sinon, traite comme une simple liste de mots séparés par des virgules
+                for kw in item.split(","):
+                    clean_kw = kw.strip().lower()
+                    if clean_kw:
+                        all_keywords.append(clean_kw)
+
+    # Nettoyage et tri
+    unique_keywords = sorted({kw.lower() for kw in all_keywords})
+    merged_description = " ".join(all_descriptions).strip()
+
+    return merged_description, unique_keywords
 
 
 def delete_frames(path: Path = Path(TMP_FRAMES_DIR_SC)) -> None:

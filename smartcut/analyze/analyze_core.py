@@ -1,22 +1,18 @@
-""" """
-
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from math import ceil
 import os
 from pathlib import Path
 import shutil
+from typing import Any, cast
 
 import cv2
-from transformers import (
-    PreTrainedModel,
-    ProcessorMixin,
-)
+from transformers import PreTrainedModel, ProcessorMixin
 
 from shared.models.config_manager import CONFIG
-from shared.models.smartcut_model import SmartCutSession
-from shared.utils.config import BATCH_FRAMES_DIR_SC, MULTIPLE_FRAMES_DIR_SC, TMP_FRAMES_DIR_SC
+from shared.utils.config import BATCH_FRAMES_DIR_SC, JSON_STATES_DIR_SC, MULTIPLE_FRAMES_DIR_SC, TMP_FRAMES_DIR_SC
 from shared.utils.logger import get_logger
 from smartcut.analyze.analyze_torch_utils import (
     estimate_visual_tokens,
@@ -32,12 +28,18 @@ from smartcut.analyze.analyze_utils import (
 from smartcut.analyze.extract_frames import extract_segment_frames
 from smartcut.gen_keywords.load_model import load_qwen_model
 from smartcut.gen_keywords.main_gen_keywords import generate_keywords_for_segment
+from smartcut.models_sc.ai_result import AIResult
+from smartcut.models_sc.smartcut_model import SmartCutSession
 
 logger = get_logger(__name__)
+SAFETY_MARGIN: float = CONFIG.smartcut["analyse_segment"]["safety_margin_gb"]
 
-SAFETY_MARGIN = CONFIG.smartcut["analyse_segment"]["safety_margin_gb"]
+KeywordsBatches = list[AIResult]
 
 
+# ===========================================================
+# 🧠 FONCTION PRINCIPALE : analyse de la vidéo par segments
+# ===========================================================
 def analyze_by_segments(
     video_path: str,
     session: SmartCutSession,
@@ -47,22 +49,21 @@ def analyze_by_segments(
     fps_extract: float = 1.0,
 ) -> dict[str, list[str]]:
     """
-    Extrait des frames pour chaque segment de la session et génère les mots-clés IA.
-
-    - Utilise directement les objets Segment (plus de tuples start/end)
-    - Met à jour la session en mémoire (keywords, ai_status, last_updated)
-    - Sauvegarde le JSON de session après chaque segment traité
+    Extrait des frames pour chaque segment et génère les mots-clés IA.
+    Retourne un mapping {segment_uid: keywords}.
     """
+
+    state_path = JSON_STATES_DIR_SC / f"{Path(video_path).stem}.smartcut_state.json"
     logger.debug("📥 Démarrage analyze_by_segments")
     frame_data: dict[str, list[str]] = {}
     video_name = Path(video_path).stem
 
-    # Nettoyage des répertoires temporaires
+    # Nettoyage répertoires temporaires
     for path in [TMP_FRAMES_DIR_SC, MULTIPLE_FRAMES_DIR_SC, BATCH_FRAMES_DIR_SC]:
         delete_frames(Path(path))
     os.makedirs(TMP_FRAMES_DIR_SC, exist_ok=True)
 
-    # Initialisation vidéo et modèle IA
+    # --- Ouverture vidéo
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         logger.error(f"Impossible d'ouvrir la vidéo {video_path}")
@@ -75,8 +76,12 @@ def analyze_by_segments(
     batch_size = estimate_safe_batch_size(free, precision, SAFETY_MARGIN)
     logger.info(f"🧠 Batch size estimé dynamiquement : {batch_size}")
 
-    # --- 🔁 Boucle principale sur les segments SmartCut ---
+    # --- 🔁 Boucle principale sur les segments SmartCut
     for seg in session.segments:
+        if getattr(seg, "ai_status", "pending") == "done":
+            logger.info(f"✅ Segment {seg.id} déjà traité, passage au suivant.")
+            continue
+
         start, end = seg.start, seg.end
         logger.info(f"🎬 Analyse segment {seg.id} ({start:.2f}s → {end:.2f}s)")
 
@@ -85,7 +90,6 @@ def analyze_by_segments(
             logger.warning(f"Aucune frame extraite pour le segment {seg.id}")
             continue
 
-        # IA : génération des mots-clés
         keywords_batches = process_batches(
             video_name=video_name,
             start=start,
@@ -97,31 +101,34 @@ def analyze_by_segments(
         )
 
         # Fusion des résultats IA
-        merged_keywords = (
-            keywords_batches[0] if len(keywords_batches) == 1 else merge_keywords_across_batches(keywords_batches)
-        )
-        keywords_list = [kw.strip() for kw in merged_keywords.split(",") if kw.strip()]
+        merged_description, keywords_list = merge_keywords_across_batches(keywords_batches)
+        logger.debug(f"🧠 Segment {seg.id} description: {merged_description}")
         logger.debug(f"🧠 Segment {seg.id} keywords: {keywords_list}")
 
-        # --- 💾 Mise à jour du segment ---
+        # --- 💾 Mise à jour du segment
+        logger.debug(f"🔍 seg.id={seg.id} mem_id={id(seg)} session_seg_id={id(session.segments[seg.id - 1])}")
+        logger.debug(f"session : {session}")
+        seg.description = merged_description
         seg.keywords = keywords_list
         seg.ai_status = "done"
         seg.last_updated = datetime.now().isoformat()
         frame_data[seg.uid] = keywords_list
 
-        # Sauvegarde session après chaque segment
-        session.save()
+        session.save(str(state_path))
         logger.debug(f"💾 Session mise à jour (segment {seg.id})")
+        logger.debug(f"session : {session}")
 
-        vram_gpu()  # nettoyage VRAM intermédiaire
+        vram_gpu()
 
     cap.release()
     release_gpu_memory(model)
-
     logger.info("✅ Analyse complète terminée.")
     return frame_data
 
 
+# ===========================================================
+# ⚙️ FONCTION DE TRAITEMENT PAR LOTS (batches)
+# ===========================================================
 def process_batches(
     video_name: str,
     start: float,
@@ -130,8 +137,12 @@ def process_batches(
     batch_size: int,
     processor: ProcessorMixin,
     model: PreTrainedModel,
-) -> list[str]:
-    keywords_all_batches: list[str] = []
+) -> KeywordsBatches:
+    """
+    Traite un segment vidéo par lots et récupère les descriptions + mots-clés IA.
+    """
+
+    all_batches: KeywordsBatches = []
     num_batches = ceil(len(frame_paths) / batch_size)
 
     for b in range(num_batches):
@@ -150,12 +161,10 @@ def process_batches(
                 logger.warning(f"⚠️ Erreur de copie {src_path} → {dst_path}: {e}")
 
         logger.info(f"📦 Batch {b + 1}/{num_batches} → {len(batch_paths)} frames.")
-
         tokens, limit = estimate_visual_tokens(len(batch_paths))
         logger.info(f"🧮 Contexte : {tokens:,} / {limit:,}")
 
-        # batch_keywords: str = "truc, bidule, machin"
-        batch_keywords = generate_keywords_for_segment(
+        batch_result_raw = generate_keywords_for_segment(
             segment_id=f"{video_name}_seg_{int(start * 10)}_{int(end * 10)}",
             frame_dir=batch_dir,
             processor=processor,
@@ -163,11 +172,42 @@ def process_batches(
             num_frames=len(batch_paths),
         )
 
-        if batch_keywords:
-            logger.debug(f"batch_keywords : {batch_keywords[:50]}")
-            keywords_all_batches.append(batch_keywords)
+        parsed_result: AIResult = {"description": "", "keywords": []}
 
+        try:
+            if isinstance(batch_result_raw, str):
+                parsed = json.loads(batch_result_raw)
+                if isinstance(parsed, dict):
+                    # normaliser les clés
+                    lower = {k.lower(): v for k, v in parsed.items()}
+                    parsed_result["description"] = str(lower.get("description", ""))
+                    parsed_result["keywords"] = list(lower.get("keywords", []))
+                else:
+                    parsed_result["keywords"] = [kw.strip() for kw in str(parsed).split(",") if kw.strip()]
+
+            elif isinstance(batch_result_raw, dict):
+                lower2: dict[str, Any] = {k.lower(): v for k, v in batch_result_raw.items()}
+                parsed_result["description"] = str(lower2.get("description", ""))
+                # ✅ Cast explicite pour que mypy voie bien une liste de str
+                raw_keywords = lower2.get("keywords", [])
+                if isinstance(raw_keywords, list):
+                    parsed_result["keywords"] = [str(kw).strip() for kw in raw_keywords if str(kw).strip()]
+                elif isinstance(raw_keywords, str):
+                    parsed_result["keywords"] = [kw.strip() for kw in raw_keywords.split(",") if kw.strip()]
+                else:
+                    parsed_result["keywords"] = []
+
+        except json.JSONDecodeError:
+            # ✅ Ici on force le type en str pour mypy
+            raw_text = cast(str, batch_result_raw)
+            parsed_result["keywords"] = [kw.strip() for kw in raw_text.split(",") if kw.strip()]
+
+        # Log lisible
+        logger.debug(f"🧠 Batch {b + 1}/{num_batches} description: {parsed_result['description'][:100]}")
+        logger.debug(f"🧠 Batch {b + 1}/{num_batches} keywords: {parsed_result['keywords']}")
+
+        all_batches.append(parsed_result)
         delete_frames(batch_dir)
         release_gpu_memory(model, cache_only=True)
 
-    return keywords_all_batches
+    return all_batches

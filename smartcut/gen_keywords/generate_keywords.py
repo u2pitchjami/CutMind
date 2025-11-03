@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import re
 
 from qwen_vl_utils import process_vision_info
 from transformers import (
@@ -19,6 +18,7 @@ from shared.models.config_manager import CONFIG
 from shared.utils.config import PROMPTS
 from shared.utils.logger import get_logger
 from smartcut.gen_keywords.gen_frames import load_frames_as_tensor, temp_batch_image
+from smartcut.models_sc.ai_result import AIResult
 
 logger = get_logger(__name__)
 
@@ -50,13 +50,14 @@ def generate_keywords_from_frames(
     model: PreTrainedModel,
     segment_id: str,
     num_frames: int,
-) -> str:
+    prompt_name: str = "keywords",
+) -> AIResult:
     """
     Génération des mots-clés pour un batch de frames.
     """
 
     SYSTEM_PROMPT = PROMPTS["system_keywords"]
-    user_prompt = PROMPTS["keywords"]
+    user_prompt = PROMPTS[prompt_name]
 
     content = []
 
@@ -127,17 +128,17 @@ def generate_keywords_from_frames(
     # Retrait du prompt d'entrée (comme dans le node)
     trimmed_ids = [out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids, strict=False)]
 
-    output_text: str = processor.batch_decode(
+    output_text: AIResult = processor.batch_decode(
         trimmed_ids,
         skip_special_tokens=SKIP_SPECIAL_TOKENS,
         clean_up_tokenization_spaces=CLEAN_UP_TOKENIZATION_SPACES,
     )[0]
 
     # Nettoyage du texte
-    if "</think>" in output_text:
-        output_text = output_text.split("</think>")[-1]
+    # if "</think>" in output_text:
+    #     output_text = output_text.split("</think>")[-1]
 
-    output_text = re.sub(r"^[\s\u200b\xa0]+", "", output_text)
+    # output_text = re.sub(r"^[\s\u200b\xa0]+", "", output_text)
 
     logger.info("🔑 Mots-clés générés pour %s : %s", image_path.name, output_text)
     return output_text

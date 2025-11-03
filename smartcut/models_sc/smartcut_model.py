@@ -14,13 +14,13 @@ Auteur : DevOps Assistant
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 import json
 import os
 from pathlib import Path
 from typing import Any, Literal
-from uuid import uuid4
+import uuid
 
 import cv2
 from pymediainfo import MediaInfo
@@ -43,9 +43,10 @@ class Segment:
     """
 
     id: int
-    uid: str = field(default_factory=lambda: str(uuid4()))  # identifiant unique global
+    uid: str = field(default_factory=lambda: str(uuid.uuid4()))  # identifiant unique global
     start: float = 0.0
     end: float = 0.0
+    description: str = ""
     keywords: list[str] = field(default_factory=list)
     ai_status: Literal["pending", "processing", "done", "failed"] = "pending"
     duration: float | None = None
@@ -79,7 +80,7 @@ class Segment:
         """
         Convertit le segment en dictionnaire JSON-compatible.
         """
-        return asdict(self)
+        return dict(vars(self))
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Segment:
@@ -89,7 +90,7 @@ class Segment:
         Gère la rétrocompatibilité pour les anciens JSON sans `uid` ni `merged_from`.
         """
         if "uid" not in data:
-            data["uid"] = str(uuid4())
+            data["uid"] = str(uuid.uuid4())
             logger.debug("🆕 UID généré pour un ancien segment : %s", data["uid"])
 
         # Si 'merged_from' absent, on initialise une liste vide
@@ -114,6 +115,7 @@ class SmartCutSession:
     """
 
     video: str
+    uid: str = field(default_factory=lambda: str(uuid.uuid4()))
     duration: float = 0.0
     fps: float = 0.0
     resolution: str | None = None
@@ -122,9 +124,10 @@ class SmartCutSession:
     filesize_mb: float | None = None
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     last_updated: str = field(default_factory=lambda: datetime.now().isoformat())
-    status: Literal["init", "scenes_done", "ia_done", "harmonized", "merged", "cut"] = "init"
+    status: Literal["init", "scenes_done", "ia_done", "confidence_done", "harmonized", "merged", "cut"] = "init"
     segments: list[Segment] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    state_path: str | None = None
 
     # ============================================================
     # 🔧 Méthodes principales
@@ -196,16 +199,33 @@ class SmartCutSession:
 
     def to_dict(self) -> dict[str, Any]:
         """
-        Convertit la session en dictionnaire sérialisable.
+        Convertit la session en dictionnaire JSON-compatible
+        sans casser les références ni perdre les mises à jour runtime.
         """
-        return asdict(self)
+        return {
+            "video": self.video,
+            "uid": self.uid,
+            "duration": self.duration,
+            "fps": self.fps,
+            "resolution": self.resolution,
+            "codec": self.codec,
+            "bitrate": self.bitrate,
+            "filesize_mb": self.filesize_mb,
+            "created_at": self.created_at,
+            "last_updated": self.last_updated,
+            "status": self.status,
+            "segments": [seg.to_dict() for seg in self.segments],
+            "errors": self.errors,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SmartCutSession:
-        """
-        Recrée une session complète à partir d’un dictionnaire.
-        """
-        segments = [Segment.from_dict(seg) for seg in data.get("segments", [])]
+        segments = []
+        for seg_data in data.get("segments", []):
+            if isinstance(seg_data, Segment):
+                segments.append(seg_data)
+            else:
+                segments.append(Segment(**seg_data))
         data = {**data, "segments": segments}
         return cls(**data)
 
@@ -214,7 +234,8 @@ class SmartCutSession:
         Sauvegarde la session dans un fichier JSON (écriture atomique + flush disque).
         """
         if not path:
-            path = self._default_path()
+            path = self.state_path or self._default_path()
+        logger.debug(f"💾 Sauvegarde vers: {path}")
 
         try:
             tmp_path = f"{path}.tmp"
@@ -229,6 +250,11 @@ class SmartCutSession:
                 os.sync()
             except AttributeError:
                 pass
+
+            try:
+                os.system("sync")
+            except Exception as e:
+                logger.debug(f"Sync système échouée : {e}")
 
             logger.info("💾 Session sauvegardée dans %s", path)
 
@@ -258,6 +284,11 @@ class SmartCutSession:
                 kws = seg.get("keywords")
                 if isinstance(kws, str):
                     seg["keywords"] = [kw.strip() for kw in kws.split(",") if kw.strip()]
+
+                # 🧠 Normalisation description
+                if "description" not in seg or seg["description"] is None:
+                    seg["description"] = ""
+
                 segments.append(Segment(**seg))
 
             return cls(
@@ -334,6 +365,7 @@ class SmartCutSession:
         # ♻️ Tentative de reprise de session existante
         session = cls.load(str(state_path))
         if session:
+            session.state_path = str(state_path)
             logger.info("♻️ Reprise de session existante : %s", session.status)
             # Enrichissement si nécessaire
             if not session.resolution or session.fps == 0:
@@ -341,6 +373,8 @@ class SmartCutSession:
                 session.save(str(state_path))
                 logger.info("🔁 Métadonnées vidéo complétées pour la session.")
             return session
+        else:
+            session = cls(video=str(video_path), state_path=str(state_path))
 
         # ✨ Nouvelle session SmartCut
         logger.info("✨ Nouvelle session SmartCut : %s", video_path)
@@ -351,6 +385,9 @@ class SmartCutSession:
 
         # 🎞️ Enrichissement des métadonnées techniques
         session.enrich_metadata()
+
+        if not getattr(session, "uid", None):
+            session.uid = str(uuid.uuid4())
 
         # 🏷️ Préparation des segments si déjà connus
         if session.segments:

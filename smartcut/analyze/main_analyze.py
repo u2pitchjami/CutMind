@@ -5,9 +5,9 @@ from __future__ import annotations
 import os
 
 from shared.models.config_manager import CONFIG
-from shared.models.smartcut_model import SmartCutSession
 from shared.utils.logger import get_logger
 from smartcut.analyze.analyze_core import analyze_by_segments
+from smartcut.models_sc.smartcut_model import SmartCutSession
 
 logger = get_logger(__name__)
 
@@ -27,6 +27,7 @@ def analyze_video_segments(
     Each segment is analyzed independently (vision + reasoning). If combine=True, a final global synthesis is generated
     at the end.
     """
+    logger.debug(f"session : {session}")
     logger.info(f"🎬 Starting segmented analysis for {video_path} ({len(session.segments)} detected cuts)")
     analyze_by_segments(
         video_path=video_path,
@@ -36,7 +37,7 @@ def analyze_video_segments(
         base_rate=BASE_RATE,
         session=session,
     )
-
+    logger.debug(f"session : {session}")
     if session is None:
         session = SmartCutSession(
             video=os.path.basename(video_path),

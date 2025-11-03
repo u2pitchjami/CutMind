@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from itertools import chain
 
-from shared.models.processor import VideoProcessor
+from comfyui_router.models_cr.processor import VideoProcessor
 from shared.utils.config import INPUT_DIR, OUTPUT_DIR, SAFE_FORMATS
 from shared.utils.logger import get_logger
 from shared.utils.safe_runner import safe_main

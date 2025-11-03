@@ -15,16 +15,18 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from uuid import uuid4
+import uuid
 
 from shared.models.config_manager import CONFIG
-from shared.models.smartcut_model import Segment, SmartCutSession
 from shared.utils.config import JSON_STATES_DIR_SC, TRASH_DIR_SC
 from shared.utils.logger import get_logger
+from shared.utils.safe_runner import safe_main
 from shared.utils.trash import move_to_trash, purge_old_trash
+from smartcut.analyze.analyze_confidence import compute_confidence
 from smartcut.analyze.main_analyze import analyze_video_segments
 from smartcut.ffsmartcut.ffsmartcut import cut_video, ensure_safe_video_format, get_duration
 from smartcut.merge.merge_main import process_result
+from smartcut.models_sc.smartcut_model import Segment, SmartCutSession
 from smartcut.scene_split.main_scene_split import adaptive_scene_split
 
 logger = get_logger(__name__)
@@ -49,6 +51,7 @@ PRESET_CPU = CONFIG.smartcut["smartcut"]["preset_cpu"]
 PRESET_GPU = CONFIG.smartcut["smartcut"]["preset_gpu"]
 
 
+@safe_main
 def multi_stage_cut(
     video_path: Path,
     out_dir: Path,
@@ -136,6 +139,7 @@ def multi_stage_cut(
 
         # On ne traite que les segments dont le statut n’est pas "done"
         pending_segments = session.get_pending_segments()
+        logger.debug(f"Segments en attente : {[s.id for s in pending_segments]}")
         if not pending_segments:
             logger.info("✅ Tous les segments ont déjà été traités par l’IA.")
             session.status = "ia_done"
@@ -167,11 +171,36 @@ def multi_stage_cut(
                 raise
     else:
         logger.info("⏩ Étape IA déjà effectuée — skip.")
+    # ======================
+    # 🪄 Étape 2.5 : confidence
+    # ======================
+    if session.status in ("ia_done",):
+        logger.info("🧠 Calcul d'un indice de confiance :")
+        try:
+            for seg in session.segments:
+                if seg.ai_status == "done":
+                    seg.confidence = compute_confidence(seg.description, seg.keywords)
+                    logger.info(f"  - Segment {seg.id}: confidence = {seg.confidence:.3f}")
+                    session.save(str(state_path))
+
+            if all(s.confidence != "null" for s in session.segments):
+                session.status = "confidence_done"
+            else:
+                logger.warning("🚧 Certains segments confidence n’ont pas été traités complètement.")
+            session.save(str(state_path))
+
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("💥 Erreur pendant le calcul de l'indice de confiance : %s", exc)
+            session.errors.append(str(exc))
+            session.save(str(state_path))
+            raise
+    else:
+        logger.info("⏩ Étape confidence déjà effectuée — skip.")
 
     # ======================
     # 🪄 Étape 3 : Harmonisation / Merge des segments
     # ======================
-    if session.status in ("ia_done",):
+    if session.status in ("confidence_done",):
         logger.info("🔗 Harmonisation et fusion des segments...")
         wrong_segments = [s for s in session.segments if isinstance(s.keywords, str)]
         if wrong_segments:
@@ -206,6 +235,7 @@ def multi_stage_cut(
                         id=i,
                         start=seg.start,
                         end=seg.end,
+                        description=seg.description,
                         keywords=list(seg.keywords),
                         ai_status="done",
                         duration=seg.duration if seg.duration else round(seg.end - seg.start, 3),
@@ -214,7 +244,7 @@ def multi_stage_cut(
                     )
 
                     # 🧠 Conserve l’UID du segment fusionné si déjà défini, sinon nouveau
-                    new_seg.uid = getattr(seg, "uid", str(uuid4()))
+                    new_seg.uid = getattr(seg, "uid", str(uuid.uuid4()))
 
                     # 🧾 Recalcule un nom de fichier prédictif propre
                     new_seg.predict_filename(Path("/basedir/smart_cut/outputs/"))
@@ -223,7 +253,7 @@ def multi_stage_cut(
 
                 session.status = "merged"
                 session.last_updated = datetime.now().isoformat()
-                session.save()
+                session.save(str(state_path))
                 logger.info("💾 Segments fusionnés mis à jour et sauvegardés dans le JSON.")
 
                 logger.info(f"✅ Merge effectué : {len(session.segments)} segments après harmonisation.")
