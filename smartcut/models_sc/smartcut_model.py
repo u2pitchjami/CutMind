@@ -50,6 +50,11 @@ class Segment:
     keywords: list[str] = field(default_factory=list)
     ai_status: Literal["pending", "processing", "done", "failed"] = "pending"
     duration: float | None = None
+    fps: float = 0.0
+    resolution: str | None = None
+    codec: str | None = None
+    bitrate: int | None = None
+    filesize_mb: float | None = None
     confidence: float | None = None
     filename_predicted: str | None = None
     output_path: str | None = None
@@ -65,14 +70,15 @@ class Segment:
         """
         self.duration = round(self.end - self.start, 3)
 
-    def predict_filename(self, base_dir: str | Path = "./outputs") -> None:
+    def predict_filename(self, base_dir: str | Path = "./outputs", folder_name: str = "folder") -> None:
         """
         Génère un nom de fichier prédictif stable et unique.
 
         Exemple : seg_0001_a1b2c3d4.mp4
         """
-        base = Path(base_dir)
-        name = f"seg_{self.id:04d}_{self.uid[:8]}.mp4"  # 🧠 unique et cohérent
+        base = Path(base_dir) / folder_name
+        base.mkdir(parents=True, exist_ok=True)
+        name = f"seg_{self.id:04d}_{self.uid}.mp4"  # 🧠 unique et cohérent
         self.filename_predicted = name
         self.output_path = str(base / name)
 
@@ -190,7 +196,7 @@ class SmartCutSession:
         """
         for seg in self.segments:
             seg.compute_duration()
-            seg.predict_filename(output_dir)
+            seg.predict_filename(output_dir, folder_name=Path(self.video).stem)
         self.last_updated = datetime.now().isoformat()
 
     # ============================================================

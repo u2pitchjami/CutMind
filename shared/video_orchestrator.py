@@ -1,12 +1,12 @@
 """
-video_orchestrator.py
-======================
+video_orchestrator.py (v2)
+==========================
 
 Orchestre le traitement vidéo entre SmartCut et ComfyUI Router.
 
-- Scan les deux dossiers d'import (`smartcut` et `router`)
-- Priorise automatiquement ou via l'argument --priority
-- Lance le traitement approprié pour chaque vidéo
+- Scanne les deux dossiers d'import (`smartcut` et `router`)
+- Si un dossier est trouvé dans SmartCut → SmartCut Lite (segments déjà découpés)
+- Si une vidéo est trouvée → SmartCut complet
 """
 
 import argparse
@@ -22,6 +22,7 @@ from shared.utils.config import IMPORT_DIR_SC, INPUT_DIR, OUPUT_DIR_SC, OUTPUT_D
 from shared.utils.logger import get_logger
 from shared.utils.trash import delete_files
 from shared.utils.wait_for_comfyui import wait_for_comfyui
+from smartcut.lite.smartcut_lite import lite_cut
 from smartcut.models_sc.smartcut_model import SmartCutSession
 from smartcut.smartcut import multi_stage_cut
 
@@ -32,9 +33,6 @@ USE_CUDA = CONFIG.smartcut["smartcut"]["use_cuda"]
 
 
 def auto_clean_gpu(max_wait_sec: int = 30) -> None:
-    """
-    Attente et nettoyage de la VRAM GPU si disponible.
-    """
     waited = 0
     while not torch.cuda.is_available():
         if waited >= max_wait_sec:
@@ -54,12 +52,18 @@ def auto_clean_gpu(max_wait_sec: int = 30) -> None:
         print(f"⚠️ Nettoyage VRAM échoué : {e}")
 
 
-def list_videos(directory: Path) -> list[Path]:
-    exts = (".mp4", ".mov", ".mkv", ".avi", ".wmv")
-    return [p for p in directory.glob("*") if p.suffix.lower() in exts]
+def list_videos_and_dirs(directory: Path) -> tuple[list[Path], list[Path]]:
+    """Retourne les vidéos ET les dossiers à la racine du répertoire (pas récursif)."""
+    video_exts = (".mp4", ".mov", ".mkv", ".avi", ".wmv")
+
+    videos = [p for p in directory.iterdir() if p.is_file() and p.suffix.lower() in video_exts]
+    dirs = [p for p in directory.iterdir() if p.is_dir()]
+
+    return videos, dirs
 
 
 def process_smartcut_video(video_path: Path) -> None:
+    """Flow SmartCut complet (vidéo non découpée)."""
     try:
         state_path = OUPUT_DIR_SC / f"{video_path.stem}.smartcut_state.json"
         session = SmartCutSession.load(str(state_path))
@@ -72,11 +76,21 @@ def process_smartcut_video(video_path: Path) -> None:
             session = SmartCutSession(video=str(video_path), duration=0.0, fps=0.0)
             session.save(str(state_path))
 
-        logger.info(f"🚀 SmartCut: traitement {video_path.name}")
+        logger.info(f"🚀 SmartCut (complet) : {video_path.name}")
         multi_stage_cut(video_path=video_path, out_dir=OUPUT_DIR_SC, use_cuda=USE_CUDA)
 
     except Exception as exc:
         logger.error(f"💥 Erreur SmartCut {video_path.name} : {exc}")
+        auto_clean_gpu()
+
+
+def process_smartcut_folder(folder_path: Path) -> None:
+    """Flow SmartCut Lite (segments déjà présents dans un dossier)."""
+    try:
+        logger.info(f"🚀 SmartCut Lite : dossier {folder_path.name}")
+        lite_cut(directory_path=folder_path)
+    except Exception as exc:
+        logger.error(f"💥 Erreur SmartCut Lite {folder_path.name} : {exc}")
         auto_clean_gpu()
 
 
@@ -98,16 +112,16 @@ def orchestrate(priority: str = "router") -> None:
     INPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     while True:
-        router_videos = list_videos(INPUT_DIR)
-        smartcut_videos = list_videos(IMPORT_DIR_SC)
+        router_videos = [p for p in INPUT_DIR.glob("*") if p.is_file()]
+        smartcut_videos, smartcut_dirs = list_videos_and_dirs(IMPORT_DIR_SC)
 
         source = None
         if priority == "router":
-            source = "router" if router_videos else "smartcut" if smartcut_videos else None
+            source = "router" if router_videos else "smartcut" if (smartcut_videos or smartcut_dirs) else None
         elif priority == "smartcut":
-            source = "smartcut" if smartcut_videos else "router" if router_videos else None
+            source = "smartcut" if (smartcut_videos or smartcut_dirs) else "router" if router_videos else None
         elif priority == "auto":
-            source = "router" if router_videos else "smartcut" if smartcut_videos else None
+            source = "router" if router_videos else "smartcut" if (smartcut_videos or smartcut_dirs) else None
 
         if not source:
             logger.info("📂 Aucun fichier détecté. Nouvelle vérification dans 60s...")
@@ -117,8 +131,11 @@ def orchestrate(priority: str = "router") -> None:
                 for video_path in router_videos:
                     process_router_video(video_path)
             else:
+                # ⚙️ Traitement SmartCut : vidéo ou dossier
                 for video_path in smartcut_videos:
                     process_smartcut_video(video_path)
+                for folder_path in smartcut_dirs:
+                    process_smartcut_folder(folder_path)
 
         logger.info(f"⏳ Attente {SCAN_INTERVAL}s avant le prochain scan.")
         time.sleep(SCAN_INTERVAL)
@@ -145,6 +162,6 @@ if __name__ == "__main__":
         auto_clean_gpu()
     except RuntimeError as e:
         logger.error(f"Erreur CUDA : {e}")
-        time.sleep(10)  # anti-boucle infernale
+        time.sleep(10)
         exit(1)
     orchestrate(priority=args.priority)

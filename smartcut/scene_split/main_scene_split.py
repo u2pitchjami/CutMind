@@ -13,7 +13,7 @@ from smartcut.scene_split.pyscenedetect import (
     fill_missing_segments,
     refine_long_segments,
 )
-from smartcut.scene_split.split_utils import export_segments_csv, move_to_error
+from smartcut.scene_split.split_utils import move_to_error
 
 logger = get_logger(__name__)
 
@@ -73,7 +73,7 @@ def adaptive_scene_split(
     logger.info(f"✅ Découpage final: {len(refined)} scènes (raffinement + gaps inclus)")
 
     # Étape 4 : export CSV pour inspection ou LosslessCut
-    export_segments_csv(video_path, refined)
+    # export_segments_csv(video_path, refined)
 
     # Vérification couverture
     covered = sum(e - s for s, e in refined)

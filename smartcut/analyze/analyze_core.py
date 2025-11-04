@@ -47,6 +47,7 @@ def analyze_by_segments(
     auto_frames: bool = True,
     base_rate: int = 5,
     fps_extract: float = 1.0,
+    lite: bool = False,
 ) -> dict[str, list[str]]:
     """
     Extrait des frames pour chaque segment et génère les mots-clés IA.
@@ -54,20 +55,21 @@ def analyze_by_segments(
     """
 
     state_path = JSON_STATES_DIR_SC / f"{Path(video_path).stem}.smartcut_state.json"
-    logger.debug("📥 Démarrage analyze_by_segments")
+    logger.debug(f"📥 Démarrage analyze_by_segments : {state_path}")
     frame_data: dict[str, list[str]] = {}
-    video_name = Path(video_path).stem
 
     # Nettoyage répertoires temporaires
     for path in [TMP_FRAMES_DIR_SC, MULTIPLE_FRAMES_DIR_SC, BATCH_FRAMES_DIR_SC]:
         delete_frames(Path(path))
     os.makedirs(TMP_FRAMES_DIR_SC, exist_ok=True)
 
-    # --- Ouverture vidéo
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        logger.error(f"Impossible d'ouvrir la vidéo {video_path}")
-        return {}
+    if not lite:
+        # --- Ouverture vidéo
+        video_name = Path(video_path).stem
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            logger.error(f"Impossible d'ouvrir la vidéo {video_path}")
+            return {}
 
     vram_gpu()
     processor, model = load_qwen_model()
@@ -81,6 +83,19 @@ def analyze_by_segments(
         if getattr(seg, "ai_status", "pending") == "done":
             logger.info(f"✅ Segment {seg.id} déjà traité, passage au suivant.")
             continue
+
+        if lite:
+            # --- Ouverture vidéo
+            if not seg.output_path:
+                logger.error(f"Chemin de segment vide pour le segment {seg.id}")
+                return {}
+            video_name = Path(seg.output_path).stem
+            video_path_lite = Path(seg.output_path)
+            logger.debug(f"📥 Ouverture vidéo segment lite : {video_name}")
+            cap = cv2.VideoCapture(str(video_path_lite))
+            if not cap.isOpened():
+                logger.error(f"Impossible d'ouvrir la vidéo {video_path_lite}")
+                return {}
 
         start, end = seg.start, seg.end
         logger.info(f"🎬 Analyse segment {seg.id} ({start:.2f}s → {end:.2f}s)")
@@ -107,7 +122,7 @@ def analyze_by_segments(
 
         # --- 💾 Mise à jour du segment
         logger.debug(f"🔍 seg.id={seg.id} mem_id={id(seg)} session_seg_id={id(session.segments[seg.id - 1])}")
-        logger.debug(f"session : {session}")
+        # logger.debug(f"session : {session}")
         seg.description = merged_description
         seg.keywords = keywords_list
         seg.ai_status = "done"
@@ -116,7 +131,7 @@ def analyze_by_segments(
 
         session.save(str(state_path))
         logger.debug(f"💾 Session mise à jour (segment {seg.id})")
-        logger.debug(f"session : {session}")
+        # logger.debug(f"session : {session}")
 
         vram_gpu()
 

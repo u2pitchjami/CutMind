@@ -276,7 +276,7 @@ def multi_stage_cut(
     # ======================
     if session.status in ("harmonized",):
         logger.info("✂️ Export final des segments vidéo...")
-        logger.debug(f"Session ({session}):")
+        # logger.debug(f"Session ({session}):")
         outputs: list[Path] = []
         try:
             for i, seg in enumerate(session.segments, 1):

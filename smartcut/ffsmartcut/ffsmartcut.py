@@ -112,7 +112,7 @@ def cut_video(
     try:
         subprocess.run(cmd, check=True)  # nosec
         logger.info("🎬 Découpe %03d : %.2fs → %.2fs → %s", index, start, end, out_name)
-        logger.debug(f"Session cut ({session}):")
+        # logger.debug(f"Session cut ({session}):")
         # 🧠 Mise à jour du segment dans la session
         if session:
             logger.debug(f"session.segments : {session.segments}")

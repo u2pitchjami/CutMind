@@ -20,6 +20,7 @@ def analyze_video_segments(
     session: SmartCutSession,
     frames_per_segment: int = 3,
     auto_frames: bool = True,
+    lite: bool = False,
 ) -> SmartCutSession:
     """
     Segmented video analysis with optional SmartCut session tracking.
@@ -27,8 +28,15 @@ def analyze_video_segments(
     Each segment is analyzed independently (vision + reasoning). If combine=True, a final global synthesis is generated
     at the end.
     """
-    logger.debug(f"session : {session}")
-    logger.info(f"🎬 Starting segmented analysis for {video_path} ({len(session.segments)} detected cuts)")
+    # logger.debug(f"session : {session}")
+    if lite:
+        logger.info(
+            f"🟢 Mode LITE — 🎬 Analyse des segments depuis le dossier : \
+            {video_path} ({len(session.segments)} detected cuts)"
+        )
+    else:
+        logger.info(f"🔵 Mode COMPLET — 🎬 Analyse de la vidéo : {video_path} ({len(session.segments)} detected cuts)")
+
     analyze_by_segments(
         video_path=video_path,
         frames_per_segment=frames_per_segment,
@@ -36,8 +44,9 @@ def analyze_video_segments(
         fps_extract=FPS_EXTRACT,
         base_rate=BASE_RATE,
         session=session,
+        lite=lite,
     )
-    logger.debug(f"session : {session}")
+    # logger.debug(f"session : {session}")
     if session is None:
         session = SmartCutSession(
             video=os.path.basename(video_path),
