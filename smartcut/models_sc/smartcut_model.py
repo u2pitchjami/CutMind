@@ -49,6 +49,7 @@ class Segment:
     description: str = ""
     keywords: list[str] = field(default_factory=list)
     ai_status: Literal["pending", "processing", "done", "failed"] = "pending"
+    status: str = "analyse_pyscenedetect"  # état général du segment
     duration: float | None = None
     fps: float = 0.0
     resolution: str | None = None
@@ -121,7 +122,9 @@ class SmartCutSession:
     """
 
     video: str
+    video_name: str | None = None
     uid: str = field(default_factory=lambda: str(uuid.uuid4()))
+    origin: str = "smartcut"
     duration: float = 0.0
     fps: float = 0.0
     resolution: str | None = None
@@ -130,7 +133,9 @@ class SmartCutSession:
     filesize_mb: float | None = None
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     last_updated: str = field(default_factory=lambda: datetime.now().isoformat())
-    status: Literal["init", "scenes_done", "ia_done", "confidence_done", "harmonized", "merged", "cut"] = "init"
+    status: Literal[
+        "init", "scenes_done", "ia_done", "confidence_done", "harmonized", "merged", "cut", "smartcut_done"
+    ] = "init"
     segments: list[Segment] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     state_path: str | None = None
@@ -196,7 +201,11 @@ class SmartCutSession:
         """
         for seg in self.segments:
             seg.compute_duration()
-            seg.predict_filename(output_dir, folder_name=Path(self.video).stem)
+            if self.video_name:
+                folder_name = self.video_name
+            else:
+                folder_name = Path(self.video).stem
+            seg.predict_filename(output_dir, folder_name)
         self.last_updated = datetime.now().isoformat()
 
     # ============================================================
@@ -210,7 +219,9 @@ class SmartCutSession:
         """
         return {
             "video": self.video,
+            "video_name": self.video_name,
             "uid": self.uid,
+            "origin": self.origin,
             "duration": self.duration,
             "fps": self.fps,
             "resolution": self.resolution,
@@ -299,6 +310,9 @@ class SmartCutSession:
 
             return cls(
                 video=data["video"],
+                video_name=data.get("video_name", Path(data["video"]).name),
+                uid=data.get("uid", str(uuid.uuid4())),
+                origin=data.get("origin", "smartcut"),
                 duration=data.get("duration", 0.0),
                 fps=data.get("fps", 0.0),
                 resolution=data.get("resolution"),
@@ -331,6 +345,7 @@ class SmartCutSession:
         """
         path = video_path or self.video
         try:
+            self.video_name = Path(self.video).name
             cap = cv2.VideoCapture(path)
             if not cap.isOpened():
                 raise ValueError(f"Impossible d'ouvrir la vidéo : {path}")

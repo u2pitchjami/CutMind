@@ -34,7 +34,9 @@ class SmartCutLiteSession(SmartCutSession):
     def __init__(self, dir_path: Path, virtual_name: str | None = None):
         # ⚠️ Pas d'appel à super().__init__() pour éviter la dépendance à la vidéo mère
         self.video = f"[retro] {dir_path.name}"
+        self.video_name = dir_path.name
         self.uid = str(uuid.uuid4())
+        self.origin = "smartcut_lite"
         self.duration = 0.0
         self.fps = 0.0
         self.resolution = None
@@ -76,6 +78,7 @@ class SmartCutLiteSession(SmartCutSession):
                 description="",
                 keywords=[],
                 ai_status="pending",
+                status="wait_ia",
                 output_path=str(file),
             )
             seg.filename_predicted = file.name

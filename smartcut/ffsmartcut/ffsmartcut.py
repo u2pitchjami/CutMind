@@ -123,6 +123,7 @@ def cut_video(
                 seg.output_path = str(out_path)
                 seg.compute_duration()
                 seg.ai_status = "done"
+                seg.status = "cut_done"
                 seg.error = None
                 session.last_updated = datetime.now().isoformat()
                 logger.debug("✅ Segment %03d mis à jour dans la session.", index)
@@ -142,7 +143,7 @@ def cut_video(
             seg = next((s for s in session.segments if s.id == index), None)
             if seg:
                 seg.error = str(err)
-                seg.ai_status = "failed"
+                seg.status = "cut failed"
                 session.errors.append(f"Erreur segment {index}: {err}")
                 if state_path:
                     session.save(str(state_path))

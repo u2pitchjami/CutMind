@@ -130,6 +130,23 @@ PROMPT_PATH: str = get_str("PROMPT_PATH", "/app/config/prompts.py")
 
 PROMPTS = load_prompts()
 
+# DB
+DB_HOST = str(get_required("DB_HOST"))
+DB_PORT = int(get_int("DB_PORT"))
+DB_USER = str(get_required("DB_USER"))
+DB_PASSWORD = str(get_required("DB_PASSWORD"))
+DB_NAME = str(get_required("DB_NAME"))
+
+CUTMIND_BASEDIR = Path(get_path_required("CUTMIND_BASEDIR"))
+MANUAL_CSV_PATH = get_str("MANUAL_CSV_PATH")
+CSV_LOG_PATH = get_str("CSV_LOG_PATH")
+JSON_STATES = get_str("JSON_STATES", "/basedir/smart_cut/states")
+JSON_VALIDATED = get_str("JSON_VALIDATED", "/basedir/smart_cut/states/validated")
+MANUAL_JSON = get_str("MANUAL_JSON", "/basedir/smart_cut/states/manual_review")
+
+MIN_CONFIDENCE = get_float("MIN_CONFIDENCE", 0.6)
+CM_NB_VID_ROUTER = get_int("CM_NB_VID_ROUTER", 1)
+
 # SMARTCUT
 IMPORT_DIR_SC: Path = Path(get_path_required("IMPORT_DIR_SC"))
 TRASH_DIR_SC: Path = Path(get_str("TRASH_DIR_SC", ".trash"))

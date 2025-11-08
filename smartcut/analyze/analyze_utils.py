@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 import json
 from pathlib import Path
+import re
 
 from shared.models.config_manager import CONFIG
 from shared.utils.config import TMP_FRAMES_DIR_SC
@@ -22,8 +23,36 @@ FLOAT32 = CONFIG.smartcut["analyse_segment"]["float32"]
 DEFAULT = CONFIG.smartcut["analyse_segment"]["default"]
 
 
+def extract_keywords_from_filename(filename: str | Path) -> list[str]:
+    """
+    Extrait automatiquement des mots-clés à partir du nom de fichier.
+    Exemple :
+        'voyage_-_New_York_-_chouette.mp4' → ['voyage', 'New York', 'chouette']
+    """
+    # Nom de base sans extension
+    name = Path(filename).stem
+
+    # 1️⃣ Normalisation : remplacer underscores et tirets doubles par des espaces/tirets simples
+    name = name.replace("_-_", "-").replace("_", " ")
+
+    # 2️⃣ Séparer sur les tirets
+    parts = [p.strip() for p in name.split("-") if p.strip()]
+
+    # 3️⃣ Nettoyage : retirer caractères spéciaux ou résidus (parenthèses, points, etc.)
+    clean_parts = [re.sub(r"[^a-zA-Z0-9éèàùçâêîôûÉÈÀÙÇÂÊÎÔÛ' ]", "", p).strip() for p in parts]
+
+    # 4️⃣ Filtrer : supprimer les chaînes vides ou purement numériques
+    filtered_parts = [p for p in clean_parts if p and not p.isdigit()]
+
+    # 5️⃣ Éliminer doublons et chaînes vides
+    unique_keywords = list({kw for kw in filtered_parts if kw})
+
+    return unique_keywords
+
+
 def estimate_safe_batch_size(
     free_vram_gb: float,
+    total_vram_gb: float,
     model_precision: str = "4bit",  # "bfloat16", "float16", etc.
     safety_margin_gb: float = 1.0,
 ) -> int:
@@ -39,8 +68,14 @@ def estimate_safe_batch_size(
     }.get(model_precision, DEFAULT)
 
     usable_vram = max(0, free_vram_gb - safety_margin_gb)
-    batch_size = int(usable_vram / est_mem_per_image)
-    return max(1, batch_size)
+    batch_size = max(1, int(usable_vram / est_mem_per_image))
+    logger.info(
+        f"🧮 VRAM libre : {free_vram_gb:.2f} Go / {total_vram_gb / 1e9:.2f} Go total | "
+        f"Précision : {model_precision} | Coût/item : {est_mem_per_image:.2f} Go | "
+        f"Marge : {safety_margin_gb:.2f} Go → Batch recommandé = {batch_size}"
+    )
+
+    return batch_size
 
 
 def compute_num_frames(segment_duration: float, base_rate: int = 5) -> int:

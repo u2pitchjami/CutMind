@@ -23,6 +23,7 @@ from shared.utils.logger import get_logger
 from shared.utils.safe_runner import safe_main
 from shared.utils.trash import move_to_trash, purge_old_trash
 from smartcut.analyze.analyze_confidence import compute_confidence
+from smartcut.analyze.analyze_utils import extract_keywords_from_filename
 from smartcut.analyze.main_analyze import analyze_video_segments
 from smartcut.ffsmartcut.ffsmartcut import cut_video, ensure_safe_video_format, get_duration
 from smartcut.merge.merge_main import process_result
@@ -177,10 +178,20 @@ def multi_stage_cut(
     if session.status in ("ia_done",):
         logger.info("🧠 Calcul d'un indice de confiance :")
         try:
+            auto_keywords = extract_keywords_from_filename(video_path.name)
             for seg in session.segments:
                 if seg.ai_status == "done":
                     seg.confidence = compute_confidence(seg.description, seg.keywords)
+                    seg.last_updated = datetime.now().isoformat()
+                    seg.status = "confidence_done"
                     logger.info(f"  - Segment {seg.id}: confidence = {seg.confidence:.3f}")
+                    if seg.keywords:
+                        merged = set(seg.keywords + auto_keywords)
+                        seg.keywords = list(merged)
+                    else:
+                        seg.keywords = auto_keywords.copy()
+
+                    logger.debug(f"🏷️ Seg {seg.uid}: keywords enrichis → {seg.keywords}")
                     session.save(str(state_path))
 
             if all(s.confidence != "null" for s in session.segments):
@@ -238,6 +249,7 @@ def multi_stage_cut(
                         description=seg.description,
                         keywords=list(seg.keywords),
                         ai_status="done",
+                        status="merged",
                         duration=seg.duration if seg.duration else round(seg.end - seg.start, 3),
                         confidence=seg.confidence,
                         merged_from=getattr(seg, "merged_from", []),
@@ -316,7 +328,7 @@ def multi_stage_cut(
                     raise
 
             # Marquer la fin du traitement global
-            session.status = "cut"
+            session.status = "smartcut_done"
             session.save(str(state_path))
             logger.info("✅ %d segments exportés → %s", len(outputs), out_dir)
 

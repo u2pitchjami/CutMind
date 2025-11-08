@@ -19,3 +19,6 @@ qwen-vl-utils
 qwen-vl-utils[decord]
 numpy
 pymediainfo
+pymysql
+pydantic
+strenum>=0.4.15

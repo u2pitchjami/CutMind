@@ -8,6 +8,7 @@ smart_multicut_lite.py — Orchestrateur SmartCut-Lite
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 import shutil
 
@@ -16,6 +17,7 @@ from shared.utils.config import JSON_STATES_DIR_SC
 from shared.utils.logger import get_logger
 from shared.utils.safe_runner import safe_main
 from smartcut.analyze.analyze_confidence import compute_confidence
+from smartcut.analyze.analyze_utils import extract_keywords_from_filename
 from smartcut.analyze.main_analyze import analyze_video_segments
 from smartcut.lite.relocate_and_rename_segments import relocate_and_rename_segments
 from smartcut.models_sc.lite_session import SmartCutLiteSession
@@ -70,8 +72,22 @@ def lite_cut(directory_path: Path) -> None:
         for seg in session.segments:
             if seg.ai_status == "done":
                 seg.confidence = compute_confidence(seg.description, seg.keywords)
+                seg.last_updated = datetime.now().isoformat()
+                seg.status = "confidence_done"
+                logger.info(f"  - Segment {seg.id}: confidence = {seg.confidence:.3f}")
+                if not seg.filename_predicted:
+                    logger.warning(f"⚠️ Seg {seg.uid} sans filename_predicted, impossible d'extraire les mots-clés.")
+                    continue
+                auto_keywords = extract_keywords_from_filename(seg.filename_predicted)
+                if seg.keywords:
+                    merged = set(seg.keywords + auto_keywords)
+                    seg.keywords = list(merged)
+                else:
+                    seg.keywords = auto_keywords.copy()
+
+                logger.debug(f"🏷️ Seg {seg.uid}: keywords enrichis → {seg.keywords}")
                 session.save(str(state_path))
-        session.status = "confidence_done"
+        session.status = "smartcut_done"
         session.save(str(state_path))
         logger.info("✅ Scores de confiance calculés pour %d segments.", len(session.segments))
 

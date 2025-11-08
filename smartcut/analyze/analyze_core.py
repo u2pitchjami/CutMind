@@ -73,9 +73,9 @@ def analyze_by_segments(
 
     vram_gpu()
     processor, model = load_qwen_model()
-    free, _ = vram_gpu()
+    free_gb, total_gb = vram_gpu()
     precision = get_model_precision(model)
-    batch_size = estimate_safe_batch_size(free, precision, SAFETY_MARGIN)
+    batch_size = estimate_safe_batch_size(free_gb, total_gb, precision, SAFETY_MARGIN)
     logger.info(f"🧠 Batch size estimé dynamiquement : {batch_size}")
 
     # --- 🔁 Boucle principale sur les segments SmartCut
@@ -126,6 +126,7 @@ def analyze_by_segments(
         seg.description = merged_description
         seg.keywords = keywords_list
         seg.ai_status = "done"
+        seg.status = "ia_done"
         seg.last_updated = datetime.now().isoformat()
         frame_data[seg.uid] = keywords_list
 
