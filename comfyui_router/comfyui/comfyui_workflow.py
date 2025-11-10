@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from comfyui_router.ffmpeg.ffmpeg_command import get_resolution
+from comfyui_router.ffmpeg.ffmpeg_command import get_fps, get_resolution
 from shared.utils.config import WORKFLOW_MAP
 from shared.utils.logger import get_logger
 
@@ -18,10 +18,14 @@ def route_workflow(video_path: Path) -> Path | None:
     Retourne le chemin du workflow à utiliser selon la hauteur de la vidéo.
     """
     _, height = get_resolution(video_path)
+    fps = get_fps(video_path)
     if height >= 1080:
         return WORKFLOW_MAP["1080p"]
     if height == 720:
-        return WORKFLOW_MAP["720p"]
+        if fps < 60:
+            return WORKFLOW_MAP["720p"]
+        else:
+            return WORKFLOW_MAP["720p_nofps"]
     if height in [360, 480]:
         return WORKFLOW_MAP["Autres"]
     return None
@@ -87,10 +91,10 @@ def inject_video_path(workflow: dict[str, Any], video_path: Path, frames_per_bat
         inputs = node.get("inputs", {})
 
         # 📥 Injection dans VHS_BatchManager
-        if node_type == "VHS_BatchManager":
-            if "frames_per_batch" in inputs:
+        if node_type == "easy int":
+            if "value" in inputs:
                 logger.info(f"✅ Injection frames_per_batch dans node ID {node_id}")
-                inputs["frames_per_batch"] = frames_per_batch
+                inputs["value"] = frames_per_batch
 
         # 📥 Injection dans VHS_LoadVideoPath
         if node_type == "VHS_LoadVideoPath":
@@ -103,15 +107,6 @@ def inject_video_path(workflow: dict[str, Any], video_path: Path, frames_per_bat
             if "filename_prefix" in inputs:
                 logger.info(f"✅ Injection nom fichier dans node ID {node_id}")
                 inputs["filename_prefix"] = filename_only
-
-        # # 📼 Injection dans VHS_VideoCombine
-        elif node_type == "easy saveText":
-            # if "output_file_path" in inputs:
-            #     logger.info(f"✅ Injection nom fichier dans node ID {node_id}")
-            #     inputs["output_file_path"] = "/basedir/smart_cut/temp_frames/"
-            if "file_name" in inputs:
-                logger.info(f"✅ Injection nom fichier dans node ID {node_id}")
-                inputs["file_name"] = filename_only
 
         # 🛠️ Correction éventuelle class_type manquant
         if "type" in node and "class_type" not in node:

@@ -40,6 +40,11 @@ explicit_package_bases = true
 exclude = "^(z_old|docker)/"  # regex unique (mypy attend une regex, pas une liste)
 
 [[tool.mypy.overrides]]
+module = "psutil.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
 module = "pydantic.*"
 ignore_missing_imports = true
 follow_imports = "skip"

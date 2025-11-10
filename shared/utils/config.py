@@ -111,6 +111,7 @@ COMFY_URL: str = get_required("COMFY_URL")
 WORKFLOW_MAP: dict[str, Path] = {
     "1080p": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 1080p.json",
     "720p": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 720p.json",
+    "720p_nofps": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 720p-nofps.json",
     "Autres": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion Autres.json",
 }
 
