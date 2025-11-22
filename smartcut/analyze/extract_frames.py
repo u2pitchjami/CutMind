@@ -7,12 +7,11 @@ import os
 import cv2
 
 from shared.utils.config import TMP_FRAMES_DIR_SC
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from smartcut.analyze.analyze_utils import compute_num_frames
 
-logger = get_logger("SmartCut")
 
-
+@with_child_logger
 def extract_segment_frames(
     cap: cv2.VideoCapture,
     video_name: str,
@@ -21,11 +20,15 @@ def extract_segment_frames(
     auto_frames: bool,
     fps_extract: float,
     base_rate: int,
+    logger: LoggerProtocol | None = None,
 ) -> list[str]:
+    logger = ensure_logger(logger, __name__)
     seg_duration = end - start
     logger.debug(f"Segment {start:.2f}s → {end:.2f}s | durée : {seg_duration:.2f}s")
 
-    num_frames = compute_num_frames(seg_duration, base_rate) if auto_frames else int(seg_duration * fps_extract)
+    num_frames = (
+        compute_num_frames(seg_duration, base_rate, logger=logger) if auto_frames else int(seg_duration * fps_extract)
+    )
     num_frames = max(1, num_frames)
     logger.debug(f"Nombre de frames à extraire : {num_frames}")
 

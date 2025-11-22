@@ -9,7 +9,7 @@ from typing import Any, cast
 from transformers import PreTrainedModel, ProcessorMixin
 
 from shared.utils.config import BATCH_FRAMES_DIR_SC
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from smartcut.analyze.analyze_torch_utils import (
     estimate_visual_tokens,
     release_gpu_memory,
@@ -20,14 +20,13 @@ from smartcut.analyze.analyze_utils import (
 from smartcut.gen_keywords.main_gen_keywords import generate_keywords_for_segment
 from smartcut.models_sc.ai_result import AIResult
 
-logger = get_logger("SmartCut")
-
 KeywordsBatches = list[AIResult]
 
 
 # ===========================================================
 # ⚙️ FONCTION DE TRAITEMENT PAR LOTS (batches)
 # ===========================================================
+@with_child_logger
 def process_batches(
     video_name: str,
     start: float,
@@ -36,11 +35,12 @@ def process_batches(
     batch_size: int,
     processor: ProcessorMixin,
     model: PreTrainedModel,
+    logger: LoggerProtocol | None = None,
 ) -> KeywordsBatches:
     """
     Traite un segment vidéo par lots et récupère les descriptions + mots-clés IA.
     """
-
+    logger = ensure_logger(logger, __name__)
     all_batches: KeywordsBatches = []
     num_batches = ceil(len(frame_paths) / batch_size)
 
@@ -69,6 +69,7 @@ def process_batches(
             processor=processor,
             model=model,
             num_frames=len(batch_paths),
+            logger=logger,
         )
 
         parsed_result: AIResult = {"description": "", "keywords": []}
@@ -106,7 +107,7 @@ def process_batches(
         logger.debug(f"🧠 Batch {b + 1}/{num_batches} keywords: {parsed_result['keywords']}")
 
         all_batches.append(parsed_result)
-        delete_frames(batch_dir)
-        release_gpu_memory(model, cache_only=True)
+        delete_frames(batch_dir, logger=logger)
+        release_gpu_memory(model, cache_only=True, logger=logger)
 
     return all_batches

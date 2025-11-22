@@ -2,10 +2,6 @@ from dataclasses import dataclass, field
 
 import yaml
 
-from shared.utils.logger import get_logger
-
-logger = get_logger("CutMind")
-
 
 @dataclass
 class KeywordRule:

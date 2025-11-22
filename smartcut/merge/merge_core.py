@@ -5,13 +5,12 @@ from __future__ import annotations
 from datetime import datetime
 import uuid
 
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from smartcut.merge.merge_utils import keyword_similarity
 from smartcut.models_sc.smartcut_model import Segment
 
-logger = get_logger("SmartCut")
 
-
+@with_child_logger
 def merge_similar_segments_optimized_v2(
     segments: list[Segment],
     threshold: float = 0.5,
@@ -19,10 +18,12 @@ def merge_similar_segments_optimized_v2(
     min_duration: float = 15.0,
     max_duration: float = 120.0,
     rattrapage: bool = True,
+    logger: LoggerProtocol | None = None,
 ) -> list[Segment]:
     """
     Version enrichie : fusionne les segments similaires tout en gérant les identifiants (id, uid) et la traçabilité.
     """
+    logger = ensure_logger(logger, __name__)
     if not segments:
         logger.warning("Aucun segment à traiter.")
         return []
@@ -44,7 +45,7 @@ def merge_similar_segments_optimized_v2(
     # --- 🧩 Étape 1 : fusion sémantique ---
     for seg in segments[1:]:
         seg.compute_duration()
-        sim = keyword_similarity(current.keywords, seg.keywords)
+        sim = keyword_similarity(current.keywords, seg.keywords, logger=logger)
         new_duration = seg.end - current.start
         if current.confidence is not None and seg.confidence is not None:
             conf_gap = abs(current.confidence - seg.confidence)
@@ -102,7 +103,7 @@ def merge_similar_segments_optimized_v2(
 
                 # 🔹 Fusion avec précédent
                 if prev_seg and abs(seg.start - prev_seg.end) < 0.01:
-                    sim = keyword_similarity(prev_seg.keywords, seg.keywords)
+                    sim = keyword_similarity(prev_seg.keywords, seg.keywords, logger=logger)
                     new_dur = seg.end - prev_seg.start
                     if sim >= threshold and new_dur <= max_duration:
                         prev_seg.end = seg.end
@@ -119,7 +120,7 @@ def merge_similar_segments_optimized_v2(
 
                 # 🔹 Fusion avec suivant
                 elif next_seg and abs(next_seg.start - seg.end) < 0.01:
-                    sim = keyword_similarity(seg.keywords, next_seg.keywords)
+                    sim = keyword_similarity(seg.keywords, next_seg.keywords, logger=logger)
                     new_dur = next_seg.end - seg.start
                     if sim >= threshold and new_dur <= max_duration:
                         seg.end = next_seg.end

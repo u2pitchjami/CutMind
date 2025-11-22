@@ -16,9 +16,8 @@ from pathlib import Path
 import re
 from typing import Any
 
-from shared.utils.logger import get_logger
-
-logger = get_logger("CutMind")
+from cutmind.models_cm.db_models import Segment
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 NULL_EQUIVALENTS = {"", "null", "none", "nan", "n/a"}
 
@@ -106,28 +105,30 @@ def build_new_data_from_csv_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def compare_segment(old: dict[str, Any], new: dict[str, Any], float_epsilon: float = 1e-6) -> list[str]:
+def compare_segment(old: Segment, new: dict[str, Any], float_epsilon: float = 1e-6) -> list[str]:
     diffs: list[str] = []
 
-    if (old.get("description") or "") != (new.get("description") or ""):
+    if (old.description or "") != (new.get("description") or ""):
         diffs.append("description")
 
-    old_conf = float(old.get("confidence") or 0.0)
+    old_conf = float(old.confidence or 0.0)
     new_conf = float(new.get("confidence") or 0.0)
     if abs(old_conf - new_conf) > float_epsilon:
         diffs.append("confidence")
 
-    if (old.get("status") or "") != (new.get("status") or ""):
+    if (old.status or "") != (new.get("status") or ""):
         diffs.append("status")
 
-    if (old.get("keywords") or []) != (new.get("keywords") or []):
+    if (old.keywords or []) != (new.get("keywords") or []):
         diffs.append("keywords")
 
     return diffs
 
 
-def cleanup_file(path: Path) -> None:
+@with_child_logger
+def cleanup_file(path: Path, logger: LoggerProtocol | None = None) -> None:
     """Supprime un fichier vidéo s’il existe."""
+    logger = ensure_logger(logger, __name__)
     try:
         if path.exists():
             path.unlink()
@@ -148,8 +149,10 @@ def write_csv_log(path: Path, rows: list[dict[str, str]]) -> None:
             writer.writerow({"timestamp": now, **r})
 
 
-def summarize_import(stats: dict[str, int], csv_log: Path) -> None:
+@with_child_logger
+def summarize_import(stats: dict[str, int], csv_log: Path, logger: LoggerProtocol | None = None) -> None:
     """Affiche le résumé du traitement."""
+    logger = ensure_logger(logger, __name__)
     logger.info(
         "🏁 Import — %d lues, %d MAJ, %d supprimées, %d inchangées, %d erreurs",
         stats["checked"],

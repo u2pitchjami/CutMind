@@ -8,18 +8,17 @@ import json
 from pathlib import Path
 import subprocess
 
-from shared.utils.logger import get_logger
-
-logger = get_logger("Shared")
-
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 # ========== Utils FFprobe/FFmpeg ==========
 
 
-def get_duration(video_path: Path) -> float:
+@with_child_logger
+def get_duration(video_path: Path, logger: LoggerProtocol | None = None) -> float:
     """
     Retourne la durée en secondes (0.0 si échec).
     """
+    logger = ensure_logger(logger, __name__)
     cmd: list[str] = [
         "ffprobe",
         "-v",
@@ -88,10 +87,12 @@ def get_fps(filepath: Path) -> float:
         return 0.0
 
 
-def detect_nvenc_available() -> bool:
+@with_child_logger
+def detect_nvenc_available(logger: LoggerProtocol | None = None) -> bool:
     """
     Vérifie si l'encodeur NVIDIA NVENC (hevc_nvenc) est disponible.
     """
+    logger = ensure_logger(logger, __name__)
     try:
         result = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True, check=True)
         return "hevc_nvenc" in result.stdout

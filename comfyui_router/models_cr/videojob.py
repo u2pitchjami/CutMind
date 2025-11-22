@@ -10,10 +10,11 @@ import psutil
 from comfyui_router.comfyui.comfyui_workflow import optimal_batch_size
 from comfyui_router.ffmpeg.ffmpeg_command import get_total_frames, video_has_audio
 from shared.ffmpeg.ffmpeg_utils import get_fps, get_resolution
-from shared.models.config_manager import CONFIG
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.settings import get_settings
 
-logger = get_logger("Comfyui Router")
+settings = get_settings()
+adaptive_cfg = settings.adaptive_batch
 
 
 @dataclass
@@ -36,14 +37,16 @@ class VideoJob:
         COMFYUI_VISIBLE_ROOT = Path("/basedir")
         return COMFYUI_VISIBLE_ROOT / full_path.relative_to(COMFYUI_HOST_ROOT)
 
-    def analyze(self) -> None:
+    @with_child_logger
+    def analyze(self, logger: LoggerProtocol | None = None) -> None:
         """
         Récupère les métadonnées vidéo via ffprobe.
         """
+        logger = ensure_logger(logger, __name__)
         self.resolution = get_resolution(self.path)
         self.fps_in = get_fps(self.path)
-        self.has_audio = video_has_audio(self.path)
-        self.nb_frames = get_total_frames(self.path)
+        self.has_audio = video_has_audio(self.path, logger=logger)
+        self.nb_frames = get_total_frames(self.path, logger=logger)
 
     def compute_optimal_batch(self, min_size: int, max_size: int) -> None:
         """
@@ -52,14 +55,14 @@ class VideoJob:
         """
         self.nb_frames_batch = optimal_batch_size(total_frames=self.nb_frames, min_size=min_size, max_size=max_size)
 
-    def apply_adaptive_batch(self, wf_path: Path) -> None:
+    @with_child_logger
+    def apply_adaptive_batch(self, wf_path: Path, logger: LoggerProtocol | None = None) -> None:
         """
         Calcule dynamiquement la taille de batch optimale
         en fonction du workflow et de la mémoire disponible.
         """
-
+        logger = ensure_logger(logger, __name__)
         try:
-            adaptive_cfg = CONFIG.comfyui_router["adaptive_batch"]
             batch_policy = adaptive_cfg.get("batch_policy", {})
             profiles = adaptive_cfg.get("workflow_profiles", {})
 

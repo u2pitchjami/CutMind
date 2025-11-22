@@ -7,15 +7,15 @@ import shutil
 import subprocess
 
 from shared.utils.config import TRASH_DIR
-from shared.utils.logger import get_logger
-
-logger = get_logger("Comfyui Router")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
-def is_interlaced(video_path: Path) -> bool:
+@with_child_logger
+def is_interlaced(video_path: Path, logger: LoggerProtocol | None = None) -> bool:
     """
     Retourne True si la vidéo est entrelacée.
     """
+    logger = ensure_logger(logger, __name__)
     try:
         cmd = [
             "ffprobe",
@@ -38,10 +38,14 @@ def is_interlaced(video_path: Path) -> bool:
         return False
 
 
-def deinterlace_video(input_path: Path, output_path: Path, use_cuda: bool = False) -> bool:
+@with_child_logger
+def deinterlace_video(
+    input_path: Path, output_path: Path, use_cuda: bool = False, logger: LoggerProtocol | None = None
+) -> bool:
     """
     Désentrelace une vidéo (CPU ou GPU selon l’option).
     """
+    logger = ensure_logger(logger, __name__)
     try:
         filter_type = "yadif_cuda" if use_cuda else "yadif"
         codec = "hevc_nvenc" if use_cuda else "libx265"
@@ -72,20 +76,24 @@ def deinterlace_video(input_path: Path, output_path: Path, use_cuda: bool = Fals
         return False
 
 
-def ensure_deinterlaced(video_path: Path, use_cuda: bool = True, cleanup: bool = True) -> Path:
+@with_child_logger
+def ensure_deinterlaced(
+    video_path: Path, use_cuda: bool = True, cleanup: bool = True, logger: LoggerProtocol | None = None
+) -> Path:
     """
     Vérifie si une vidéo est entrelacée et la désentrelace si nécessaire.
 
     Retourne le chemin à utiliser (inchangé ou nouveau).
     """
-    if not is_interlaced(video_path):
+    logger = ensure_logger(logger, __name__)
+    if not is_interlaced(video_path, logger=logger):
         logger.debug(f"✅ Vidéo progressive : {video_path.name}")
         return video_path
 
     logger.info(f"⚙️ Vidéo entrelacée détectée : {video_path.name}")
     deint_path = video_path.with_name(f"{video_path.stem}_deint.mp4")
 
-    if deinterlace_video(video_path, deint_path, use_cuda=use_cuda):
+    if deinterlace_video(video_path, deint_path, use_cuda=use_cuda, logger=logger):
         logger.info(f"✅ Vidéo désentrelacée : {deint_path.name}")
 
         if cleanup:

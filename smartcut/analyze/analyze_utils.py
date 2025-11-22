@@ -7,20 +7,20 @@ import json
 from pathlib import Path
 import re
 
-from shared.models.config_manager import CONFIG
 from shared.utils.config import TMP_FRAMES_DIR_SC
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.settings import get_settings
 from smartcut.models_sc.ai_result import AIResult
 from smartcut.models_sc.smartcut_model import SmartCutSession
 from smartcut.norm_keywords.keyword_normalizer import KeywordNormalizer
 
-logger = get_logger("SmartCut")
+settings = get_settings()
 
-QBIT = CONFIG.smartcut["analyse_segment"]["4bit"]
-BFLOAT16 = CONFIG.smartcut["analyse_segment"]["bfloat16"]
-FLOAT16 = CONFIG.smartcut["analyse_segment"]["float16"]
-FLOAT32 = CONFIG.smartcut["analyse_segment"]["float32"]
-DEFAULT = CONFIG.smartcut["analyse_segment"]["default"]
+QBIT = settings.analyse_segment.precision_4bit
+BFLOAT16 = settings.analyse_segment.precision_bfloat16
+FLOAT16 = settings.analyse_segment.precision_float16
+FLOAT32 = settings.analyse_segment.precision_float32
+DEFAULT = settings.analyse_segment.precision_default
 
 
 def extract_keywords_from_filename(filename: str | Path) -> list[str]:
@@ -50,15 +50,18 @@ def extract_keywords_from_filename(filename: str | Path) -> list[str]:
     return unique_keywords
 
 
+@with_child_logger
 def estimate_safe_batch_size(
     free_vram_gb: float,
     total_vram_gb: float,
     model_precision: str = "4bit",  # "bfloat16", "float16", etc.
     safety_margin_gb: float = 1.0,
+    logger: LoggerProtocol | None = None,
 ) -> int:
     """
     Estime dynamiquement un batch size sûr en fonction de la VRAM libre.
     """
+    logger = ensure_logger(logger, __name__)
     # Estimations empiriques à adapter si besoin
     est_mem_per_image = {
         "4bit": QBIT,
@@ -74,28 +77,32 @@ def estimate_safe_batch_size(
         f"Précision : {model_precision} | Coût/item : {est_mem_per_image:.2f} Go | "
         f"Marge : {safety_margin_gb:.2f} Go → Batch recommandé = {batch_size}"
     )
-
     return batch_size
 
 
-def compute_num_frames(segment_duration: float, base_rate: int = 5) -> int:
+@with_child_logger
+def compute_num_frames(segment_duration: float, base_rate: int = 5, logger: LoggerProtocol | None = None) -> int:
     """
     Compute number of frames to extract dynamically.
 
     - base_rate: number of frames per minute of video.
     - Minimum 3 frames per segment.
     """
+    logger = ensure_logger(logger, __name__)
     frames = max(3, int(base_rate * (segment_duration / 60)))
     logger.debug(f"({base_rate} * ({segment_duration} / 60) : {frames}")
     return frames
 
 
-def merge_keywords_across_batches(batch_outputs: list[AIResult]) -> tuple[str, list[str]]:
+@with_child_logger
+def merge_keywords_across_batches(
+    batch_outputs: list[AIResult], logger: LoggerProtocol | None = None
+) -> tuple[str, list[str]]:
     """
     Fusionne plusieurs réponses contenant des descriptions et des mots-clés.
     Gère JSON / texte brut, nettoie et limite la taille.
     """
-
+    logger = ensure_logger(logger, __name__)
     all_keywords: list[str] = []
     all_descriptions = []
 
@@ -148,7 +155,9 @@ def merge_keywords_across_batches(batch_outputs: list[AIResult]) -> tuple[str, l
     return merged_description, filtered_keywords
 
 
-def delete_frames(path: Path = Path(TMP_FRAMES_DIR_SC)) -> None:
+@with_child_logger
+def delete_frames(path: Path = Path(TMP_FRAMES_DIR_SC), logger: LoggerProtocol | None = None) -> None:
+    logger = ensure_logger(logger, __name__)
     for file in Path(path).glob("*.jpg"):
         # logger.debug(f"🧹 Vérifié : {file.name}")
         try:
@@ -158,16 +167,15 @@ def delete_frames(path: Path = Path(TMP_FRAMES_DIR_SC)) -> None:
             logger.warning(f"⚠️ Impossible de supprimer {file.name} : {e}")
 
 
+@with_child_logger
 def update_session_keywords(
-    session: SmartCutSession,
-    start: float,
-    end: float,
-    keywords_list: list[str],
+    session: SmartCutSession, start: float, end: float, keywords_list: list[str], logger: LoggerProtocol | None = None
 ) -> None:
+    logger = ensure_logger(logger, __name__)
     for segment in session.segments:
         if abs(segment.start - start) < 0.01 and abs(segment.end - end) < 0.01:
             normalizer = KeywordNormalizer(mode="mixed")
-            keywords_norm = normalizer.normalize_keywords(keywords_list)
+            keywords_norm = normalizer.normalize_keywords(keywords_list, logger=logger)
 
             logger.info(f"{keywords_list} → {keywords_norm}")
             segment.keywords = keywords_norm

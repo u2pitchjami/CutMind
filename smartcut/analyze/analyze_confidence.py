@@ -10,26 +10,27 @@ from __future__ import annotations
 from sentence_transformers import SentenceTransformer, util
 import torch
 
-from shared.models.config_manager import CONFIG
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.settings import get_settings
 
-logger = get_logger("SmartCut")
+settings = get_settings()
+MODEL_CONFIDENCE = settings.analyse_confidence.model_confidence
 
-MODEL_CONFIDENCE: str = CONFIG.smartcut["analyse_confidence"]["model_confidence"]
-DEVICE: str = CONFIG.smartcut["analyse_confidence"]["device"]
 
 # 🔧 Initialisation du modèle global
 MODEL = None
 
 
-def get_confidence_model() -> SentenceTransformer:
+@with_child_logger
+def get_confidence_model(logger: LoggerProtocol | None = None) -> SentenceTransformer:
     """
     Charge le modèle de similarité en mémoire (lazy-load, CPU par défaut).
     """
-    global MODEL, DEVICE
+    logger = ensure_logger(logger, __name__)
+    DEVICE = settings.analyse_confidence.device
+    global MODEL
     if MODEL is not None:
         return MODEL
-
     try:
         # 💡 Vérifie si le GPU est dispo, mais reste CPU par défaut
         if torch.cuda.is_available():
@@ -52,18 +53,20 @@ def get_confidence_model() -> SentenceTransformer:
     return MODEL
 
 
-def compute_confidence(description: str, keywords: list[str]) -> float:
+@with_child_logger
+def compute_confidence(description: str, keywords: list[str], logger: LoggerProtocol | None = None) -> float:
     """
     Calcule un score de confiance entre la description et les mots-clés associés.
 
     Retourne un score entre 0.0 et 1.0 basé sur la similarité cosinus.
     Si le modèle n’est pas dispo ou les champs vides → renvoie 0.0.
     """
+    logger = ensure_logger(logger, __name__)
     try:
         if not description or not keywords:
             return 0.0
 
-        model = get_confidence_model()
+        model = get_confidence_model(logger=logger)
         if not model:
             logger.warning("⚠️ Aucun modèle disponible pour le calcul de confiance.")
             return 0.0
@@ -83,9 +86,3 @@ def compute_confidence(description: str, keywords: list[str]) -> float:
     except Exception as e:
         logger.warning(f"⚠️ Erreur calcul confiance : {e}")
         return 0.0
-
-
-if __name__ == "__main__":
-    desc = "Un chat dort sur une chaise en bois."
-    keywords = ["chat", "sieste", "chaise", "intérieur"]
-    print(compute_confidence(desc, keywords))

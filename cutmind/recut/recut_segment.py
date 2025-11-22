@@ -4,51 +4,81 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import uuid
 
-from cutmind.db.manual_db import (
-    delete_segment,
-    get_current_segment_data,
-    insert_segment,
-)
-from cutmind.manual.manual_utils import cleanup_file, safe_to_float
-from cutmind.models_cm.cursor_protocol import DictCursorProtocol
-from cutmind.recut.ffmpeg_recut import ffmpeg_recut_video
+from cutmind.db.repository import CutMindRepository
+from cutmind.models_cm.db_models import Segment
+from cutmind.recut.ffmpeg_recut import ffmpeg_cut_one_segment
 from shared.utils.config import TRASH_DIR_SC
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.trash import move_to_trash
 
-logger = get_logger("CutMind")
 
+@with_child_logger
+def perform_recut(
+    segment: Segment,
+    recut_points: list[float],
+    logger: LoggerProtocol | None = None,
+) -> None:
+    logger = ensure_logger(logger, __name__)
+    repo = CutMindRepository()
+    if not segment or not segment.start or not segment.end or not segment.id:
+        return
+    input_path = Path(str(segment.output_path))
 
-def perform_recut(cur: DictCursorProtocol, seg_id: int, recut_points: list[float]) -> None:
-    """Découpe un segment existant en plusieurs nouveaux (ffmpeg)."""
-    old_data = get_current_segment_data(cur, seg_id)
-    if not old_data:
-        logger.warning("⚠️ Segment %s introuvable pour recut", seg_id)
+    if not input_path.exists():
+        logger.error("❌ Fichier segment introuvable : %s", input_path)
         return
 
-    input_path = Path(str(old_data["output_path"]))
+    recut_points = sorted(x for x in recut_points if segment.start < segment.start + x < segment.end)
+
+    # Construit les fenêtres temporelles
+    cuts = [segment.start, *(segment.start + p for p in recut_points), segment.end]
+
     output_dir = input_path.parent / "recut"
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        new_files = ffmpeg_recut_video(input_path, recut_points, output_dir)
-    except Exception as e:
-        logger.error("❌ Erreur ffmpeg recut %s : %s", seg_id, e)
-        return
+    for i in range(len(cuts) - 1):
+        start = cuts[i]
+        end = cuts[i + 1]
 
-    start, end = map(safe_to_float, (old_data.get("start", 0.0), old_data.get("end", 0.0)))
-    cuts = [start, *[start + float(p) for p in sorted(recut_points)], end]
+        # UID UNIQUE PAR SEGMENT
+        new_uid = str(uuid.uuid4())
 
-    for i, out_file in enumerate(new_files):
-        s_start, s_end = cuts[i], cuts[i + 1]
-        s_dur = s_end - s_start
-        insert_segment(cur, old_data, out_file, s_start, s_end, s_dur)
+        output_path = output_dir / f"seg_{segment.id:04d}_{new_uid}.mp4"
 
-    if old_data.get("output_path"):
-        old_output = Path(str(old_data.get("output_path")))
-        move_to_trash(file_path=old_output, trash_root=TRASH_DIR_SC)
-    delete_segment(cur, seg_id)
-    cleanup_file(Path(old_data.get("output_path") or ""))
+        try:
+            ffmpeg_cut_one_segment(input_path, start, end, output_path, logger=logger)
+        except Exception as e:
+            logger.error("❌ Erreur ffmpeg (cut %s): %s", segment.uid, e)
+            continue
+
+        new_seg = Segment(
+            uid=new_uid,
+            video_id=segment.video_id,
+            start=start,
+            end=end,
+            duration=end - start,
+            status="pending_check",
+            confidence=0.00,
+            description="",
+            fps=segment.fps,
+            resolution=segment.resolution,
+            codec=segment.codec,
+            bitrate=segment.bitrate,
+            filename_predicted=output_path.name,
+            output_path=str(output_path),
+            source_flow="manual_csv",
+            merged_from=[segment.uid],
+        )
+
+        repo._insert_segment(new_seg, logger=logger)
+
+    # une fois TOUT recut → poubelle l’ancien
+    move_to_trash(input_path, TRASH_DIR_SC, logger=logger)
+    repo.delete_segment(segment.id, logger=logger)
+
+    logger.info("🔪 Recut OK pour %s → %d nouveaux segments", segment.uid, len(cuts) - 1)
 
 
 def parse_recut_points(status: str) -> list[float]:

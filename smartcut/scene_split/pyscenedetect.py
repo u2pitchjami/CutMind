@@ -2,35 +2,39 @@
 
 from __future__ import annotations
 
-from scenedetect import ContentDetector, FrameTimecode, SceneManager, open_video  # type: ignore
+from scenedetect import ContentDetector, FrameTimecode, SceneManager, VideoManager  # type: ignore
 
-from shared.utils.logger import get_logger
-
-logger = get_logger("SmartCut")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
+@with_child_logger
 def detect_scenes_with_pyscenedetect(
     video_path: str,
     threshold: float = 30.0,
     min_scene_len: int = 15,
     start: float | None = None,
     end: float | None = None,
+    downscale_factor: int = 1,
+    logger: LoggerProtocol | None = None,
 ) -> list[tuple[float, float]]:
     """
     Détection PySceneDetect sur une vidéo entière ou un intervalle spécifique (start/end en secondes).
     """
-    video = open_video(video_path)
+    logger = ensure_logger(logger, __name__)
+    video_manager = VideoManager([video_path])
+    video_manager.set_downscale_factor(downscale_factor)
     scene_manager = SceneManager()
     scene_manager.add_detector(ContentDetector(threshold=threshold, min_scene_len=min_scene_len))
 
-    start_tc = FrameTimecode(timecode=start, fps=video.frame_rate) if start else None
-    end_tc = FrameTimecode(timecode=end, fps=video.frame_rate) if end else None
+    start_tc = FrameTimecode(timecode=start, fps=video_manager.frame_rate) if start else None
+    end_tc = FrameTimecode(timecode=end, fps=video_manager.frame_rate) if end else None
 
     if start_tc:
-        video.seek(start_tc)
+        video_manager.seek(start_tc)
 
+    logger.debug(f"detect_scenes_with_pyscenedetect : Scenes detection: {start_tc} - {end_tc}")
     # Détection de scènes
-    scene_manager.detect_scenes(video, end_time=end_tc)
+    scene_manager.detect_scenes(video_manager, end_time=end_tc)
     scenes = scene_manager.get_scene_list()
 
     # Filtrage manuel pour compatibilité <0.6
@@ -42,14 +46,18 @@ def detect_scenes_with_pyscenedetect(
         if end and s_sec >= end:
             continue
         filtered.append((max(s_sec, start or 0.0), min(e_sec, end or e_sec)))
-
+    logger.debug(f"detect_scenes_with_pyscenedetect : Scenes detected: {len(filtered)}scenes --> {filtered}")
     return filtered
 
 
-def fill_missing_segments(scenes: list[tuple[float, float]], video_duration: float) -> list[tuple[float, float]]:
+@with_child_logger
+def fill_missing_segments(
+    scenes: list[tuple[float, float]], video_duration: float, logger: LoggerProtocol | None = None
+) -> list[tuple[float, float]]:
     """
     Ajoute des segments virtuels pour combler les zones sans détection.
     """
+    logger = ensure_logger(logger, __name__)
     if not scenes:
         return [(0.0, video_duration)]
 
@@ -83,16 +91,19 @@ def fill_missing_segments(scenes: list[tuple[float, float]], video_duration: flo
     return all_segments
 
 
+@with_child_logger
 def refine_long_segments(
     video_path: str,
     scenes: list[tuple[float, float]],
     thresholds: list[float],
     min_duration: float = 5.0,
     max_duration: float = 180.0,
+    logger: LoggerProtocol | None = None,
 ) -> list[tuple[float, float]]:
     """
     Raffine les segments trop longs (ou proches du max) via descente de seuil dynamique.
     """
+    logger = ensure_logger(logger, __name__)
     refined: list[tuple[float, float]] = []
 
     for start, end in scenes:
@@ -109,7 +120,7 @@ def refine_long_segments(
         # boucle descendante jusqu’à obtenir une coupure
         sub_scenes = []
         for t in thresholds:
-            sub_scenes = detect_scenes_with_pyscenedetect(video_path, threshold=t, start=start, end=end)
+            sub_scenes = detect_scenes_with_pyscenedetect(video_path, threshold=t, start=start, end=end, logger=logger)
             if sub_scenes:
                 logger.debug(f"🪓 {len(sub_scenes)} sous-segments trouvés à th={t}")
                 break

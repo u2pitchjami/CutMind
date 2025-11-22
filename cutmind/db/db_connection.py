@@ -25,18 +25,18 @@ from pymysql.cursors import DictCursor
 
 from cutmind.models_cm.cursor_protocol import DictCursorProtocol, TupleCursorProtocol
 from cutmind.models_cm.db_config import DB_CONFIG
-from shared.utils.logger import get_logger
-
-logger = get_logger("CutMind")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
 # -------------------------------------------------------------------
 # 🔌 Connexion principale
 # -------------------------------------------------------------------
-def get_db_connection() -> Connection:
+@with_child_logger
+def get_db_connection(logger: LoggerProtocol | None = None) -> Connection:
     """
     Ouvre une connexion MySQL/MariaDB avec gestion d’erreurs et logs.
     """
+    logger = ensure_logger(logger, __name__)
     try:
         conn = pymysql.connect(**DB_CONFIG)
         logger.debug("✅ Connexion DB ouverte : %s@%s:%s", DB_CONFIG["user"], DB_CONFIG["host"], DB_CONFIG["port"])
@@ -67,7 +67,8 @@ def get_tuple_cursor(conn: Connection) -> TupleCursorProtocol:
 # ⚙️ Context manager complet
 # -------------------------------------------------------------------
 @contextmanager
-def db_conn(*, autocommit: bool = False) -> Iterator[Connection]:
+@with_child_logger
+def db_conn(*, autocommit: bool = False, logger: LoggerProtocol | None = None) -> Iterator[Connection]:
     """
     Ouvre une connexion, gère commit/rollback/close automatiquement.
 
@@ -77,7 +78,8 @@ def db_conn(*, autocommit: bool = False) -> Iterator[Connection]:
                 cur.execute("SELECT * FROM videos LIMIT 5")
                 rows = cur.fetchall()
     """
-    conn = get_db_connection()
+    logger = ensure_logger(logger, __name__)
+    conn = get_db_connection(logger=logger)
     conn.autocommit(autocommit)
     try:
         yield conn

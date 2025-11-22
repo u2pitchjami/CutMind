@@ -1,12 +1,11 @@
 import os
 from pathlib import Path
 
-from shared.utils.logger import get_logger
-
-logger = get_logger("Shared")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
-def remove_empty_dirs(root_path: str | Path, dry_run: bool = False) -> int:
+@with_child_logger
+def remove_empty_dirs(root_path: str | Path, dry_run: bool = False, logger: LoggerProtocol | None = None) -> int:
     """
     Supprime récursivement les sous-dossiers vides dans un dossier donné.
 
@@ -17,6 +16,7 @@ def remove_empty_dirs(root_path: str | Path, dry_run: bool = False) -> int:
     Returns:
         int: nombre de dossiers supprimés
     """
+    logger = ensure_logger(logger, __name__)
     root = Path(root_path).resolve()
     if not root.exists() or not root.is_dir():
         logger.warning("🚫 Le chemin %s n'existe pas ou n'est pas un dossier.", root)

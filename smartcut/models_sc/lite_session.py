@@ -22,16 +22,16 @@ import cv2
 from pymediainfo import MediaInfo
 
 from shared.utils.config import JSON_STATES_DIR_SC
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from smartcut.models_sc.smartcut_model import Segment, SmartCutSession  # ton modèle actuel
-
-logger = get_logger("SmartCut")
 
 
 class SmartCutLiteSession(SmartCutSession):
     """Version allégée de SmartCutSession pour segments déjà découpés."""
 
-    def __init__(self, dir_path: Path, virtual_name: str | None = None):
+    @with_child_logger
+    def __init__(self, dir_path: Path, virtual_name: str | None = None, logger: LoggerProtocol | None = None):
+        logger = ensure_logger(logger, __name__)
         # ⚠️ Pas d'appel à super().__init__() pour éviter la dépendance à la vidéo mère
         self.video = f"[retro] {dir_path.name}"
         self.video_name = dir_path.name
@@ -59,10 +59,12 @@ class SmartCutLiteSession(SmartCutSession):
     # ============================================================
     # 🎞️ 1️⃣ Chargement des segments depuis le dossier
     # ============================================================
-    def load_segments_from_directory(self) -> None:
+    @with_child_logger
+    def load_segments_from_directory(self, logger: LoggerProtocol | None = None) -> None:
         """
         Crée un Segment() pour chaque fichier vidéo trouvé dans le dossier.
         """
+        logger = ensure_logger(logger, __name__)
         video_files = sorted(list(self.dir_path.glob("*.mp4")) + list(self.dir_path.glob("*.mkv")))
         if not video_files:
             logger.warning("⚠️ Aucun segment trouvé dans %s", self.dir_path)
@@ -90,11 +92,13 @@ class SmartCutLiteSession(SmartCutSession):
     # ============================================================
     # 🧠 2️⃣ Enrichissement des métadonnées segment par segment
     # ============================================================
-    def enrich_segments_metadata(self) -> None:
+    @with_child_logger
+    def enrich_segments_metadata(self, logger: LoggerProtocol | None = None) -> None:
         """
         Récupère les métadonnées techniques pour chaque segment vidéo.
         Utilise pymediainfo si disponible, sinon fallback sur OpenCV.
         """
+        logger = ensure_logger(logger, __name__)
         if not self.segments:
             logger.warning("⚠️ Aucun segment à enrichir.")
             return
@@ -152,10 +156,12 @@ class SmartCutLiteSession(SmartCutSession):
     # ============================================================
     # 💾 3️⃣ Sauvegarde JSON
     # ============================================================
-    def save(self, path: str | None = None) -> None:
+    @with_child_logger
+    def save(self, path: str | None = None, logger: LoggerProtocol | None = None) -> None:
         """
         Sauvegarde la session au format JSON SmartCut standard.
         """
+        logger = ensure_logger(logger, __name__)
         path = path or str(self.output_dir / f"{self.dir_path.name}.smartcut_state.json")
         self.state_path = path
         self.output_dir.mkdir(parents=True, exist_ok=True)

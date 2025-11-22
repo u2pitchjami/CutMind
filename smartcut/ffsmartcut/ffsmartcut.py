@@ -10,20 +10,20 @@ import subprocess
 
 import ffmpeg  # type: ignore
 
-from shared.models.config_manager import CONFIG
 from shared.utils.config import SAFE_FORMATS
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.settings import get_settings
 from smartcut.models_sc.smartcut_model import SmartCutSession
 
-logger = get_logger("SmartCut")
+settings = get_settings()
+PRESET = settings.ffsmartcut.preset
+RC = settings.ffsmartcut.rc
+CQ = settings.ffsmartcut.cq
+PIX_FMT = settings.ffsmartcut.pix_fmt
+VCODEC = settings.ffsmartcut.vcodec
 
-PRESET = CONFIG.smartcut["ffsmartcut"]["preset"]
-RC = CONFIG.smartcut["ffsmartcut"]["rc"]
-CQ = CONFIG.smartcut["ffsmartcut"]["cq"]
-PIX_FMT = CONFIG.smartcut["ffsmartcut"]["pix_fmt"]
-VCODEC = CONFIG.smartcut["ffsmartcut"]["vcodec"]
 
-
+@with_child_logger
 def cut_video(
     video_path: Path,
     start: float,
@@ -39,10 +39,13 @@ def cut_video(
     preset_gpu: str = "p7",
     session: SmartCutSession | None = None,  # 🧠 session SmartCut (optionnelle)
     state_path: Path | None = None,  # 💾 JSON à mettre à jour
+    logger: LoggerProtocol | None = None,
 ) -> Path | None:
     """
     Effectue la découpe réelle (encode CPU/GPU) et met à jour la session SmartCut.
     """
+    logger = ensure_logger(logger, __name__)
+
     codec = vcodec_gpu if use_cuda else vcodec_cpu
     preset = preset_gpu if use_cuda else preset_cpu
     hwaccel = "cuda" if use_cuda else "auto"

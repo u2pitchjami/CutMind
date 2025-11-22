@@ -4,10 +4,6 @@ from __future__ import annotations
 
 import torch
 
-from shared.utils.logger import get_logger
-
-logger = get_logger("SmartCut")
-
 
 def get_free_vram_gb() -> float:
     """

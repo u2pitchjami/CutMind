@@ -121,6 +121,7 @@ WORKFLOW_MAP: dict[str, Path] = {
 LOG_FILE_PATH = get_str("LOG_FILE_PATH", "logs")
 LOG_ROTATION_DAYS = get_int("LOG_ROTATION_DAYS", 100)
 LOG_LEVEL: str = get_str("LOG_LEVEL", "INFO").upper()
+LOG_SPLIT_LEVELS = get_bool("LOG_SPLIT_LEVELS", "false")
 
 # DEV
 DEV_SRC = get_str("DEV_SRC")
@@ -143,9 +144,9 @@ DB_NAME = str(get_required("DB_NAME"))
 CUTMIND_BASEDIR = Path(get_path_required("CUTMIND_BASEDIR"))
 MANUAL_CSV_PATH = get_str("MANUAL_CSV_PATH")
 CSV_LOG_PATH = get_str("CSV_LOG_PATH")
-JSON_STATES = get_str("JSON_STATES", "/basedir/smart_cut/states")
-JSON_VALIDATED = get_str("JSON_VALIDATED", "/basedir/smart_cut/states/validated")
-MANUAL_JSON = get_str("MANUAL_JSON", "/basedir/smart_cut/states/manual_review")
+JSON_STATES = get_str("JSON_STATES", "/basedir/SmartCut/states")
+JSON_IMPORTED = get_str("JSON_IMPORTED", "/basedir/SmartCut/states/imported")
+JSON_PYSCENE = get_str("JSON_PYSCENE", "/basedir/SmartCut/states/pyscene")
 WORKDIR_CM = get_str("WORKDIR_CM", "/basedir/_work")
 
 CATEGORIES_RULES = Path(get_path_required("CATEGORIES_RULES"))

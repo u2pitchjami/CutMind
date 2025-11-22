@@ -50,9 +50,9 @@ class PathMigrationTool:
         query = f"CREATE TABLE IF NOT EXISTS backup_{self.table}_paths AS SELECT id, {self.column} FROM {self.table};"
 
         try:
-            with db_conn() as conn:
+            with db_conn(logger=logger) as conn:
                 with get_dict_cursor(conn) as cur:
-                    safe_execute_dict(cur, query)
+                    safe_execute_dict(cur, query, logger=logger)
             logger.info("✔ Backup créée : backup_%s_paths", self.table)
         except Exception as err:  # pylint: disable=broad-except
             logger.error("Erreur lors de la création de la sauvegarde : %s", err)
@@ -73,9 +73,9 @@ class PathMigrationTool:
             )
 
             try:
-                with db_conn() as conn:
+                with db_conn(logger=logger) as conn:
                     with get_dict_cursor(conn) as cur:
-                        safe_execute_dict(cur, query, (old, new, f"{old}%"))
+                        safe_execute_dict(cur, query, (old, new, f"{old}%"), logger=logger)
                         rows = cur.fetchall()
 
                 if not rows:
@@ -102,9 +102,9 @@ class PathMigrationTool:
         query = f"SELECT id, {self.column} AS path FROM {self.table} WHERE NOT ({like_clauses});"
 
         try:
-            with db_conn() as conn:
+            with db_conn(logger=logger) as conn:
                 with get_dict_cursor(conn) as cur:
-                    safe_execute_dict(cur, query)
+                    safe_execute_dict(cur, query, logger=logger)
                     rows = cur.fetchall()
 
             if not rows:
@@ -132,9 +132,9 @@ class PathMigrationTool:
             )
 
             try:
-                with db_conn() as conn:
+                with db_conn(logger=logger) as conn:
                     with get_dict_cursor(conn) as cur:
-                        safe_execute_dict(cur, query, (old, new, f"{old}%"))
+                        safe_execute_dict(cur, query, (old, new, f"{old}%"), logger=logger)
                 logger.info("✔ Remplacement effectué : %s → %s", old, new)
 
             except Exception as err:  # pylint: disable=broad-except
@@ -153,9 +153,9 @@ class PathMigrationTool:
         )
 
         try:
-            with db_conn() as conn:
+            with db_conn(logger=logger) as conn:
                 with get_dict_cursor(conn) as cur:
-                    safe_execute_dict(cur, query)
+                    safe_execute_dict(cur, query, logger=logger)
             logger.info("✔ Rollback terminé.")
         except Exception as err:  # pylint: disable=broad-except
             logger.error("Erreur rollback : %s", err)

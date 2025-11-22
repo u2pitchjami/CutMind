@@ -5,16 +5,14 @@ from __future__ import annotations
 import gc
 
 import torch
-from transformers import (
-    PreTrainedModel,
-)
+from transformers import PreTrainedModel
 
-from shared.models.config_manager import CONFIG
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.settings import get_settings
 
-logger = get_logger("SmartCut")
+settings = get_settings()
 
-LIMIT_TOKENS = CONFIG.smartcut["analyse_segment"]["limit_tokens"]
+LIMIT_TOKENS = settings.analyse_segment.limit_tokens
 
 
 def get_model_precision(model: torch.nn.Module) -> str:
@@ -38,10 +36,12 @@ def get_model_precision(model: torch.nn.Module) -> str:
     return "unknown"
 
 
-def vram_gpu() -> tuple[float, float]:
+@with_child_logger
+def vram_gpu(logger: LoggerProtocol | None = None) -> tuple[float, float]:
     """
     Retourne la (VRAM libre, VRAM totale) en Go et logge l'état.
     """
+    logger = ensure_logger(logger, __name__)
     free_bytes, total_bytes = torch.cuda.mem_get_info()
     free_gb = free_bytes / 1e9
     total_gb = total_bytes / 1e9
@@ -49,13 +49,17 @@ def vram_gpu() -> tuple[float, float]:
     return free_gb, total_gb
 
 
-def release_gpu_memory(model: PreTrainedModel = None, cache_only: bool = True) -> None:
+@with_child_logger
+def release_gpu_memory(
+    model: PreTrainedModel = None, cache_only: bool = True, logger: LoggerProtocol | None = None
+) -> None:
     """
     Libère la mémoire GPU :
 
     - Si cache_only=True : ne décharge pas le modèle, vide uniquement le cache et les tensors temporaires
     - Si cache_only=False : décharge aussi le modèle de la VRAM
     """
+    logger = ensure_logger(logger, __name__)
     if not cache_only and model is not None:
         del model
 

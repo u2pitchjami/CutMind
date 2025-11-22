@@ -15,10 +15,9 @@ from pathlib import Path
 
 from cutmind.db.db_connection import db_conn, get_dict_cursor
 from cutmind.db.manual_db import (
-    delete_segment,
-    get_current_segment_data,
     update_segment_from_csv,
 )
+from cutmind.db.repository import CutMindRepository
 from cutmind.manual.manual_utils import (
     build_new_data_from_csv_row,
     compare_segment,
@@ -28,60 +27,67 @@ from cutmind.manual.manual_utils import (
 from cutmind.recut.recut_segment import parse_recut_points, perform_recut
 from cutmind.validation.revalidate_manual import revalidate_manual_videos
 from shared.utils.config import CSV_LOG_PATH, MANUAL_CSV_PATH, TRASH_DIR_SC
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.trash import move_to_trash
 
-logger = get_logger("CutMind")
 
-
-def update_segments_csv(manual_csv: Path = Path(MANUAL_CSV_PATH), csv_log: Path = Path(CSV_LOG_PATH)) -> None:
+@with_child_logger
+def update_segments_csv(
+    manual_csv: Path = Path(MANUAL_CSV_PATH), csv_log: Path = Path(CSV_LOG_PATH), logger: LoggerProtocol | None = None
+) -> None:
     """Import principal des segments CSV vers la base."""
+    logger = ensure_logger(logger, __name__)
     stats = {"checked": 0, "updated": 0, "deleted": 0, "unchanged": 0, "errors": 0}
     log_rows: list[dict[str, str]] = []
 
-    with db_conn() as conn:
-        with get_dict_cursor(conn) as cur, open(manual_csv, newline="", encoding="utf-8") as f:
+    with db_conn(logger=logger) as conn:
+        with get_dict_cursor(conn), open(manual_csv, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for row in reader:
                 seg_id = row.get("segment_id")
                 if not seg_id:
                     continue
                 stats["checked"] += 1
-
+                repo = CutMindRepository()
                 try:
-                    old_data = get_current_segment_data(cur, int(seg_id))
+                    video_id = repo.get_video_id_from_segment_id(int(seg_id), logger=logger)
+                    video = repo.get_video_with_segments(video_id=video_id, logger=logger)
+                    if not video:
+                        continue
+                    segment = next(s for s in video.segments if s.id == int(seg_id))
+
                     new_data = build_new_data_from_csv_row(row)
                     status = new_data["status"]
 
                     if status in ("delete", "to_delete"):
-                        if old_data.get("output_path"):
-                            old_output = Path(str(old_data.get("output_path")))
-                            move_to_trash(file_path=old_output, trash_root=TRASH_DIR_SC)
-                        delete_segment(cur, int(seg_id))
+                        if segment.output_path:
+                            old_output = Path(segment.output_path)
+                            move_to_trash(file_path=old_output, trash_root=TRASH_DIR_SC, logger=logger)
+                        repo.delete_segment(int(seg_id), logger=logger)
                         stats["deleted"] += 1
                         log_rows.append({"segment_id": seg_id, "action": "deleted", "differences": "ALL"})
                         continue
 
                     recut_points = parse_recut_points(status)
                     if recut_points:
-                        perform_recut(cur, int(seg_id), recut_points)
+                        perform_recut(segment, recut_points, logger=logger)
                         stats["updated"] += 1
                         log_rows.append(
                             {"segment_id": seg_id, "action": f"recut @{recut_points}", "differences": "recut"}
                         )
                         continue
 
-                    if not old_data:
+                    if not segment:
                         logger.warning("⚠️ Segment %s non trouvé", seg_id)
                         continue
 
-                    diffs = compare_segment(old_data, new_data)
+                    diffs = compare_segment(segment, new_data)
                     if not diffs:
                         stats["unchanged"] += 1
                         log_rows.append({"segment_id": seg_id, "action": "unchanged", "differences": ""})
                         continue
 
-                    update_segment_from_csv(cur, int(seg_id), new_data)
+                    update_segment_from_csv(segment, new_data, diffs, logger=logger)
                     stats["updated"] += 1
                     log_rows.append({"segment_id": seg_id, "action": "updated", "differences": ", ".join(diffs)})
 
@@ -93,5 +99,5 @@ def update_segments_csv(manual_csv: Path = Path(MANUAL_CSV_PATH), csv_log: Path 
             conn.commit()
 
     write_csv_log(csv_log, log_rows)
-    summarize_import(stats, csv_log)
-    revalidate_manual_videos()
+    summarize_import(stats, csv_log, logger=logger)
+    revalidate_manual_videos(logger=logger)

@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import re
 
-from shared.utils.logger import get_logger
-
-logger = get_logger("SmartCut")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
 def clean(text: str) -> list[str]:
@@ -18,10 +16,12 @@ def clean(text: str) -> list[str]:
     return re.sub(r"[^\w\s]", " ", text.lower()).split()
 
 
-def keyword_similarity(a: list[str], b: list[str]) -> float:
+@with_child_logger
+def keyword_similarity(a: list[str], b: list[str], logger: LoggerProtocol | None = None) -> float:
     """
     Score de similarité basique entre deux listes de mots-clés (Jaccard).
     """
+    logger = ensure_logger(logger, __name__)
     logger.debug(f"a : {type(a)} : {a[:50]}")
     logger.debug(f"b : {type(b)} : {b[:50]}")
     words_a = [w for kw in a for w in clean(kw)]
@@ -37,7 +37,3 @@ def keyword_similarity(a: list[str], b: list[str]) -> float:
 
     logger.debug("Similarity between %s and %s = %.2f", set_a, set_b, score)
     return score
-
-
-if __name__ == "__main__":
-    keyword_similarity(a=["truc, bidule"], b=["bidule, chouette"])

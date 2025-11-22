@@ -9,9 +9,8 @@ from typing import Any
 
 import yaml
 
-from shared.utils.logger import get_logger
-
-logger = get_logger("Shared")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.settings import init_settings
 
 YamlDict = dict[str, Any]
 
@@ -21,12 +20,16 @@ class ConfigManager:
     Charge, valide et centralise toutes les configurations SmartCut.
     """
 
-    def __init__(self, config_dir: Path | None = None) -> None:
+    @with_child_logger
+    def __init__(self, config_dir: Path | None = None, logger: LoggerProtocol | None = None) -> None:
+        logger = ensure_logger(logger, __name__)
         self.config_dir: Path = config_dir or Path("/app/config")
-        self._reload_all()
+        self._reload_all(logger=logger)
 
     # --- Chargement YAML générique --- #
-    def _load_yaml(self, filename: str) -> YamlDict:
+    @with_child_logger
+    def _load_yaml(self, filename: str, logger: LoggerProtocol | None = None) -> YamlDict:
+        logger = ensure_logger(logger, __name__)
         path = self.config_dir / filename
         if not path.exists():
             logger.warning("⚠️ Fichier de configuration manquant : %s", path)
@@ -47,14 +50,18 @@ class ConfigManager:
             return {}
 
     # --- Chargement complet --- #
-    def _reload_all(self) -> None:
-        self.smartcut: YamlDict = self._load_yaml("smartcut.yaml")
-        self.comfyui_router: YamlDict = self._load_yaml("comfyui_router.yaml")
+    @with_child_logger
+    def _reload_all(self, logger: LoggerProtocol | None = None) -> None:
+        logger = ensure_logger(logger, __name__)
+        self.smartcut: YamlDict = self._load_yaml("smartcut.yaml", logger=logger)
+        self.comfyui_router: YamlDict = self._load_yaml("comfyui_router.yaml", logger=logger)
         # self.paths: YamlDict = self._load_yaml("paths.yaml")
         # self.keywords: YamlDict = self._load_yaml("keywords.yaml")
-        self._ensure_defaults()
+        self._ensure_defaults(logger=logger)
 
-    def _ensure_defaults(self) -> None:
+    @with_child_logger
+    def _ensure_defaults(self, logger: LoggerProtocol | None = None) -> None:
+        logger = ensure_logger(logger, __name__)
         for section in ("smartcut", "comfyui_router", "paths", "keywords"):
             if not hasattr(self, section):
                 setattr(self, section, {})
@@ -85,10 +92,12 @@ class ConfigManager:
                     errors.append(f"⛔ Clé manquante : {path + key}")
         return errors
 
-    def validate(self, strict: bool = True) -> bool:
+    @with_child_logger
+    def validate(self, strict: bool = True, logger: LoggerProtocol | None = None) -> bool:
         """
         Valide la structure minimale des fichiers YAML.
         """
+        logger = ensure_logger(logger, __name__)
         logger.info("🧩 Validation de la configuration SmartCut…")
 
         errors: list[str] = []
@@ -123,11 +132,36 @@ class ConfigManager:
         logger.info("✅ Validation réussie — toutes les clés requises sont présentes.")
         return True
 
-    def reload(self) -> None:
+    @with_child_logger
+    def reload(self, logger: LoggerProtocol | None = None) -> None:
+        logger = ensure_logger(logger, __name__)
         logger.info("♻️ Rechargement complet des fichiers YAML…")
-        self._reload_all()
+        self._reload_all(logger=logger)
         logger.info("✅ Rechargement terminé.")
 
 
 # --- Instance globale --- #
-CONFIG = ConfigManager()
+_CONFIG: ConfigManager | None = None
+
+
+def get_config() -> ConfigManager:
+    if _CONFIG is None:
+        raise RuntimeError("CONFIG non initialisé. Appeler boot() ou main() d'abord.")
+    return _CONFIG
+
+
+def set_config(cfg: ConfigManager) -> None:
+    global _CONFIG
+    _CONFIG = cfg
+
+
+@with_child_logger
+def reload_and_apply(logger: LoggerProtocol | None = None) -> None:
+    """
+    Recharge les YAML et met à jour SETTINGS d’un seul coup.
+    Fonction utilitaire destinée aux modules haut-niveau.
+    """
+    logger = ensure_logger(logger, __name__)
+    cfg = get_config()
+    cfg.reload(logger=logger)
+    init_settings(cfg)

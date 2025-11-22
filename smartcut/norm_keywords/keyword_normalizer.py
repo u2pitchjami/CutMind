@@ -9,15 +9,14 @@ from pathlib import Path
 
 from sentence_transformers import SentenceTransformer, util
 
-from shared.models.config_manager import CONFIG
 from shared.utils.config import KW_CACHE_FILE_SC, KW_FORBIDDEN_FILE_SC, KW_MAPPING_FILE_SC
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.settings import get_settings
 
-logger = get_logger("SmartCut")
-
-MODEL_NAME = CONFIG.smartcut["keyword_normalizer"]["model_name_key"]
-MODE = CONFIG.smartcut["keyword_normalizer"]["mode"]
-SIMILARITY_THRESHOLD = CONFIG.smartcut["keyword_normalizer"]["similarity_threshold"]
+settings = get_settings()
+MODEL_NAME = settings.keyword_normalizer.model_name_key
+MODE = settings.keyword_normalizer.mode
+SIMILARITY_THRESHOLD = settings.keyword_normalizer.similarity_threshold
 
 
 class KeywordNormalizer:
@@ -47,11 +46,12 @@ class KeywordNormalizer:
             raise ValueError("Mode invalide : choisissez 'full', 'strict' ou 'mixed'.")
 
     # -------------------- Gestion fichiers -------------------- #
-
-    def _load_mapping(self, path: Path) -> dict[str, str]:
+    @with_child_logger
+    def _load_mapping(self, path: Path, logger: LoggerProtocol | None = None) -> dict[str, str]:
         """
         Charge le mapping depuis mapping.json, ou renvoie un dict vide si absent.
         """
+        logger = ensure_logger(logger, __name__)
         if path.exists():
             try:
                 with open(path, encoding="utf-8") as f:
@@ -75,10 +75,12 @@ class KeywordNormalizer:
             logger.info("ℹ️ Aucun mapping.json trouvé — aucun mapping appliqué.")
             return {}
 
-    def _save_mapping(self) -> None:
+    @with_child_logger
+    def _save_mapping(self, logger: LoggerProtocol | None = None) -> None:
         """
         Sauvegarde le mapping trié alphabétiquement dans mapping.json.
         """
+        logger = ensure_logger(logger, __name__)
         try:
             sorted_mapping = dict(sorted(self.mapping.items()))
             with open(KW_MAPPING_FILE_SC, "w", encoding="utf-8") as f:
@@ -87,10 +89,12 @@ class KeywordNormalizer:
         except Exception as e:
             logger.error("Erreur lors de la sauvegarde du mapping : %s", e)
 
-    def _load_forbidden(self, path: Path) -> set[str]:
+    @with_child_logger
+    def _load_forbidden(self, path: Path, logger: LoggerProtocol | None = None) -> set[str]:
         """
         Charge la liste de mots interdits depuis forbidden.json et la trie alphabétiquement.
         """
+        logger = ensure_logger(logger, __name__)
         if path.exists():
             try:
                 with open(path, encoding="utf-8") as f:
@@ -104,10 +108,12 @@ class KeywordNormalizer:
             logger.warning("Aucun forbidden.json trouvé — pas de filtre appliqué.")
         return set()
 
-    def _save_forbidden(self) -> None:
+    @with_child_logger
+    def _save_forbidden(self, logger: LoggerProtocol | None = None) -> None:
         """
         Sauvegarde la liste de mots interdits triée alphabétiquement dans forbidden.json.
         """
+        logger = ensure_logger(logger, __name__)
         try:
             sorted_forbidden = sorted(set(self.forbidden))
             with open(KW_FORBIDDEN_FILE_SC, "w", encoding="utf-8") as f:
@@ -116,10 +122,12 @@ class KeywordNormalizer:
         except Exception as e:
             logger.error("Erreur lors de la sauvegarde de la liste interdite : %s", e)
 
-    def _load_cache(self) -> dict[str, str]:
+    @with_child_logger
+    def _load_cache(self, logger: LoggerProtocol | None = None) -> dict[str, str]:
         """
         Charge le cache depuis keyword_cache.json et le trie alphabétiquement.
         """
+        logger = ensure_logger(logger, __name__)
         if KW_CACHE_FILE_SC.exists():
             try:
                 with open(KW_CACHE_FILE_SC, encoding="utf-8") as f:
@@ -133,10 +141,12 @@ class KeywordNormalizer:
             logger.info("Aucun cache existant trouvé — initialisation d’un cache vide.")
         return {}
 
-    def _save_cache(self) -> None:
+    @with_child_logger
+    def _save_cache(self, logger: LoggerProtocol | None = None) -> None:
         """
         Sauvegarde le cache trié alphabétiquement dans keyword_cache.json.
         """
+        logger = ensure_logger(logger, __name__)
         try:
             sorted_cache = dict(sorted(self.cache.items()))
             with open(KW_CACHE_FILE_SC, "w", encoding="utf-8") as f:
@@ -147,10 +157,12 @@ class KeywordNormalizer:
 
     # -------------------- Normalisation -------------------- #
 
-    def _normalize_with_embeddings(self, word: str, candidates: list[str]) -> str:
+    @with_child_logger
+    def _normalize_with_embeddings(self, word: str, candidates: list[str], logger: LoggerProtocol | None = None) -> str:
         """
         Compare un mot avec les candidats via embeddings et retourne le plus proche.
         """
+        logger = ensure_logger(logger, __name__)
         word_emb = self.model.encode(word, convert_to_tensor=True)
         if len(word_emb.shape) > 1 and word_emb.shape[0] > 1:
             logger.debug(f"⚙️ Moyenne des {word_emb.shape[0]} tokens pour '{word}'.")
@@ -196,7 +208,9 @@ class KeywordNormalizer:
 
         return candidates[best_idx] if best_score >= self.threshold else word
 
-    def normalize(self, word: str) -> str:
+    @with_child_logger
+    def normalize(self, word: str, logger: LoggerProtocol | None = None) -> str:
+        logger = ensure_logger(logger, __name__)
         word = word.lower().strip()
 
         if word in self.cache:
@@ -219,10 +233,12 @@ class KeywordNormalizer:
 
     # -------------------- Mode de traitement -------------------- #
 
-    def normalize_keywords(self, keywords: str | list[str]) -> list[str]:
+    @with_child_logger
+    def normalize_keywords(self, keywords: str | list[str], logger: LoggerProtocol | None = None) -> list[str]:
         """
         Normalise une liste ou une chaîne de mots-clés.
         """
+        logger = ensure_logger(logger, __name__)
         # 🔹 Accepte str ou list
         if isinstance(keywords, str):
             mots = [m.strip() for m in keywords.split(",") if m.strip()]

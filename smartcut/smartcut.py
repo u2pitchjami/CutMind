@@ -18,10 +18,11 @@ from pathlib import Path
 import uuid
 
 from shared.ffmpeg.ffmpeg_utils import get_duration
-from shared.models.config_manager import CONFIG
+from shared.models.timer_manager import Timer
 from shared.utils.config import JSON_STATES_DIR_SC, TRASH_DIR_SC
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.safe_runner import safe_main
+from shared.utils.settings import get_settings
 from shared.utils.trash import move_to_trash, purge_old_trash
 from smartcut.analyze.analyze_confidence import compute_confidence
 from smartcut.analyze.analyze_utils import extract_keywords_from_filename
@@ -31,34 +32,33 @@ from smartcut.merge.merge_main import process_result
 from smartcut.models_sc.smartcut_model import Segment, SmartCutSession
 from smartcut.scene_split.main_scene_split import adaptive_scene_split
 
-logger = get_logger("SmartCut")
+settings = get_settings()
 
-PURGE_DAYS = CONFIG.smartcut["smartcut"]["purge_days"]
-USE_CUDA = CONFIG.smartcut["smartcut"]["use_cuda"]
-SEED = CONFIG.smartcut["smartcut"]["seed"]
-
-INITIAL_THRESHOLD = CONFIG.smartcut["smartcut"]["initial_threshold"]
-MIN_THRESHOLD = CONFIG.smartcut["smartcut"]["min_threshold"]
-THRESHOLD_STEP = CONFIG.smartcut["smartcut"]["threshold_step"]
-MIN_DURATION = CONFIG.smartcut["smartcut"]["min_duration"]
-MAX_DURATION = CONFIG.smartcut["smartcut"]["max_duration"]
-
-FRAME_PER_SEGMENT = CONFIG.smartcut["smartcut"]["frame_per_segment"]
-AUTO_FRAMES = CONFIG.smartcut["smartcut"]["auto_frames"]
-
-VCODEC_CPU = CONFIG.smartcut["smartcut"]["vcodec_cpu"]
-VCODEC_GPU = CONFIG.smartcut["smartcut"]["vcodec_gpu"]
-CRF = CONFIG.smartcut["smartcut"]["crf"]
-PRESET_CPU = CONFIG.smartcut["smartcut"]["preset_cpu"]
-PRESET_GPU = CONFIG.smartcut["smartcut"]["preset_gpu"]
+PURGE_DAYS = settings.smartcut.purge_days
+USE_CUDA = settings.smartcut.use_cuda
+SEED = settings.smartcut.seed
+INITIAL_THRESHOLD = settings.smartcut.initial_threshold
+MIN_THRESHOLD = settings.smartcut.min_threshold
+THRESHOLD_STEP = settings.smartcut.threshold_step
+MIN_DURATION = settings.smartcut.min_duration
+MAX_DURATION = settings.smartcut.max_duration
+FRAME_PER_SEGMENT = settings.smartcut.frame_per_segment
+AUTO_FRAMES = settings.smartcut.auto_frames
+VCODEC_CPU = settings.smartcut.vcodec_cpu
+VCODEC_GPU = settings.smartcut.vcodec_gpu
+CRF = settings.smartcut.crf
+PRESET_CPU = settings.smartcut.preset_cpu
+PRESET_GPU = settings.smartcut.preset_gpu
 
 
 @safe_main
+@with_child_logger
 def multi_stage_cut(
     video_path: Path,
     out_dir: Path,
     use_cuda: bool = False,
     seed: int | None = None,
+    logger: LoggerProtocol | None = None,
 ) -> None:
     """
     Pipeline complet SmartCut avec reprise d'état.
@@ -72,13 +72,15 @@ def multi_stage_cut(
     Returns:
         Liste des chemins de fichiers exportés
     """
+    logger = ensure_logger(logger, __name__)
+
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # 🧩 Normalisation du format vidéo dès le départ
     safe_path = ensure_safe_video_format(str(video_path))
     if safe_path != str(video_path):
         logger.info(f"🎞️ Conversion automatique : {video_path.name} → {Path(safe_path).name}")
-        move_to_trash(video_path, TRASH_DIR_SC)
+        move_to_trash(video_path, TRASH_DIR_SC, logger=logger)
         video_path = Path(safe_path)
 
     duration = get_duration(video_path)
@@ -95,10 +97,10 @@ def multi_stage_cut(
         return
 
     state_path = JSON_STATES_DIR_SC / f"{video_path.stem}.smartcut_state.json"
-    session = SmartCutSession.load(str(state_path))
+    session = SmartCutSession.load(str(state_path), logger=logger)
 
     if not session:
-        session = SmartCutSession.bootstrap_session(video_path, out_dir)
+        session = SmartCutSession.bootstrap_session(video_path, out_dir, logger=logger)
         logger.info("✅ Session prête : %s (%.2fs @ %.2f FPS)", session.status, session.duration, session.fps)
     else:
         logger.info("♻️ Reprise de session existante : %s", session.status)
@@ -113,14 +115,17 @@ def multi_stage_cut(
     # ======================
     if session.status in ("init",):
         logger.info("🔍 Découpage vidéo avec pyscenedetect...")
-        cuts = adaptive_scene_split(
-            str(video_path),
-            initial_threshold=INITIAL_THRESHOLD,
-            min_threshold=MIN_THRESHOLD,
-            threshold_step=THRESHOLD_STEP,
-            min_duration=MIN_DURATION,
-            max_duration=MAX_DURATION,
-        )
+        with Timer(f"Traitement Split : {session.video_name}", logger):
+            cuts = adaptive_scene_split(
+                str(video_path),
+                session=session,
+                initial_threshold=INITIAL_THRESHOLD,
+                min_threshold=MIN_THRESHOLD,
+                threshold_step=THRESHOLD_STEP,
+                min_duration=MIN_DURATION,
+                max_duration=MAX_DURATION,
+                logger=logger,
+            )
         logger.info("🎞️ %d coupures détectées.", len(cuts))
 
         # Création des segments
@@ -129,7 +134,7 @@ def multi_stage_cut(
             seg.compute_duration()
 
         session.status = "scenes_done"
-        session.save(str(state_path))
+        session.save(str(state_path), logger=logger)
     else:
         logger.info("⏩ Étape pyscenedetect déjà effectuée — skip.")
 
@@ -140,12 +145,12 @@ def multi_stage_cut(
         logger.info("🧠 Analyse IA segment par segment avec suivi de session...")
 
         # On ne traite que les segments dont le statut n’est pas "done"
-        pending_segments = session.get_pending_segments()
+        pending_segments = session.get_pending_segments(logger=logger)
         logger.debug(f"Segments en attente : {[s.id for s in pending_segments]}")
         if not pending_segments:
             logger.info("✅ Tous les segments ont déjà été traités par l’IA.")
             session.status = "ia_done"
-            session.save(str(state_path))
+            session.save(str(state_path), logger=logger)
         else:
             logger.info(f"📊 {len(pending_segments)} segments à traiter par l’IA...")
             cuts = [(seg.start, seg.end) for seg in pending_segments]
@@ -157,6 +162,7 @@ def multi_stage_cut(
                     frames_per_segment=FRAME_PER_SEGMENT,
                     auto_frames=AUTO_FRAMES,
                     session=session,
+                    logger=logger,
                 )
 
                 # Par sécurité, on s’assure que le statut soit mis à jour
@@ -164,12 +170,12 @@ def multi_stage_cut(
                     session.status = "ia_done"
                 else:
                     logger.warning("🚧 Certains segments IA n’ont pas été traités complètement.")
-                session.save(str(state_path))
+                session.save(str(state_path), logger=logger)
 
             except Exception as exc:  # pylint: disable=broad-except
                 logger.error("💥 Erreur pendant l’analyse IA : %s", exc)
                 session.errors.append(str(exc))
-                session.save(str(state_path))
+                session.save(str(state_path), logger=logger)
                 raise
     else:
         logger.info("⏩ Étape IA déjà effectuée — skip.")
@@ -182,7 +188,7 @@ def multi_stage_cut(
             auto_keywords = extract_keywords_from_filename(video_path.name)
             for seg in session.segments:
                 if seg.ai_status == "done":
-                    seg.confidence = compute_confidence(seg.description, seg.keywords)
+                    seg.confidence = compute_confidence(seg.description, seg.keywords, logger=logger)
                     seg.last_updated = datetime.now().isoformat()
                     seg.status = "confidence_done"
                     logger.info(f"  - Segment {seg.id}: confidence = {seg.confidence:.3f}")
@@ -193,18 +199,18 @@ def multi_stage_cut(
                         seg.keywords = auto_keywords.copy()
 
                     logger.debug(f"🏷️ Seg {seg.uid}: keywords enrichis → {seg.keywords}")
-                    session.save(str(state_path))
+                    session.save(str(state_path), logger=logger)
 
             if all(s.confidence != "null" for s in session.segments):
                 session.status = "confidence_done"
             else:
                 logger.warning("🚧 Certains segments confidence n’ont pas été traités complètement.")
-            session.save(str(state_path))
+            session.save(str(state_path), logger=logger)
 
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("💥 Erreur pendant le calcul de l'indice de confiance : %s", exc)
             session.errors.append(str(exc))
-            session.save(str(state_path))
+            session.save(str(state_path), logger=logger)
             raise
     else:
         logger.info("⏩ Étape confidence déjà effectuée — skip.")
@@ -234,9 +240,7 @@ def multi_stage_cut(
                 )
 
             merged_result: SmartCutSession = process_result(
-                result_session,
-                min_duration=MIN_DURATION,
-                max_duration=MAX_DURATION,
+                result_session, min_duration=MIN_DURATION, max_duration=MAX_DURATION, logger=logger
             )
 
             # 🔁 Mise à jour des segments fusionnés (si applicable)
@@ -266,7 +270,7 @@ def multi_stage_cut(
 
                 session.status = "merged"
                 session.last_updated = datetime.now().isoformat()
-                session.save(str(state_path))
+                session.save(str(state_path), logger=logger)
                 logger.info("💾 Segments fusionnés mis à jour et sauvegardés dans le JSON.")
 
                 logger.info(f"✅ Merge effectué : {len(session.segments)} segments après harmonisation.")
@@ -274,12 +278,12 @@ def multi_stage_cut(
                 logger.warning("⚠️ Aucun segment résultant du merge. Structure inchangée.")
 
             session.status = "harmonized"
-            session.save(str(state_path))
+            session.save(str(state_path), logger=logger)
 
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("💥 Erreur pendant le merge/harmonisation : %s", exc)
             session.errors.append(str(exc))
-            session.save(str(state_path))
+            session.save(str(state_path), logger=logger)
             raise
     else:
         logger.info("⏩ Étape merge déjà effectuée — skip.")
@@ -312,6 +316,7 @@ def multi_stage_cut(
                         preset_gpu=PRESET_GPU,
                         session=session,
                         state_path=state_path,
+                        logger=logger,
                     )
 
                     if res:
@@ -325,24 +330,24 @@ def multi_stage_cut(
                     seg.ai_status = "failed"
                     session.errors.append(str(seg_exc))
                     logger.warning(f"⚠️ Erreur sur le segment {i}: {seg_exc}")
-                    session.save(str(state_path))
+                    session.save(str(state_path), logger=logger)
                     raise
 
             # Marquer la fin du traitement global
             session.status = "smartcut_done"
-            session.save(str(state_path))
+            session.save(str(state_path), logger=logger)
             logger.info("✅ %d segments exportés → %s", len(outputs), out_dir)
 
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("💥 Erreur générale pendant le découpage final : %s", exc)
             session.errors.append(str(exc))
-            session.save(str(state_path))
+            session.save(str(state_path), logger=logger)
             raise
     else:
         logger.info("⏩ Étape cut déjà effectuée — skip.")
 
     logger.info("───────────────────────────────")
     logger.info("🏁 Traitement terminé pour %s", video_path)
-    move_to_trash(video_path, TRASH_DIR_SC)
-    purge_old_trash(TRASH_DIR_SC, days=PURGE_DAYS)
+    move_to_trash(video_path, TRASH_DIR_SC, logger=logger)
+    purge_old_trash(TRASH_DIR_SC, days=PURGE_DAYS, logger=logger)
     return

@@ -26,10 +26,7 @@ import cv2
 from pymediainfo import MediaInfo
 
 from shared.utils.config import JSON_STATES_DIR_SC
-from shared.utils.logger import get_logger
-
-logger = get_logger("SmartCut")
-
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 # ============================================================
 # 🎬 Segment Model
@@ -91,12 +88,14 @@ class Segment:
         return dict(vars(self))
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Segment:
+    @with_child_logger
+    def from_dict(cls, data: dict[str, Any], logger: LoggerProtocol | None = None) -> Segment:
         """
         Recrée un segment à partir d'un dictionnaire JSON.
 
         Gère la rétrocompatibilité pour les anciens JSON sans `uid` ni `merged_from`.
         """
+        logger = ensure_logger(logger, __name__)
         if "uid" not in data:
             data["uid"] = str(uuid.uuid4())
             logger.debug("🆕 UID généré pour un ancien segment : %s", data["uid"])
@@ -144,11 +143,12 @@ class SmartCutSession:
     # ============================================================
     # 🔧 Méthodes principales
     # ============================================================
-
-    def update_segment(self, segment_id: int, **kwargs: Any) -> None:
+    @with_child_logger
+    def update_segment(self, segment_id: int, logger: LoggerProtocol | None = None, **kwargs: Any) -> None:
         """
         Met à jour un segment existant.
         """
+        logger = ensure_logger(logger, __name__)
         try:
             seg = next(s for s in self.segments if s.id == segment_id)
             for key, val in kwargs.items():
@@ -162,10 +162,12 @@ class SmartCutSession:
             self.errors.append(error_msg)
             logger.error(error_msg)
 
-    def get_pending_segments(self) -> list[Segment]:
+    @with_child_logger
+    def get_pending_segments(self, logger: LoggerProtocol | None = None) -> list[Segment]:
         """
         Retourne la liste des segments encore à traiter par l'IA.
         """
+        logger = ensure_logger(logger, __name__)
         pending = [s for s in self.segments if s.ai_status != "done"]
         logger.debug("%d segments en attente.", len(pending))
         return pending
@@ -173,11 +175,12 @@ class SmartCutSession:
     # ============================================================
     # 🧩 Enrichissement et finalisation
     # ============================================================
-
-    def enrich_metadata(self) -> None:
+    @with_child_logger
+    def enrich_metadata(self, logger: LoggerProtocol | None = None) -> None:
         """
         Récupère les métadonnées techniques de la vidéo source.
         """
+        logger = ensure_logger(logger, __name__)
         try:
             media_info = MediaInfo.parse(self.video)
             for track in media_info.tracks:
@@ -247,10 +250,12 @@ class SmartCutSession:
         data = {**data, "segments": segments}
         return cls(**data)
 
-    def save(self, path: str | None = None) -> None:
+    @with_child_logger
+    def save(self, path: str | None = None, logger: LoggerProtocol | None = None) -> None:
         """
         Sauvegarde la session dans un fichier JSON (écriture atomique + flush disque).
         """
+        logger = ensure_logger(logger, __name__)
         if not path:
             path = self.state_path or self._default_path()
         logger.debug(f"💾 Sauvegarde vers: {path}")
@@ -289,10 +294,12 @@ class SmartCutSession:
                 logger.error("❌ Impossible d'écrire le backup : %s", bak_exc)
 
     @classmethod
-    def load(cls, path: str) -> SmartCutSession | None:
+    @with_child_logger
+    def load(cls, path: str, logger: LoggerProtocol | None = None) -> SmartCutSession | None:
         """
         Charge une session à partir d'un fichier JSON.
         """
+        logger = ensure_logger(logger, __name__)
         try:
             with open(path, encoding="utf-8") as file:
                 data: dict[str, Any] = json.load(file)
@@ -340,10 +347,12 @@ class SmartCutSession:
         base_name = os.path.splitext(os.path.basename(self.video))[0]
         return f"{base_name}.smartcut_state.json"
 
-    def init_from_video(self, video_path: str | None = None) -> None:
+    @with_child_logger
+    def init_from_video(self, video_path: str | None = None, logger: LoggerProtocol | None = None) -> None:
         """
         Initialise la durée et les FPS à partir du fichier vidéo.
         """
+        logger = ensure_logger(logger, __name__)
         path = video_path or self.video
         try:
             self.video_name = Path(self.video).name
@@ -370,7 +379,10 @@ class SmartCutSession:
     # ============================================================
 
     @classmethod
-    def bootstrap_session(cls, video_path: str | Path, out_dir: str | Path) -> SmartCutSession:
+    @with_child_logger
+    def bootstrap_session(
+        cls, video_path: str | Path, out_dir: str | Path, logger: LoggerProtocol | None = None
+    ) -> SmartCutSession:
         """
         Initialise ou recharge automatiquement une session SmartCut.
 
@@ -380,6 +392,7 @@ class SmartCutSession:
 
         Cette méthode garantit que la session est toujours exploitable, même après un crash ou un redémarrage.
         """
+        logger = ensure_logger(logger, __name__)
         video_path = Path(video_path)
         out_dir = Path(out_dir)
         state_path = JSON_STATES_DIR_SC / f"{video_path.stem}.smartcut_state.json"

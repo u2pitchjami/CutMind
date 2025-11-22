@@ -25,9 +25,7 @@ from cutmind.db.db_connection import db_conn, get_dict_cursor
 from cutmind.db.db_utils import safe_execute_dict
 from cutmind.models_cm.cursor_protocol import DictCursorProtocol
 from cutmind.models_cm.db_models import Segment, Video
-from shared.utils.logger import get_logger
-
-logger = get_logger("CutMind")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
 # =====================================================================
@@ -39,10 +37,12 @@ class CutMindRepository:
     # -------------------------------------------------------------
     # 🔍 Vérifie si une vidéo existe déjà
     # -------------------------------------------------------------
-    def video_exists(self, uid: str) -> bool:
-        with db_conn() as conn:
+    @with_child_logger
+    def video_exists(self, uid: str, logger: LoggerProtocol | None = None) -> bool:
+        logger = ensure_logger(logger, __name__)
+        with db_conn(logger=logger) as conn:
             with get_dict_cursor(conn) as cur:
-                safe_execute_dict(cur, "SELECT COUNT(*) AS count FROM videos WHERE uid=%s", (uid,))
+                safe_execute_dict(cur, "SELECT COUNT(*) AS count FROM videos WHERE uid=%s", (uid,), logger=logger)
                 row = cur.fetchone()
                 exists = bool(row and row["count"] > 0)
                 logger.debug("🔍 video_exists(%s) → %s", uid, exists)
@@ -51,9 +51,11 @@ class CutMindRepository:
     # -------------------------------------------------------------
     # 📥 Insertion vidéo + segments
     # -------------------------------------------------------------
-    def insert_video_with_segments(self, video: Video) -> int:
+    @with_child_logger
+    def insert_video_with_segments(self, video: Video, logger: LoggerProtocol | None = None) -> int:
         """Insère une vidéo et ses segments associés."""
-        with db_conn() as conn:
+        logger = ensure_logger(logger, __name__)
+        with db_conn(logger=logger) as conn:
             with get_dict_cursor(conn) as cur:
                 # --- Vidéo ---
                 safe_execute_dict(
@@ -76,6 +78,7 @@ class CutMindRepository:
                         video.status,
                         video.origin,
                     ),
+                    logger=logger,
                 )
                 video_id = cur.lastrowid
                 logger.debug("🎬 Vidéo insérée id=%s uid=%s", video_id, video.uid)
@@ -85,9 +88,9 @@ class CutMindRepository:
                     raise ValueError("Erreur insertion vidéo : ID non retourné.")
                 for seg in video.segments:
                     seg.video_id = video_id
-                    seg_id = self._insert_segment(cur, seg)
+                    seg_id = self._insert_segment(seg, cur, logger=logger)
                     if seg.keywords:
-                        self.insert_keywords_for_segment(cur, seg_id, seg.keywords)
+                        self.insert_keywords_for_segment(cur, seg_id, seg.keywords, logger=logger)
 
                 conn.commit()
                 return video_id
@@ -95,7 +98,23 @@ class CutMindRepository:
     # -------------------------------------------------------------
     # 🧩 Insertion d’un segment (interne)
     # -------------------------------------------------------------
-    def _insert_segment(self, cur: DictCursorProtocol, seg: Segment) -> int:
+    @with_child_logger
+    def _insert_segment(
+        self,
+        seg: Segment,
+        cur: DictCursorProtocol | None = None,
+        logger: LoggerProtocol | None = None,
+    ) -> int:
+        logger = ensure_logger(logger, __name__)
+
+        # --- Mode autonome : on ouvre la connexion ---
+        if cur is None:
+            with db_conn(logger=logger) as conn:
+                with get_dict_cursor(conn) as cur2:
+                    seg_id = self._insert_segment(seg, cur=cur2, logger=logger)
+                    return seg_id
+
+        # --- Mode manuel : on utilise le cursor fourni ---
         safe_execute_dict(
             cur,
             """
@@ -127,73 +146,109 @@ class CutMindRepository:
                 seg.processed_by,
                 seg.ai_model,
             ),
+            logger=logger,
         )
+        if not cur.lastrowid:
+            raise ValueError("Erreur insertion segment : ID non retourné.")
         seg_id = cur.lastrowid
         if not seg_id:
             raise ValueError("Erreur insertion segment : ID non retourné.")
+
         logger.debug("🧩 Segment inséré id=%d uid=%s", seg_id, seg.uid)
         return seg_id
 
     # -------------------------------------------------------------
     # 🔗 Insertion des mots-clés liés à un segment
     # -------------------------------------------------------------
-    def insert_keywords_for_segment(self, cur: DictCursorProtocol, segment_id: int, keywords: list[str]) -> None:
+    @with_child_logger
+    def insert_keywords_for_segment(
+        self, cur: DictCursorProtocol, segment_id: int, keywords: list[str], logger: LoggerProtocol | None = None
+    ) -> None:
         """Insère les mots-clés d’un segment (en évitant les doublons)."""
+        logger = ensure_logger(logger, __name__)
         for kw in keywords:
             kw_clean = kw.strip().lower()
             if not kw_clean:
                 continue
 
-            safe_execute_dict(cur, "SELECT id FROM keywords WHERE keyword=%s", (kw_clean,))
+            safe_execute_dict(cur, "SELECT id FROM keywords WHERE keyword=%s", (kw_clean,), logger=logger)
             row = cur.fetchone()
             if row:
                 kw_id = row["id"]
             else:
-                safe_execute_dict(cur, "INSERT INTO keywords (keyword) VALUES (%s)", (kw_clean,))
+                safe_execute_dict(cur, "INSERT INTO keywords (keyword) VALUES (%s)", (kw_clean,), logger=logger)
                 kw_id = cur.lastrowid
 
             safe_execute_dict(
                 cur,
                 "INSERT INTO segment_keywords (segment_id, keyword_id) VALUES (%s, %s)",
                 (segment_id, kw_id),
+                logger=logger,
             )
         logger.debug("🏷️ %d mots-clés insérés pour segment_id=%d", len(keywords), segment_id)
 
-    def insert_keywords_standalone(self, segment_id: int, keywords: list[str]) -> None:
-        with db_conn() as conn:
+    @with_child_logger
+    def insert_keywords_standalone(
+        self, segment_id: int, keywords: list[str], logger: LoggerProtocol | None = None
+    ) -> None:
+        logger = ensure_logger(logger, __name__)
+        with db_conn(logger=logger) as conn:
             with get_dict_cursor(conn) as cur:
-                self.insert_keywords_for_segment(cur, segment_id, keywords)
+                self.insert_keywords_for_segment(cur, segment_id, keywords, logger=logger)
             conn.commit()
 
     # -------------------------------------------------------------
     # 🔎 Récupération d’une vidéo complète (segments + keywords)
     # -------------------------------------------------------------
-    def get_video_with_segments(self, video_uid: str) -> Video | None:
-        """Retourne un objet Video complet (avec ses segments et mots-clés)."""
-        with db_conn() as conn:
+    @with_child_logger
+    def get_video_with_segments(
+        self,
+        video_uid: str | None = None,
+        video_id: int | None = None,
+        logger: LoggerProtocol | None = None,
+    ) -> Video | None:
+        """
+        Retourne un objet Video complet (avec ses segments et mots-clés).
+        Peut recevoir soit video_uid, soit video_id.
+        """
+        logger = ensure_logger(logger, __name__)
+
+        if video_id is None and video_uid is None:
+            raise ValueError("video_uid ou video_id doit être fourni")
+
+        with db_conn(logger=logger) as conn:
             with get_dict_cursor(conn) as cur:
-                safe_execute_dict(cur, "SELECT * FROM videos WHERE uid=%s", (video_uid,))
+                # --- Identifier la ligne vidéo ---
+                if video_id is not None:
+                    safe_execute_dict(cur, "SELECT * FROM videos WHERE id=%s", (video_id,), logger=logger)
+                else:
+                    safe_execute_dict(cur, "SELECT * FROM videos WHERE uid=%s", (video_uid,), logger=logger)
+
                 video_row = cur.fetchone()
                 if not video_row:
                     return None
 
+                # --- Construction Video ---
                 video = Video(**{k: video_row[k] for k in video_row if k in Video.__annotations__})
                 video.id = video_row["id"]
 
                 # --- Segments ---
-                safe_execute_dict(cur, "SELECT * FROM segments WHERE video_id=%s", (video.id,))
+                safe_execute_dict(cur, "SELECT * FROM segments WHERE video_id=%s", (video.id,), logger=logger)
                 seg_rows = cur.fetchall()
+
                 for seg_row in seg_rows:
                     seg = Segment(**{k: seg_row[k] for k in seg_row if k in Segment.__annotations__})
                     seg.id = seg_row["id"]
-                    if not seg.id:
-                        continue
-                    seg.keywords = self.get_keywords_for_segment(cur, seg.id)
+
+                    if seg.id:
+                        seg.keywords = self.get_keywords_for_segment(cur, seg.id)
+
                     video.segments.append(seg)
 
                 return video
 
-    def get_videos_by_status(self, status: str) -> list[Video]:
+    @with_child_logger
+    def get_videos_by_status(self, status: str, logger: LoggerProtocol | None = None) -> list[Video]:
         """
         Retourne toutes les vidéos (avec leurs segments et mots-clés)
         correspondant à un statut donné.
@@ -204,9 +259,10 @@ class CutMindRepository:
         Returns:
             list[Video]: liste d'objets Video complets avec leurs segments.
         """
-        with db_conn() as conn:
+        logger = ensure_logger(logger, __name__)
+        with db_conn(logger=logger) as conn:
             with get_dict_cursor(conn) as cur:
-                safe_execute_dict(cur, "SELECT * FROM videos WHERE status=%s", (status,))
+                safe_execute_dict(cur, "SELECT * FROM videos WHERE status=%s", (status,), logger=logger)
                 video_rows = cur.fetchall()
                 videos: list[Video] = []
 
@@ -215,54 +271,90 @@ class CutMindRepository:
                     video.id = video_row["id"]
 
                     # --- Segments associés ---
-                    safe_execute_dict(cur, "SELECT * FROM segments WHERE video_id=%s", (video.id,))
+                    safe_execute_dict(cur, "SELECT * FROM segments WHERE video_id=%s", (video.id,), logger=logger)
                     seg_rows = cur.fetchall()
                     for seg_row in seg_rows:
                         seg = Segment(**{k: seg_row[k] for k in seg_row if k in Segment.__annotations__})
                         seg.id = seg_row["id"]
                         if not seg.id:
                             continue
-                        seg.keywords = self.get_keywords_for_segment(cur, seg.id)
+                        seg.keywords = self.get_keywords_for_segment(cur, seg.id, logger=logger)
                         video.segments.append(seg)
 
                     videos.append(video)
 
                 return videos
 
-    def get_segments_by_status(self, status: str) -> list[Segment]:
-        """Retourne tous les segments d’un statut donné."""
-        with db_conn() as conn:
+    @with_child_logger
+    def get_video_id_from_segment_id(self, segment_id: int, logger: LoggerProtocol | None = None) -> int | None:
+        """
+        Retourne video_id à partir d'un id de segment.
+        """
+        logger = ensure_logger(logger, __name__)
+        with db_conn(logger=logger) as conn:
             with get_dict_cursor(conn) as cur:
-                safe_execute_dict(cur, "SELECT * FROM segments WHERE status=%s", (status,))
+                safe_execute_dict(cur, "SELECT video_id FROM segments WHERE id=%s", (segment_id,), logger=logger)
+                row = cur.fetchone()
+                return row["video_id"] if row else None
+
+    @with_child_logger
+    def get_segments_by_status(self, status: str, logger: LoggerProtocol | None = None) -> list[Segment]:
+        """Retourne tous les segments d’un statut donné."""
+        logger = ensure_logger(logger, __name__)
+        with db_conn(logger=logger) as conn:
+            with get_dict_cursor(conn) as cur:
+                safe_execute_dict(cur, "SELECT * FROM segments WHERE status=%s", (status,), logger=logger)
                 seg_rows = cur.fetchall()
                 return [Segment(**{k: row[k] for k in row if k in Segment.__annotations__}) for row in seg_rows]
 
-    def get_segments_pending_review(self) -> list[Segment]:
+    @with_child_logger
+    def get_segments_pending_review(self, logger: LoggerProtocol | None = None) -> list[Segment]:
         """Retourne tous les segments en attente de validation manuelle."""
+        logger = ensure_logger(logger, __name__)
         statuses = ("manual_review", "pending_check", "manual_review_pending")
-        with db_conn() as conn:
+        with db_conn(logger=logger) as conn:
             with get_dict_cursor(conn) as cur:
                 placeholders = ",".join(["%s"] * len(statuses))
                 query = f"SELECT * FROM segments WHERE status IN ({placeholders})"
-                safe_execute_dict(cur, query, statuses)
+                safe_execute_dict(cur, query, statuses, logger=logger)
                 seg_rows = cur.fetchall()
                 return [Segment(**{k: row[k] for k in row if k in Segment.__annotations__}) for row in seg_rows]
 
-    def get_segment_by_uid(self, uid: str) -> Segment | None:
+    @with_child_logger
+    def get_segment_by_id(self, segment_id: int, logger: LoggerProtocol | None = None) -> Segment | None:
+        logger = ensure_logger(logger, __name__)
+        query = "SELECT * FROM segments WHERE id = %s LIMIT 1"
+        try:
+            with db_conn(logger=logger) as conn:
+                with get_dict_cursor(conn) as cur:
+                    cur.execute(query, (segment_id,))
+                    row = cur.fetchone()
+                    if not row:
+                        return None
+                    return Segment.from_row(row)
+        except Exception as err:
+            logger.error("❌ Erreur get_segment_by_id(%s) : %s", segment_id, err)
+            return None
+
+    @with_child_logger
+    def get_segment_by_uid(self, uid: str, logger: LoggerProtocol | None = None) -> Segment | None:
         """Retourne un segment spécifique par son UID."""
-        with db_conn() as conn:
+        logger = ensure_logger(logger, __name__)
+        with db_conn(logger=logger) as conn:
             with get_dict_cursor(conn) as cur:
-                safe_execute_dict(cur, "SELECT * FROM segments WHERE uid=%s", (uid,))
+                safe_execute_dict(cur, "SELECT * FROM segments WHERE uid=%s", (uid,), logger=logger)
                 row = cur.fetchone()
                 if not row:
                     return None
                 return Segment(**{k: row[k] for k in row if k in Segment.__annotations__})
 
-    def get_segments_by_category(self, category: str) -> list[Segment]:
+    @with_child_logger
+    def get_segments_by_category(self, category: str, logger: LoggerProtocol | None = None) -> list[Segment]:
         """
         Récupère tous les segments 'enhanced' d'une catégorie donnée.
         """
-        with db_conn() as conn:
+        logger = ensure_logger(logger, __name__)
+        with db_conn(logger=logger) as conn:
             with get_dict_cursor(conn) as cur:
                 safe_execute_dict(
                     cur,
@@ -274,6 +366,7 @@ class CutMindRepository:
                     ORDER BY s.created_at DESC
                     """,
                     (category,),
+                    logger=logger,
                 )
                 rows = cur.fetchall()
                 return [Segment.from_row(row) for row in rows]
@@ -281,7 +374,11 @@ class CutMindRepository:
     # -------------------------------------------------------------
     # 🏷️ Récupération des mots-clés d’un segment
     # -------------------------------------------------------------
-    def get_keywords_for_segment(self, cur: DictCursorProtocol, segment_id: int) -> list[str]:
+    @with_child_logger
+    def get_keywords_for_segment(
+        self, cur: DictCursorProtocol, segment_id: int, logger: LoggerProtocol | None = None
+    ) -> list[str]:
+        logger = ensure_logger(logger, __name__)
         safe_execute_dict(
             cur,
             """
@@ -291,16 +388,19 @@ class CutMindRepository:
             WHERE sk.segment_id = %s
             """,
             (segment_id,),
+            logger=logger,
         )
         rows = cur.fetchall()
         return [r["keyword"] for r in rows]
 
-    def get_nonstandard_videos(self, limit_videos: int = 10) -> list[str]:
+    @with_child_logger
+    def get_nonstandard_videos(self, limit_videos: int = 10, logger: LoggerProtocol | None = None) -> list[str]:
         """
         Retourne les UID de vidéos 'validated' contenant au moins un segment
         dont la résolution ou les FPS sont inférieurs aux standards (1920x1080, 60fps).
         """
-        with db_conn() as conn:
+        logger = ensure_logger(logger, __name__)
+        with db_conn(logger=logger) as conn:
             with get_dict_cursor(conn) as cur:
                 safe_execute_dict(
                     cur,
@@ -321,15 +421,18 @@ class CutMindRepository:
                     LIMIT %s
                     """,
                     (limit_videos,),
+                    logger=logger,
                 )
                 rows = cur.fetchall()
                 return [row["uid"] for row in rows if "uid" in row]
 
-    def get_standard_videos(self, limit_videos: int = 10) -> list[str]:
+    @with_child_logger
+    def get_standard_videos(self, limit_videos: int = 10, logger: LoggerProtocol | None = None) -> list[str]:
         """
         Retourne les UID de vidéos 'validated' dont tous les segments sont déjà en 1080p 60fps.
         """
-        with db_conn() as conn:
+        logger = ensure_logger(logger, __name__)
+        with db_conn(logger=logger) as conn:
             with get_dict_cursor(conn) as cur:
                 safe_execute_dict(
                     cur,
@@ -349,6 +452,7 @@ class CutMindRepository:
                     LIMIT %s
                     """,
                     (limit_videos,),
+                    logger=logger,
                 )
                 rows = cur.fetchall()
                 return [row["uid"] for row in rows if "uid" in row]
@@ -356,10 +460,14 @@ class CutMindRepository:
     # -------------------------------------------------------------
     # 🔄 Mise à jour d’un segment
     # -------------------------------------------------------------
-    def update_segment_validation(self, seg: Segment, conn: Connection | None = None) -> None:
+    @with_child_logger
+    def update_segment_validation(
+        self, seg: Segment, conn: Connection | None = None, logger: LoggerProtocol | None = None
+    ) -> None:
         """Mise à jour suite à validation automatique ou manuelle."""
+        logger = ensure_logger(logger, __name__)
         if conn is None:
-            with db_conn() as conn:
+            with db_conn(logger=logger) as conn:
                 with get_dict_cursor(conn) as cur:
                     safe_execute_dict(
                         cur,
@@ -387,6 +495,7 @@ class CutMindRepository:
                             seg.tags,
                             seg.uid,
                         ),
+                        logger=logger,
                     )
                     conn.commit()
                     logger.debug(
@@ -424,6 +533,7 @@ class CutMindRepository:
                         seg.tags,
                         seg.uid,
                     ),
+                    logger=logger,
                 )
                 logger.debug(
                     "🧩 UPDATE validation (in-transaction) → uid=%s | status=%s | flow=%s | output=%s",
@@ -433,9 +543,11 @@ class CutMindRepository:
                     seg.output_path,
                 )
 
-    def update_segment_postprocess(self, seg: Segment) -> None:
+    @with_child_logger
+    def update_segment_postprocess(self, seg: Segment, logger: LoggerProtocol | None = None) -> None:
         """Mise à jour après traitement ComfyUI."""
-        with db_conn() as conn:
+        logger = ensure_logger(logger, __name__)
+        with db_conn(logger=logger) as conn:
             with get_dict_cursor(conn) as cur:
                 safe_execute_dict(
                     cur,
@@ -467,6 +579,7 @@ class CutMindRepository:
                         seg.tags,
                         seg.uid,
                     ),
+                    logger=logger,
                 )
                 conn.commit()
                 logger.debug(
@@ -480,10 +593,12 @@ class CutMindRepository:
     # -------------------------------------------------------------
     # 🔄 Mise à jour d’une vidéo
     # -------------------------------------------------------------
-    def update_video(self, video: Video, conn: Connection | None = None) -> None:
+    @with_child_logger
+    def update_video(self, video: Video, conn: Connection | None = None, logger: LoggerProtocol | None = None) -> None:
         """Met à jour le statut ou autres champs d’une vidéo."""
+        logger = ensure_logger(logger, __name__)
         if conn is None:
-            with db_conn() as conn:
+            with db_conn(logger=logger) as conn:
                 with get_dict_cursor(conn) as cur:
                     safe_execute_dict(
                         cur,
@@ -497,6 +612,7 @@ class CutMindRepository:
                             video.status,
                             video.uid,
                         ),
+                        logger=logger,
                     )
                     conn.commit()
                     logger.debug("🎞️ UPDATE video DB → uid=%s | status=%s", video.uid, video.status)
@@ -514,26 +630,41 @@ class CutMindRepository:
                         video.status,
                         video.uid,
                     ),
+                    logger=logger,
                 )
                 logger.debug("🎞️ UPDATE video (in-transaction) → uid=%s | status=%s", video.uid, video.status)
 
     # ------------------------------------------------------------------
     # 🔹 SUPPRESSION
     # ------------------------------------------------------------------
-    def delete_segment_by_uid(self, seg_uid: str) -> bool:
+    @with_child_logger
+    def delete_segment_by_uid(self, seg_uid: str, logger: LoggerProtocol | None = None) -> bool:
         """Supprime un segment spécifique."""
-        with db_conn() as conn:
+        logger = ensure_logger(logger, __name__)
+        with db_conn(logger=logger) as conn:
             with get_dict_cursor(conn) as cur:
-                safe_execute_dict(cur, "DELETE FROM segments WHERE uid=%s", (seg_uid,))
+                safe_execute_dict(cur, "DELETE FROM segments WHERE uid=%s", (seg_uid,), logger=logger)
                 conn.commit()
                 logger.info("🗑️ Segment supprimé uid=%s", seg_uid)
                 return True
+
+    @with_child_logger
+    def delete_segment(self, seg_id: int, logger: LoggerProtocol | None = None) -> None:
+        """Supprime un segment et ses mots-clés."""
+        logger = ensure_logger(logger, __name__)
+        with db_conn(logger=logger) as conn:
+            with get_dict_cursor(conn) as cur:
+                safe_execute_dict(cur, "DELETE FROM segments WHERE id=%s", (seg_id,), logger=logger)
+                safe_execute_dict(cur, "DELETE FROM segment_keywords WHERE segment_id=%s", (seg_id,), logger=logger)
+                conn.commit()
+        logger.info("🗑️ Segment supprimé : %s", seg_id)
 
     # ------------------------------------------------------------------
     # 🧱 CONTEXTE TRANSACTIONNEL (global)
     # ------------------------------------------------------------------
     @contextmanager
-    def transaction(self) -> Iterator[Connection]:
+    @with_child_logger
+    def transaction(self, logger: LoggerProtocol | None = None) -> Iterator[Connection]:
         """
         Contexte transactionnel global basé sur db_conn().
         Permet d'exécuter plusieurs opérations du repository
@@ -544,7 +675,8 @@ class CutMindRepository:
                 repo.update_segment_validation(seg, conn)
                 repo.update_video(video, conn)
         """
-        with db_conn() as conn:
+        logger = ensure_logger(logger, __name__)
+        with db_conn(logger=logger) as conn:
             try:
                 logger.debug("🧾 Début transaction SQL (repo)")
                 yield conn

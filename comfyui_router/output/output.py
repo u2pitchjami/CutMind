@@ -6,21 +6,22 @@ from pathlib import Path
 import time
 
 from shared.utils.config import OUTPUT_DIR
-from shared.utils.logger import get_logger
-
-logger = get_logger("Comfyui Router")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
+@with_child_logger
 def wait_for_output_v2(
     filename_prefix: str,
     expect_audio: bool = False,
     stable_time: int = 150,
     check_interval: int = 10,
     timeout: int = 7200,
+    logger: LoggerProtocol | None = None,
 ) -> Path | None:
     """
     🧠 Surveillance optimisée des fichiers de sortie ComfyUI avec log de durée.
     """
+    logger = ensure_logger(logger, __name__)
     start_time = time.time()
     logger.debug(f"🕰 Début de la surveillance '{start_time}'")
     video_file: Path | None = None
@@ -44,12 +45,15 @@ def wait_for_output_v2(
             if candidate_audio.exists():
                 audio_file = candidate_audio
                 logger.debug(f"🎧 Fichier audio détecté : {audio_file.name}")
-
-        if expect_audio and audio_file:
-            if _is_stable(audio_file, stable_time, check_interval):
                 elapsed = time.time() - start_time
                 logger.info(f"✅ Fichier audio final stable : {audio_file.name} (⏱ {elapsed:.1f}s)")
                 return audio_file
+
+        # if expect_audio and audio_file:
+        #     if _is_stable(audio_file, stable_time, check_interval):
+        #         elapsed = time.time() - start_time
+        #         logger.info(f"✅ Fichier audio final stable : {audio_file.name} (⏱ {elapsed:.1f}s)")
+        #         return audio_file
 
         elif not expect_audio and video_file:
             if _is_stable(video_file, stable_time, check_interval):
@@ -87,10 +91,12 @@ def _is_stable(path: Path, stable_time: int, check_interval: int) -> bool:
     return True
 
 
-def cleanup_outputs(base_stem: str, keep: Path, output_dir: Path) -> None:
+@with_child_logger
+def cleanup_outputs(base_stem: str, keep: Path, output_dir: Path, logger: LoggerProtocol | None = None) -> None:
     """
     Supprime les fichiers intermédiaires de ComfyUI (png, mp4 sans audio, etc.) sauf le fichier final.
     """
+    logger = ensure_logger(logger, __name__)
     patterns = [
         f"{base_stem}_*.png",
         f"{base_stem}_*.mp4",

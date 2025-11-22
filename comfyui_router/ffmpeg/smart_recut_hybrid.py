@@ -9,18 +9,20 @@ import subprocess
 
 from shared.ffmpeg.ffmpeg_utils import get_duration
 from shared.utils.config import TRASH_DIR
-from shared.utils.logger import get_logger
-
-logger = get_logger("Comfyui Router")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 RE_PTS_TIME = re.compile(r"pts_time[:=](\d+(?:\.\d+)?)")
 RE_SCENE_SCORE = re.compile(r"(?:lavfi\.)?scene_score=(\d+(?:\.\d+)?)")
 
 
-def detect_scene_changes_with_scores(video_path: Path, threshold: float = 0.005) -> list[tuple[float, float]]:
+@with_child_logger
+def detect_scene_changes_with_scores(
+    video_path: Path, threshold: float = 0.005, logger: LoggerProtocol | None = None
+) -> list[tuple[float, float]]:
     """
     Détecte les changements de scène et renvoie (timestamp, score).
     """
+    logger = ensure_logger(logger, __name__)
     cmd: list[str] = [
         "ffmpeg",
         "-hide_banner",
@@ -54,15 +56,19 @@ def compute_dynamic_margin(score: float) -> float:
     return 0.1
 
 
-def auto_threshold_pass(video_path: Path, base_threshold: float = 0.005) -> list[tuple[float, float]]:
+@with_child_logger
+def auto_threshold_pass(
+    video_path: Path, base_threshold: float = 0.005, logger: LoggerProtocol | None = None
+) -> list[tuple[float, float]]:
     """
     Fait une détection, puis relance avec un seuil réduit seulement si rien trouvé.
     """
-    cuts = detect_scene_changes_with_scores(video_path, base_threshold)
+    logger = ensure_logger(logger, __name__)
+    cuts = detect_scene_changes_with_scores(video_path, base_threshold, logger=logger)
     if not cuts:
         new_threshold = base_threshold / 2
         logger.info("⚠️ Aucune scène détectée → nouvelle passe avec threshold = %.4f", new_threshold)
-        cuts = detect_scene_changes_with_scores(video_path, new_threshold)
+        cuts = detect_scene_changes_with_scores(video_path, new_threshold, logger=logger)
     return cuts
 
 
@@ -96,16 +102,24 @@ def choose_best_cuts(
     return first_cut, last_cut
 
 
-def smart_recut_hybrid(video_path: Path, threshold: float = 0.005, use_cuda: bool = True, cleanup: bool = True) -> Path:
+@with_child_logger
+def smart_recut_hybrid(
+    video_path: Path,
+    threshold: float = 0.005,
+    use_cuda: bool = True,
+    cleanup: bool = True,
+    logger: LoggerProtocol | None = None,
+) -> Path:
     """
     Découpe la vidéo au début et à la fin selon les changements de scène.
     """
-    duration = get_duration(video_path)
+    logger = ensure_logger(logger, __name__)
+    duration = get_duration(video_path, logger=logger)
     if duration == 0:
         logger.error("Impossible de déterminer la durée de %s", video_path)
         return video_path
 
-    cuts = auto_threshold_pass(video_path, threshold)
+    cuts = auto_threshold_pass(video_path, threshold, logger=logger)
     logger.info("Cuts détectés: %s", [(round(t, 3), round(s, 3)) for (t, s) in cuts])
 
     cut_start, cut_end = choose_best_cuts(cuts, duration)

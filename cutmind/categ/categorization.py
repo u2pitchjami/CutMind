@@ -6,16 +6,15 @@ from typing import Any, TypedDict
 import yaml
 
 from shared.utils.config import CATEGORIES_RULES
-from shared.utils.logger import get_logger
-
-logger = get_logger("CutMind")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
 class CategoryRule(TypedDict, total=False):
     rule: str
 
 
-def load_category_rules(yaml_path: Path) -> list[CategoryRule]:
+@with_child_logger
+def load_category_rules(yaml_path: Path, logger: LoggerProtocol | None = None) -> list[CategoryRule]:
     """
     Charge les règles de catégorisation depuis un fichier YAML.
 
@@ -27,6 +26,7 @@ def load_category_rules(yaml_path: Path) -> list[CategoryRule]:
         par exemple [{'rule': 'chien - chat = dog'}, {'rule': 'default = misc'}].
         Retourne une liste vide en cas d'erreur ou si le fichier est invalide.
     """
+    logger = ensure_logger(logger, __name__)
     try:
         with open(yaml_path, encoding="utf-8") as f:
             data: dict[str, Any] = yaml.safe_load(f) or {}
@@ -40,7 +40,10 @@ def load_category_rules(yaml_path: Path) -> list[CategoryRule]:
         return []
 
 
-def match_category(keywords: list[str], rules_yaml: Path = CATEGORIES_RULES) -> str | None:
+@with_child_logger
+def match_category(
+    keywords: list[str], rules_yaml: Path = CATEGORIES_RULES, logger: LoggerProtocol | None = None
+) -> str | None:
     """
     Détermine la catégorie d’un segment selon des règles déclaratives YAML.
 
@@ -51,8 +54,9 @@ def match_category(keywords: list[str], rules_yaml: Path = CATEGORIES_RULES) -> 
     Returns:
         str | None: catégorie trouvée ou None
     """
+    logger = ensure_logger(logger, __name__)
     keywords = [kw.lower().strip() for kw in keywords]
-    rules = load_category_rules(rules_yaml)
+    rules = load_category_rules(rules_yaml, logger=logger)
 
     for idx, rule_entry in enumerate(rules, start=1):
         rule_str = rule_entry.get("rule", "").strip()

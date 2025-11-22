@@ -8,16 +8,36 @@ import os
 from pathlib import Path
 import shutil
 
+import cv2
+
 from shared.utils.config import OUPUT_DIR_SC
-from shared.utils.logger import get_logger
-
-logger = get_logger("SmartCut")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
-def move_to_error(file_path: Path, error_root: Path) -> Path:
+def get_downscale_factor(video_path: str) -> int:
+    """Détermine dynamiquement le facteur de downscale selon la hauteur vidéo."""
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return 1  # fallback sans erreur
+    height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    cap.release()
+
+    if height >= 2160:  # 4K
+        return 2  # vers 1080p
+    elif height >= 1440:
+        return 2
+    elif height >= 1080:
+        return 1
+    else:
+        return 1
+
+
+@with_child_logger
+def move_to_error(file_path: Path, error_root: Path, logger: LoggerProtocol | None = None) -> Path:
     """
     Déplace un fichier vers la corbeille (trash/YYYY-MM-DD/).
     """
+    logger = ensure_logger(logger, __name__)
     try:
         if not file_path.exists():
             logger.warning(f"⚠️ Fichier introuvable : {file_path}")
@@ -39,10 +59,14 @@ def move_to_error(file_path: Path, error_root: Path) -> Path:
 # ==========================================================
 #  Sauvegarde segments (CSV)
 # ==========================================================
-def export_segments_csv(video_path: str, segments: list[tuple[float, float]]) -> None:
+@with_child_logger
+def export_segments_csv(
+    video_path: str, segments: list[tuple[float, float]], logger: LoggerProtocol | None = None
+) -> None:
     """
     Sauvegarde les segments dans un CSV pour vérification.
     """
+    logger = ensure_logger(logger, __name__)
     out_path = Path(f"{OUPUT_DIR_SC}/{Path(video_path).stem}_segments.csv")
     os.makedirs(out_path.parent, exist_ok=True)
     with open(out_path, "w", newline="") as f:

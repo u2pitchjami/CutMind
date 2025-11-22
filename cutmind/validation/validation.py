@@ -26,20 +26,24 @@ from cutmind.categ.categorization import match_category
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Video
 from cutmind.process.file_mover import CUTMIND_BASEDIR, FileMover, sanitize
+from shared.models.timer_manager import Timer
 from shared.utils.config import OUPUT_DIR_SC
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.remove_empty_dirs import remove_empty_dirs
+from shared.utils.safe_segments import safe_segments
 from smartcut.analyze.analyze_from_cutmind import analyze_from_cutmind
-
-logger = get_logger("CutMind")
-
 
 # =====================================================================
 # ⚙️ Validation automatique d'une vidéo
 # =====================================================================
 
 
-def analyze_session_validation_db(video: Video, min_confidence: float = 0.45) -> dict[str, Any]:
+@safe_segments
+@with_child_logger
+def analyze_session_validation_db(
+    video: Video, min_confidence: float = 0.45, logger: LoggerProtocol | None = None
+) -> dict[str, Any]:
+    logger = ensure_logger(logger, __name__)
     repo = CutMindRepository()
     if not video:
         logger.warning("⚠️ Vidéo introuvable")
@@ -52,38 +56,39 @@ def analyze_session_validation_db(video: Video, min_confidence: float = 0.45) ->
     logger.info("🔎 Analyse validation pour %s (%d segments)", video.name, total)
 
     # --- Analyse en mémoire ---
-    for seg in video.segments:
-        if not seg.description and not seg.confidence and not seg.keywords:
-            seg.description, seg.keywords = analyze_from_cutmind(seg)
-        desc_ok = bool(seg.description and seg.description.strip().lower() not in ("none", ""))
-        conf_ok = (seg.confidence or 0.0) >= min_confidence
-        kw_ok = bool(seg.keywords and len(seg.keywords) > 0)
+    with Timer(f"Traitement Keywords Recut : {video.name}", logger):
+        for seg in video.segments:
+            if not seg.description and not seg.confidence and not seg.keywords:
+                seg.description, seg.keywords = analyze_from_cutmind(seg, logger=logger)
+            desc_ok = bool(seg.description and seg.description.strip().lower() not in ("none", ""))
+            conf_ok = (seg.confidence or 0.0) >= min_confidence
+            kw_ok = bool(seg.keywords and len(seg.keywords) > 0)
 
-        if desc_ok and conf_ok and kw_ok:
-            seg.status = "validated"
-            seg.category = match_category(seg.keywords)
-            if seg.source_flow == "manual_review":
-                logger.info("♻️ Segment re-validé automatiquement : %s", seg.uid)
-                seg.source_flow = "manual_validation"
+            if desc_ok and conf_ok and kw_ok:
+                seg.status = "validated"
+                seg.category = match_category(seg.keywords, logger=logger)
+                if seg.source_flow == "manual_review":
+                    logger.info("♻️ Segment re-validé automatiquement : %s", seg.uid)
+                    seg.source_flow = "manual_validation"
+                else:
+                    seg.source_flow = "auto_validation"
+                valid_segments.append(seg)
             else:
-                seg.source_flow = "auto_validation"
-            valid_segments.append(seg)
-        else:
-            seg.status = "pending_check"
-            seg.source_flow = "manual_review"
+                seg.status = "pending_check"
+                seg.source_flow = "manual_review"
 
-        decisions.append(seg)
+            decisions.append(seg)
 
     valid_count = len(valid_segments)
     auto_valid = valid_count == total
 
     # --- Si pas auto-validée : mise à jour simple ---
     if not auto_valid:
-        with repo.transaction():
+        with repo.transaction(logger=logger):
             for seg in decisions:
-                repo.update_segment_validation(seg)
+                repo.update_segment_validation(seg, logger=logger)
             video.status = "manual_review"
-            repo.update_video(video)
+            repo.update_video(video, logger=logger)
 
         logger.info("🕵️ Validation partielle : %s (%d/%d segments)", video.name, valid_count, total)
         return {
@@ -99,7 +104,7 @@ def analyze_session_validation_db(video: Video, min_confidence: float = 0.45) ->
 
     # Plan des destinations (relatives)
     planned_targets = {}
-    safe_name = sanitize(video.name)
+    safe_name = sanitize(video.name, logger=logger)
     for seg in valid_segments:
         if not seg.filename_predicted:
             logger.error("❌ Segment sans fichier prédit : %s (vidéo %s)", seg.uid, video.name)
@@ -114,7 +119,7 @@ def analyze_session_validation_db(video: Video, min_confidence: float = 0.45) ->
         dst_rel = dst_final
         planned_targets[seg.uid] = dst_rel
 
-    moved_ok = mover.move_video_files(video, planned_targets)
+    moved_ok = mover.move_video_files(video, planned_targets, logger=logger)
 
     if not moved_ok:
         logger.error("❌ Échec déplacement fichiers pour %s — aucun changement DB", video.name)
@@ -127,16 +132,16 @@ def analyze_session_validation_db(video: Video, min_confidence: float = 0.45) ->
         }
 
     # --- Déplacement réussi : commit DB ---
-    with repo.transaction():
+    with repo.transaction(logger=logger):
         for seg in valid_segments:
             seg.output_path = str(planned_targets[seg.uid])
-            repo.update_segment_validation(seg)
+            repo.update_segment_validation(seg, logger=logger)
 
         video.status = "validated"
-        repo.update_video(video)
+        repo.update_video(video, logger=logger)
 
     logger.info("✅ Auto-validation + déplacement : %s (%d segments)", video.name, valid_count)
-    remove_empty_dirs(root_path=OUPUT_DIR_SC)
+    remove_empty_dirs(root_path=OUPUT_DIR_SC, logger=logger)
 
     return {
         "uid": video.uid,

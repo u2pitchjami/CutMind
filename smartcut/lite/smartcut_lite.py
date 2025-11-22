@@ -12,39 +12,41 @@ from datetime import datetime
 from pathlib import Path
 import shutil
 
-from shared.models.config_manager import CONFIG
 from shared.utils.config import JSON_STATES_DIR_SC
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.safe_runner import safe_main
+from shared.utils.settings import get_settings
 from smartcut.analyze.analyze_confidence import compute_confidence
 from smartcut.analyze.analyze_utils import extract_keywords_from_filename
 from smartcut.analyze.main_analyze import analyze_video_segments
 from smartcut.lite.relocate_and_rename_segments import relocate_and_rename_segments
 from smartcut.models_sc.lite_session import SmartCutLiteSession
 
-logger = get_logger("SmartCut")
+settings = get_settings()
 
-FRAME_PER_SEGMENT = CONFIG.smartcut["smartcut"]["frame_per_segment"]
-AUTO_FRAMES = CONFIG.smartcut["smartcut"]["auto_frames"]
+FRAME_PER_SEGMENT = settings.smartcut.frame_per_segment
+AUTO_FRAMES = settings.smartcut.auto_frames
 
 
 @safe_main
-def lite_cut(directory_path: Path) -> None:
+@with_child_logger
+def lite_cut(directory_path: Path, logger: LoggerProtocol | None = None) -> None:
     """
     Pipeline simplifié SmartCut pour segments déjà coupés.
     Args:
         directory_path: Dossier contenant les segments vidéo (.mp4/.mkv)
     """
+    logger = ensure_logger(logger, __name__)
     logger.info("🚀 Démarrage SmartCut-Lite sur : %s", directory_path)
     if any(directory_path.iterdir()):
         # Étape 0️⃣ — Initialisation session
-        session = SmartCutLiteSession(directory_path)
-        session.load_segments_from_directory()
+        session = SmartCutLiteSession(directory_path, logger=logger)
+        session.load_segments_from_directory(logger=logger)
         session.status = "scenes_done"
 
         state_path = JSON_STATES_DIR_SC / f"{session.dir_path.name}.smartcut_state.json"
-        session.enrich_segments_metadata()
-        session.save(str(state_path))
+        session.enrich_segments_metadata(logger=logger)
+        session.save(str(state_path), logger=logger)
         logger.info("💾 Session initialisée (%d segments).", len(session.segments))
 
         # Étape 1️⃣ — Analyse IA
@@ -56,22 +58,23 @@ def lite_cut(directory_path: Path) -> None:
                 auto_frames=AUTO_FRAMES,
                 session=session,
                 lite=True,
+                logger=logger,
             )
             session.status = "ia_done"
-            session.save(str(state_path))
+            session.save(str(state_path), logger=logger)
             logger.info("✅ Analyse IA terminée.")
 
         except Exception as exc:
             logger.error("💥 Erreur durant l’analyse IA : %s", exc)
             session.errors.append(str(exc))
-            session.save(str(state_path))
+            session.save(str(state_path), logger=logger)
             raise
 
         # Étape 2️⃣ — Calcul du score de confiance
         logger.info("📊 Calcul des scores de confiance...")
         for seg in session.segments:
             if seg.ai_status == "done":
-                seg.confidence = compute_confidence(seg.description, seg.keywords)
+                seg.confidence = compute_confidence(seg.description, seg.keywords, logger=logger)
                 seg.last_updated = datetime.now().isoformat()
                 seg.status = "confidence_done"
                 logger.info(f"  - Segment {seg.id}: confidence = {seg.confidence:.3f}")
@@ -86,14 +89,14 @@ def lite_cut(directory_path: Path) -> None:
                     seg.keywords = auto_keywords.copy()
 
                 logger.debug(f"🏷️ Seg {seg.uid}: keywords enrichis → {seg.keywords}")
-                session.save(str(state_path))
+                session.save(str(state_path), logger=logger)
         session.status = "smartcut_done"
-        session.save(str(state_path))
+        session.save(str(state_path), logger=logger)
         logger.info("✅ Scores de confiance calculés pour %d segments.", len(session.segments))
 
         # Étape 3️⃣ — Finalisation
         logger.info("📊 Déplacement des fichiers")
-        relocate_and_rename_segments(session=session)
+        relocate_and_rename_segments(session=session, logger=logger)
         logger.info("🏁 SmartCut-Lite terminé pour %s", directory_path)
         logger.info("🧾 JSON généré : %s", state_path)
     else:

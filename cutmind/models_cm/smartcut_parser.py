@@ -16,9 +16,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, Field, ValidationError
 
 from cutmind.models_cm.db_models import Segment, Video
-from shared.utils.logger import get_logger
-
-logger = get_logger("CutMind")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
 # ------------------------------------------------------------
@@ -79,13 +77,17 @@ class SmartcutSessionBase(BaseModel):
 # ------------------------------------------------------------
 
 
-def parse_smartcut_json(data: dict[str, Any], filename: str) -> tuple[bool, SmartcutSessionBase, str, str]:
+@with_child_logger
+def parse_smartcut_json(
+    data: dict[str, Any], filename: str, logger: LoggerProtocol | None = None
+) -> tuple[bool, SmartcutSessionBase, str, str]:
     """
     Valide une session Smartcut (standard ou lite, distinction via origin).
     """
+    logger = ensure_logger(logger, __name__)
     try:
         # --- Validation générique
-        session = SmartcutSessionBase(**data)
+        session = SmartcutSessionBase(**data, logger=logger)
         session_type = session.origin.replace("smartcut_", "") if session.origin else "unknown"
 
         # --- Validation du statut
@@ -94,8 +96,6 @@ def parse_smartcut_json(data: dict[str, Any], filename: str) -> tuple[bool, Smar
 
         # --- Auto-remplissage du nom si besoin
         if not session.video_name and session.video:
-            from pathlib import Path
-
             session.video_name = Path(session.video).stem
 
         logger.debug(

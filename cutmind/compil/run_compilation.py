@@ -8,7 +8,7 @@ from cutmind.models_cm.compilation_template import load_template
 from shared.utils.config import EXPORTS_COMPIL
 from shared.utils.logger import get_logger
 
-logger = get_logger("CutMind")
+logger = get_logger("CutMind Compil")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -24,10 +24,12 @@ if __name__ == "__main__":
     for i in range(template.repeat):
         logger.info("🔁 Boucle %d / %d", i + 1, template.repeat)
         for block in template.sequence:
-            block_segments = select_segments_for_block(block, repo)
+            block_segments = select_segments_for_block(block, repo, logger=logger)
             all_segments.extend(block_segments)
 
     output_path = Path(f"{EXPORTS_COMPIL}/{template.output_filename}")
     manifest_path = output_path.with_suffix(".json")
 
-    make_compilation(segments=all_segments, output_path=output_path, manifest_path=manifest_path, compress="cuda")
+    make_compilation(
+        segments=all_segments, output_path=output_path, manifest_path=manifest_path, compress="cuda", logger=logger
+    )

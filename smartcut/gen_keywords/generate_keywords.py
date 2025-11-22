@@ -14,36 +14,33 @@ from transformers import (
     ProcessorMixin,
 )
 
-from shared.models.config_manager import CONFIG
 from shared.utils.config import PROMPTS
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.settings import get_settings
 from smartcut.gen_keywords.gen_frames import load_frames_as_tensor, temp_batch_image
 from smartcut.models_sc.ai_result import AIResult
 
-logger = get_logger("SmartCut")
+settings = get_settings()
 
-MAX_NEW_TOKENS = CONFIG.smartcut["generate_keywords"]["max_new_tokens"]
-MIN_PIXELS = CONFIG.smartcut["generate_keywords"]["min_pixels"]
-MAX_PIXELS = CONFIG.smartcut["generate_keywords"]["max_pixels"]
-TOTAL_PIXELS = CONFIG.smartcut["generate_keywords"]["total_pixels"]
-SIZEH = CONFIG.smartcut["generate_keywords"]["sizeh"]
-SIZEL = CONFIG.smartcut["generate_keywords"]["sizel"]
-
-TOKENIZE = CONFIG.smartcut["generate_keywords"]["tokenize"]
-ADD_GENERATION_PROMPT = CONFIG.smartcut["generate_keywords"]["add_generation_prompt"]
-
-PADDING = CONFIG.smartcut["generate_keywords"]["padding"]
-RETURN_TENSORS = CONFIG.smartcut["generate_keywords"]["return_tensors"]
-
-TEMPERATURE = CONFIG.smartcut["generate_keywords"]["temperature"]
-TOP_P = CONFIG.smartcut["generate_keywords"]["top_p"]
-REPETITION_PENALTY = CONFIG.smartcut["generate_keywords"]["repetition_penalty"]
-DO_SAMPLE = CONFIG.smartcut["generate_keywords"]["do_sample"]
-
-SKIP_SPECIAL_TOKENS = CONFIG.smartcut["generate_keywords"]["skip_special_tokens"]
-CLEAN_UP_TOKENIZATION_SPACES = CONFIG.smartcut["generate_keywords"]["clean_up_tokenization_spaces"]
+MIN_PIXELS = settings.generate_keywords.min_pixels
+MAX_PIXELS = settings.generate_keywords.max_pixels
+TOTAL_PIXELS = settings.generate_keywords.total_pixels
+SIZEH = settings.generate_keywords.sizeh
+SIZEL = settings.generate_keywords.sizel
+TOKENIZE = settings.generate_keywords.tokenize
+ADD_GENERATION_PROMPT = settings.generate_keywords.add_generation_prompt
+PADDING = settings.generate_keywords.padding
+RETURN_TENSORS = settings.generate_keywords.return_tensors
+MAX_NEW_TOKENS = settings.generate_keywords.max_new_tokens
+TEMPERATURE = settings.generate_keywords.temperature
+TOP_P = settings.generate_keywords.top_p
+REPETITION_PENALTY = settings.generate_keywords.repetition_penalty
+DO_SAMPLE = settings.generate_keywords.do_sample
+SKIP_SPECIAL_TOKENS = settings.generate_keywords.skip_special_tokens
+CLEAN_UP_TOKENIZATION_SPACES = settings.generate_keywords.clean_up_tokenization_spaces
 
 
+@with_child_logger
 def generate_keywords_from_frames(
     image_path: Path,
     processor: ProcessorMixin,
@@ -51,11 +48,12 @@ def generate_keywords_from_frames(
     segment_id: str,
     num_frames: int,
     prompt_name: str = "keywords",
+    logger: LoggerProtocol | None = None,
 ) -> AIResult:
     """
     Génération des mots-clés pour un batch de frames.
     """
-
+    logger = ensure_logger(logger, __name__)
     SYSTEM_PROMPT = PROMPTS["system_keywords"]
     user_prompt = PROMPTS[prompt_name]
 
@@ -94,7 +92,9 @@ def generate_keywords_from_frames(
     ]
 
     # 1️⃣ Conversion du chat en texte brut pour le modèle
-    model_text = processor.apply_chat_template(messages, tokenize=TOKENIZE, add_generation_prompt=ADD_GENERATION_PROMPT)
+    model_text = processor.apply_chat_template(
+        messages, tokenize=TOKENIZE, add_generation_prompt=ADD_GENERATION_PROMPT, logger=logger
+    )
 
     os.environ["FORCE_QWENVL_VIDEO_READER"] = "torchvision"
 

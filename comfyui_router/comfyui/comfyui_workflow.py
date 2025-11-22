@@ -8,9 +8,7 @@ from typing import Any
 
 from shared.ffmpeg.ffmpeg_utils import get_fps, get_resolution
 from shared.utils.config import WORKFLOW_MAP
-from shared.utils.logger import get_logger
-
-logger = get_logger("Comfyui Router")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
 def route_workflow(video_path: Path) -> Path | None:
@@ -39,10 +37,14 @@ def load_workflow(path: Path) -> Any:
         return json.load(f)
 
 
-def optimal_batch_size(total_frames: int, min_size: int = 60, max_size: int = 80) -> int:
+@with_child_logger
+def optimal_batch_size(
+    total_frames: int, min_size: int = 60, max_size: int = 80, logger: LoggerProtocol | None = None
+) -> int:
     """
     Calcule la taille de batch optimale pour répartir les frames sans batch final trop petit.
     """
+    logger = ensure_logger(logger, __name__)
     # if total_frames <= 0:
     #     raise ValueError("Le nombre total de frames doit être positif.")
 
@@ -64,7 +66,10 @@ def optimal_batch_size(total_frames: int, min_size: int = 60, max_size: int = 80
     return best_size
 
 
-def inject_video_path(workflow: dict[str, Any], video_path: Path, frames_per_batch: int) -> dict[str, Any]:
+@with_child_logger
+def inject_video_path(
+    workflow: dict[str, Any], video_path: Path, frames_per_batch: int, logger: LoggerProtocol | None = None
+) -> dict[str, Any]:
     """
     Injecte dynamiquement le chemin de la vidéo source et le nom de fichier dans les nœuds ComfyUI VHS_LoadVideoPath et
     VHS_VideoCombine (nouveau format API).
@@ -76,6 +81,7 @@ def inject_video_path(workflow: dict[str, Any], video_path: Path, frames_per_bat
     Returns:
         Workflow modifié avec les bons chemins injectés.
     """
+    logger = ensure_logger(logger, __name__)
     filename_only = video_path.stem
     container_path = str(video_path).replace("/mnt/user/Zin-progress/comfyui-nvidia/basedir", "/basedir")
     if "nodes" in workflow:

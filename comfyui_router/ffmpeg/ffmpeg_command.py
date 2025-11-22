@@ -7,15 +7,15 @@ from pathlib import Path
 import subprocess
 
 from shared.ffmpeg.ffmpeg_utils import detect_nvenc_available
-from shared.utils.logger import get_logger
-
-logger = get_logger("Comfyui Router")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
-def get_total_frames(video_path: Path) -> int:
+@with_child_logger
+def get_total_frames(video_path: Path, logger: LoggerProtocol | None = None) -> int:
     """
     Retourne le nombre total de frames d'une vidéo via ffprobe.
     """
+    logger = ensure_logger(logger, __name__)
     try:
         cmd = [
             "ffprobe",
@@ -54,10 +54,12 @@ def get_total_frames(video_path: Path) -> int:
         return 0
 
 
-def video_has_audio(video_path: Path) -> bool:
+@with_child_logger
+def video_has_audio(video_path: Path, logger: LoggerProtocol | None = None) -> bool:
     """
     Retourne True si la vidéo contient une piste audio (via ffprobe).
     """
+    logger = ensure_logger(logger, __name__)
     try:
         result = subprocess.run(
             [
@@ -81,7 +83,8 @@ def video_has_audio(video_path: Path) -> bool:
         return False
 
 
-def convert_to_60fps(input_path: Path, output_path: Path) -> bool:
+@with_child_logger
+def convert_to_60fps(input_path: Path, output_path: Path, logger: LoggerProtocol | None = None) -> bool:
     """
     Convertit une vidéo à 60 FPS en H.265, avec détection auto GPU/CPU.
 
@@ -89,7 +92,8 @@ def convert_to_60fps(input_path: Path, output_path: Path) -> bool:
     - GPU : mode CQ (qualité constante)
     - CPU : mode CRF (qualité constante)
     """
-    use_nvenc = detect_nvenc_available()
+    logger = ensure_logger(logger, __name__)
+    use_nvenc = detect_nvenc_available(logger=logger)
 
     # Sélection des paramètres selon le mode
     if use_nvenc:

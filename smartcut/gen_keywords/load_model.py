@@ -14,8 +14,8 @@ from transformers import (
     Qwen3VLForConditionalGeneration,
 )
 
-from shared.models.config_manager import CONFIG
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.settings import get_settings
 from smartcut.analyze.analyze_torch_utils import (
     get_model_precision,
     vram_gpu,
@@ -25,9 +25,9 @@ from smartcut.analyze.analyze_utils import (
 )
 from smartcut.gen_keywords.gen_utils import get_free_vram_gb
 
-logger = get_logger("SmartCut")
+settings = get_settings()
 
-SAFETY_MARGIN: float = CONFIG.smartcut["analyse_segment"]["safety_margin_gb"]
+SAFETY_MARGIN = settings.analyse_segment.safety_margin_gb
 
 
 def resolve_dtype(dtype_str: str) -> TorchDType:
@@ -42,31 +42,34 @@ def resolve_dtype(dtype_str: str) -> TorchDType:
     return mapping.get(dtype_str, torch.float16)
 
 
-FREE_VRAM_8B = CONFIG.smartcut["generate_keywords"]["free_vram_8b"]
-FREE_VRAM_4B = CONFIG.smartcut["generate_keywords"]["free_vram_4b"]
-LOAD_IN_4BIT = CONFIG.smartcut["generate_keywords"]["load_in_4bit"]
-BNB_4BIT_USE_DOUBLE_QUANT = CONFIG.smartcut["generate_keywords"]["bnb_4bit_use_double_quant"]
-BNB_4BIT_QUANT_TYPE = CONFIG.smartcut["generate_keywords"]["bnb_4bit_quant_type"]
-BNB_4BIT_COMPUTE_DTYPE = resolve_dtype(CONFIG.smartcut["generate_keywords"]["bnb_4bit_compute_dtype"])
-LOAD_IN_4BIT_4B = CONFIG.smartcut["generate_keywords"]["load_in_4bit_4b"]
-BNB_4BIT_USE_DOUBLE_QUANT_4B = CONFIG.smartcut["generate_keywords"]["bnb_4bit_use_double_quant_4b"]
-BNB_4BIT_QUANT_TYPE_4B = CONFIG.smartcut["generate_keywords"]["bnb_4bit_quant_type_4b"]
-BNB_4BIT_COMPUTE_DTYPE_4B = resolve_dtype(CONFIG.smartcut["generate_keywords"]["bnb_4bit_compute_dtype_4b"])
-MODEL_4B = CONFIG.smartcut["generate_keywords"]["model_4b"]
-MODEL_8B = CONFIG.smartcut["generate_keywords"]["model_8b"]
-TORCH_DTYPE = CONFIG.smartcut["generate_keywords"]["torch_dtype"]
-DEVICE_MAP = CONFIG.smartcut["generate_keywords"]["device_map"]
-DEVICE_MAP_CPU = CONFIG.smartcut["generate_keywords"]["device_map_cpu"]
-ATTN_IMPLEMENTATION = CONFIG.smartcut["generate_keywords"]["attn_implementation"]
+FREE_VRAM_8B = settings.generate_keywords.free_vram_8b
+FREE_VRAM_4B = settings.generate_keywords.free_vram_4b
+LOAD_IN_4BIT = settings.generate_keywords.load_in_4bit
+BNB_4BIT_USE_DOUBLE_QUANT = settings.generate_keywords.bnb_4bit_use_double_quant
+BNB_4BIT_QUANT_TYPE = settings.generate_keywords.bnb_4bit_quant_type
+BNB_4BIT_COMPUTE_DTYPE = resolve_dtype(settings.generate_keywords.bnb_4bit_compute_dtype)
+MODEL_4B = settings.generate_keywords.model_4b
+MODEL_8B = settings.generate_keywords.model_8b
+TORCH_DTYPE = settings.generate_keywords.torch_dtype
+DEVICE_MAP = settings.generate_keywords.device_map
+LOAD_IN_4BIT_4B = settings.generate_keywords.load_in_4bit_4b
+BNB_4BIT_USE_DOUBLE_QUANT_4B = settings.generate_keywords.bnb_4bit_use_double_quant_4b
+BNB_4BIT_QUANT_TYPE_4B = settings.generate_keywords.bnb_4bit_quant_type_4b
+BNB_4BIT_COMPUTE_DTYPE_4B = resolve_dtype(settings.generate_keywords.bnb_4bit_compute_dtype_4b)
+DEVICE_MAP_CPU = settings.generate_keywords.device_map_cpu
+ATTN_IMPLEMENTATION = settings.generate_keywords.attn_implementation
 
 
-def load_qwen_model(force_reload: bool = False) -> tuple[ProcessorMixin, PreTrainedModel, str]:
+@with_child_logger
+def load_qwen_model(
+    force_reload: bool = False, logger: LoggerProtocol | None = None
+) -> tuple[ProcessorMixin, PreTrainedModel, str]:
     """
     Charge dynamiquement le modèle Qwen3-VL (4B ou 8B) en fonction de la VRAM disponible.
 
     Gère automatiquement la quantization via BitsAndBytesConfig uniquement si activée.
     """
-
+    logger = ensure_logger(logger, __name__)
     global _MODEL_CACHE, _PROCESSOR_CACHE, _MODEL_NAME_CACHE
     try:
         free_vram = get_free_vram_gb()
@@ -143,15 +146,17 @@ def load_qwen_model(force_reload: bool = False) -> tuple[ProcessorMixin, PreTrai
         raise
 
 
-def load_and_batches() -> tuple[ProcessorMixin, PreTrainedModel, str, int]:
+@with_child_logger
+def load_and_batches(logger: LoggerProtocol | None = None) -> tuple[ProcessorMixin, PreTrainedModel, str, int]:
     """
     lance le modèle et définit la taille du batches
     """
+    logger = ensure_logger(logger, __name__)
     try:
-        processor, model, model_name = load_qwen_model()
-        free_gb, total_gb = vram_gpu()
+        processor, model, model_name = load_qwen_model(logger=logger)
+        free_gb, total_gb = vram_gpu(logger=logger)
         precision = get_model_precision(model)
-        batch_size = estimate_safe_batch_size(free_gb, total_gb, precision, SAFETY_MARGIN)
+        batch_size = estimate_safe_batch_size(free_gb, total_gb, precision, SAFETY_MARGIN, logger=logger)
         logger.info(f"🧠 Batch size estimé dynamiquement : {batch_size}")
     except Exception as e:
         logger.error(f"💥 Erreur lors du chargement du modèle Qwen : {e}")

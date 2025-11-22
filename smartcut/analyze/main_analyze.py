@@ -4,23 +4,25 @@ from __future__ import annotations
 
 import os
 
-from shared.models.config_manager import CONFIG
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.settings import get_settings
 from smartcut.analyze.analyze_core import analyze_by_segments
 from smartcut.models_sc.smartcut_model import SmartCutSession
 
-logger = get_logger("SmartCut")
+settings = get_settings()
 
-FPS_EXTRACT = CONFIG.smartcut["analyse_segment"]["fps_extract"]
-BASE_RATE = CONFIG.smartcut["analyse_segment"]["base_rate"]
+FPS_EXTRACT = settings.analyse_segment.fps_extract
+BASE_RATE = settings.analyse_segment.base_rate
 
 
+@with_child_logger
 def analyze_video_segments(
     video_path: str,
     session: SmartCutSession,
     frames_per_segment: int = 3,
     auto_frames: bool = True,
     lite: bool = False,
+    logger: LoggerProtocol | None = None,
 ) -> SmartCutSession:
     """
     Segmented video analysis with optional SmartCut session tracking.
@@ -28,7 +30,8 @@ def analyze_video_segments(
     Each segment is analyzed independently (vision + reasoning). If combine=True, a final global synthesis is generated
     at the end.
     """
-    # logger.debug(f"session : {session}")
+    logger = ensure_logger(logger, __name__)
+
     if lite:
         logger.info(
             f"🟢 Mode LITE — 🎬 Analyse des segments depuis le dossier : \
@@ -45,6 +48,7 @@ def analyze_video_segments(
         base_rate=BASE_RATE,
         session=session,
         lite=lite,
+        logger=logger,
     )
     # logger.debug(f"session : {session}")
     if session is None:

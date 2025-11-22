@@ -8,9 +8,7 @@ from typing import Any
 import requests
 
 from shared.utils.config import HOST_ROOT, VISIBLE_ROOT
-from shared.utils.logger import get_logger
-
-logger = get_logger("Comfyui Router")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
 def comfyui_path(full_path: Path) -> Path:
@@ -19,10 +17,12 @@ def comfyui_path(full_path: Path) -> Path:
     return visible_root / full_path.relative_to(host_root)
 
 
-def run_comfy(workflow: dict[str, Any]) -> bool:
+@with_child_logger
+def run_comfy(workflow: dict[str, Any], logger: LoggerProtocol | None = None) -> bool:
     """
     Envoie un workflow complet à ComfyUI.
     """
+    logger = ensure_logger(logger, __name__)
     payload = {"prompt": workflow}
 
     logger.info("==== JSON ENVOYÉ À COMFYUI ====")

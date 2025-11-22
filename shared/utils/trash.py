@@ -6,12 +6,12 @@ from datetime import datetime
 from pathlib import Path
 import shutil
 
-from shared.utils.logger import get_logger
-
-logger = get_logger("Shared")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
-def delete_files(path: Path, ext: str = "*.jpg") -> None:
+@with_child_logger
+def delete_files(path: Path, ext: str = "*.jpg", logger: LoggerProtocol | None = None) -> None:
+    logger = ensure_logger(logger, __name__)
     for file in Path(path).glob(ext):
         # logger.debug(f"🧹 Vérifié : {file.name}")
         try:
@@ -21,10 +21,12 @@ def delete_files(path: Path, ext: str = "*.jpg") -> None:
             logger.warning(f"⚠️ Impossible de supprimer {file.name} : {e}")
 
 
-def move_to_trash(file_path: Path, trash_root: Path) -> Path:
+@with_child_logger
+def move_to_trash(file_path: Path, trash_root: Path, logger: LoggerProtocol | None = None) -> Path:
     """
     Déplace un fichier vers la corbeille (trash/YYYY-MM-DD/).
     """
+    logger = ensure_logger(logger, __name__)
     try:
         if not file_path.exists():
             logger.warning(f"⚠️ Fichier introuvable : {file_path}")
@@ -43,7 +45,9 @@ def move_to_trash(file_path: Path, trash_root: Path) -> Path:
         return file_path
 
 
-def purge_old_trash(trash_root: Path, days: int = 7) -> None:
+@with_child_logger
+def purge_old_trash(trash_root: Path, days: int = 7, logger: LoggerProtocol | None = None) -> None:
+    logger = ensure_logger(logger, __name__)
     now = datetime.now()
     for folder in trash_root.iterdir():
         if folder.is_dir():

@@ -17,56 +17,73 @@ from comfyui_router.models_cr.videojob import VideoJob
 from comfyui_router.output.output import cleanup_outputs
 from cutmind.db.data_utils import format_resolution
 from cutmind.db.repository import CutMindRepository
+from cutmind.models_cm.db_models import Video
 from cutmind.process.file_mover import FileMover
 from shared.ffmpeg.ffmpeg_utils import detect_nvenc_available, get_fps, get_resolution
-from shared.models.config_manager import CONFIG
 from shared.utils.config import OK_DIR, OUTPUT_DIR, TRASH_DIR
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.settings import get_settings
 from shared.utils.trash import move_to_trash, purge_old_trash
 
-logger = get_logger("Comfyui Router")
+settings = get_settings()
 
-
-FORCE_DEINTERLACE = CONFIG.comfyui_router["processor"]["force_deinterlace"]
-CLEANUP = CONFIG.comfyui_router["processor"]["cleanup"]
-PURGE_DAYS = CONFIG.comfyui_router["processor"]["purge_days"]
-DELTA_DURATION = CONFIG.comfyui_router["processor"]["delta_duration"]
-RATIO_DURATION = CONFIG.comfyui_router["processor"]["ratio_duration"]
+FORCE_DEINTERLACE = settings.router_processor.force_deinterlace
+CLEANUP = settings.router_processor.cleanup
+PURGE_DAYS = settings.router_processor.purge_days
+DELTA_DURATION = settings.router_processor.delta_duration
+RATIO_DURATION = settings.router_processor.ratio_duration
 
 
 class VideoProcessor:
-    def __init__(self, cutmind_repo: CutMindRepository | None = None) -> None:
-        self.logger = logger
+    @with_child_logger
+    def __init__(
+        self,
+        cutmind_repo: CutMindRepository | None = None,
+        video: Video | None = None,
+        logger: LoggerProtocol | None = None,
+    ) -> None:
+        logger = ensure_logger(logger, __name__)
         self.workflow_mgr = ComfyWorkflowManager()
         self.output_mgr = OutputManager()
         self.repo = cutmind_repo
+        self.video = video
 
-    def process(self, video_path: Path, force_deinterlace: bool = FORCE_DEINTERLACE) -> None:
-        self.logger.info(f"🚀 Début traitement ComfyUI : {video_path.name}")
+    @with_child_logger
+    def process(
+        self, video_path: Path, force_deinterlace: bool = FORCE_DEINTERLACE, logger: LoggerProtocol | None = None
+    ) -> None:
+        logger = ensure_logger(logger, __name__)
+        if not self.video or not self.video.name:
+            logger.warning("🚨 Vidéo inconnue")
+            return
+
+        logger.info(f"🎞️ Traitement de {self.video.name} : {self.video.resolution} - {self.video.fps} fps")
+        logger.info(f"🚀 Début traitement ComfyUI : {video_path.name} sur {len(self.video.segments)}")
+
         job = VideoJob(video_path)
-        job.analyze()
+        job.analyze(logger=logger)
 
-        use_nvenc = detect_nvenc_available()
+        use_nvenc = detect_nvenc_available(logger=logger)
         if use_nvenc:
             cuda = True
         else:
             cuda = False
 
         # 🧩 Étape 2 : détection / désentrelacement
-        video_path = ensure_deinterlaced(video_path, use_cuda=cuda, cleanup=CLEANUP)
-        video_path = smart_recut_hybrid(video_path, use_cuda=cuda, cleanup=CLEANUP)
+        video_path = ensure_deinterlaced(video_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
+        video_path = smart_recut_hybrid(video_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
         job.path = Path(video_path)
         job.comfyui_path = comfyui_path(full_path=video_path)
-        workflow = self.workflow_mgr.prepare_workflow(job)
+        workflow = self.workflow_mgr.prepare_workflow(job, logger=logger)
         if not workflow:
             return
 
-        if not self.workflow_mgr.run(workflow):
-            self.logger.warning(f"❌ Échec traitement ComfyUI : {job.path.name}")
+        if not self.workflow_mgr.run(workflow, logger=logger):
+            logger.warning(f"❌ Échec traitement ComfyUI : {job.path.name}")
             return
 
-        if not self.output_mgr.wait_for_output(job):
-            self.logger.warning(f"❌ Fichier de sortie introuvable : {job.path.name}")
+        if not self.output_mgr.wait_for_output(job, logger=logger):
+            logger.warning(f"❌ Fichier de sortie introuvable : {job.path.name}")
             return
 
         if not job.output_file:
@@ -80,36 +97,46 @@ class VideoProcessor:
         if job.fps_out > 60:
             temp_output = final_output.with_name(f"{job.path.stem}_60fps.mp4")
             logger.debug(f"fps_out > 60 -> temp_output : {temp_output}")
-            if convert_to_60fps(job.output_file, temp_output):
+            if convert_to_60fps(job.output_file, temp_output, logger=logger):
                 job.output_file.unlink()
                 final_output = temp_output
                 logger.debug(f"fps_out > 60 -> final_output : {final_output}")
         elif job.fps_out < 59:
             retry_path = job.path.parent / f"{job.path.name}"
             logger.debug(f"fps_out < 60 -> retry_path : {retry_path}")
-            self._notify_cutmind(job, retry_path, status="rejected")
+            self._notify_cutmind(job, retry_path, status="rejected", logger=logger)
             # shutil.move(job.output_file, retry_path)
-            self.logger.info(f"↩️ Rejet : {job.path.name} (FPS {job.fps_out:.2f})")
+            logger.info(f"↩️ Rejet : {job.path.name} (FPS {job.fps_out:.2f})")
 
             return
         else:
             shutil.move(job.output_file, final_output)
 
-        move_to_trash(file_path=job.path, trash_root=TRASH_DIR)
-        cleanup_outputs(video_path.stem, final_output, OUTPUT_DIR)
-        purge_old_trash(trash_root=TRASH_DIR, days=PURGE_DAYS)
-        self.logger.info(f"🧹 Nettoyage des fichiers intermédiaires terminé pour {video_path.stem}")
-        self.logger.info(f"✅ Terminé : {final_output.name}")
+        move_to_trash(file_path=job.path, trash_root=TRASH_DIR, logger=logger)
+        cleanup_outputs(video_path.stem, final_output, OUTPUT_DIR, logger=logger)
+        purge_old_trash(trash_root=TRASH_DIR, days=PURGE_DAYS, logger=logger)
+        logger.info(f"🧹 Nettoyage des fichiers intermédiaires terminé pour {video_path.stem}")
+        logger.info(f"✅ Terminé : {final_output.name}")
         logger.debug(f"for _notif -> final_output : {final_output}")
-        self._notify_cutmind(job, final_output, status="enhanced")
+        self._notify_cutmind(job, final_output, status="enhanced", logger=logger)
 
-    def _notify_cutmind(self, job: VideoJob, final_output: Path, status: str, replace_original: bool = True) -> None:
+    @with_child_logger
+    def _notify_cutmind(
+        self,
+        job: VideoJob,
+        final_output: Path,
+        status: str,
+        replace_original: bool = True,
+        logger: LoggerProtocol | None = None,
+    ) -> None:
+        logger = ensure_logger(logger, __name__)
+
         if not self.repo:
             return
 
         try:
             seg_uid = job.path.stem.split("_")[2]
-            seg = self.repo.get_segment_by_uid(seg_uid)
+            seg = self.repo.get_segment_by_uid(seg_uid, logger=logger)
             logger.debug(f"_notify_cutmind seg_uid : {seg_uid}")
 
             if not seg:
@@ -159,7 +186,7 @@ class VideoProcessor:
 
                 # --- 🛠️ Remplacement
                 try:
-                    FileMover.safe_replace(final_output, target_path)
+                    FileMover.safe_replace(final_output, target_path, logger=logger)
                     logger.info("📦 Fichier remplacé (via safe_copy) : %s → %s", final_output.name, target_path)
 
                 except Exception as move_err:
@@ -178,12 +205,12 @@ class VideoProcessor:
             seg.status = status
             seg.source_flow = "comfyui_router"
             seg.fps = getattr(job, "fps_out", None)
-            seg.resolution = format_resolution(job.resolution_out)
+            seg.resolution = format_resolution(job.resolution_out, logger=logger)
             seg.processed_by = job.workflow_name or "comfyui_router"
             if not replace_original:
                 seg.output_path = str(final_output)
 
-            self.repo.update_segment_postprocess(seg)
+            self.repo.update_segment_postprocess(seg, logger=logger)
             logger.info("🧠 CutMind synchronisé pour segment %s (%s)", seg.uid, status)
 
         except Exception as err:

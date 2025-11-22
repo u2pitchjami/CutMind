@@ -22,27 +22,27 @@ import shutil
 
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.smartcut_parser import convert_json_to_video, parse_smartcut_json
-from cutmind.validation.validation import analyze_session_validation_db
-from shared.utils.config import JSON_STATES, JSON_VALIDATED, MANUAL_JSON, MIN_CONFIDENCE
-from shared.utils.logger import get_logger
-
-logger = get_logger("CutMind")
+from cutmind.validation.main_validation import validation
+from shared.utils.config import JSON_IMPORTED, JSON_STATES
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
 # =====================================================================
 # ⚙️ Fonction principale
 # =====================================================================
+@with_child_logger
 def import_all_smartcut_jsons(
     state_dir: Path = Path(JSON_STATES),
-    validated_dir: Path = Path(JSON_VALIDATED),
-    manual_review_dir: Path = Path(MANUAL_JSON),
+    imported_dir: Path = Path(JSON_IMPORTED),
     dry_run: bool = False,
+    logger: LoggerProtocol | None = None,
 ) -> None:
     """
     Parcourt tous les fichiers SmartCut JSON dans `state_dir`,
     les importe en base via CutMindRepository et applique une
     validation automatique post-insertion.
     """
+    logger = ensure_logger(logger, __name__)
     logger.info("🚀 Démarrage de l'import SmartCut depuis %s", state_dir)
     repo = CutMindRepository()
 
@@ -50,8 +50,7 @@ def import_all_smartcut_jsons(
         logger.error("❌ Dossier inexistant : %s", state_dir)
         return
 
-    validated_dir.mkdir(parents=True, exist_ok=True)
-    manual_review_dir.mkdir(parents=True, exist_ok=True)
+    imported_dir.mkdir(parents=True, exist_ok=True)
 
     json_files = sorted(state_dir.glob("*.smartcut_state.json"))
     logger.info("🔍 %d fichiers SmartCut détectés dans %s", len(json_files), state_dir)
@@ -66,14 +65,14 @@ def import_all_smartcut_jsons(
                 data = json.load(f)
 
             # --- Validation et typage ---
-            ok, session, session_type, reason = parse_smartcut_json(data, json_path.name)
+            ok, session, session_type, reason = parse_smartcut_json(data, json_path.name, logger=logger)
             if not ok:
                 logger.warning("⏭️ Ignoré (%s): %s", reason, json_path.name)
                 skipped_count += 1
                 continue
 
             # --- Doublon ---
-            if repo.video_exists(session.uid):
+            if repo.video_exists(session.uid, logger=logger):
                 logger.info("♻️ Vidéo déjà en base : %s", session.uid)
                 skipped_count += 1
                 continue
@@ -87,29 +86,10 @@ def import_all_smartcut_jsons(
                 continue
 
             # --- Insertion ---
-            video_id = repo.insert_video_with_segments(video)
+            video_id = repo.insert_video_with_segments(video, logger=logger)
             logger.debug("✅ Insertion DB réussie pour %s (id=%d)", video.uid, video_id)
 
-            # --- Validation automatique ---
-            result = analyze_session_validation_db(video=video, min_confidence=MIN_CONFIDENCE)
-            auto_valid = result["auto_valid"]
-            valid = result["valid"]
-            total = result["total"]
-            moved = result["moved"]
-
-            if auto_valid:
-                logger.info("🎯 Auto-validation complète (%d/%d segments)", valid, total)
-                if moved:
-                    logger.info("🔀 Fichiers vidéo déplacés pour %s", video.uid)
-                    dest = validated_dir / json_path.name
-                else:
-                    logger.warning("ℹ️ Fichiers vidéo non déplacés pour %s", video.uid)
-                    raise Exception("Échec du déplacement")
-            else:
-                logger.info("🕵️ Validation manuelle requise (%d/%d segments)", valid, total)
-                dest = manual_review_dir / json_path.name
-
-            shutil.move(json_path, dest)
+            shutil.move(json_path, imported_dir)
             imported_count += 1
 
         except Exception as exc:  # pylint: disable=broad-except
@@ -123,3 +103,4 @@ def import_all_smartcut_jsons(
         skipped_count,
         error_count,
     )
+    validation(logger=logger)

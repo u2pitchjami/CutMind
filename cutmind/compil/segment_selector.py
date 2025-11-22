@@ -5,19 +5,21 @@ from cutmind.db.db_connection import db_conn, get_dict_cursor
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.compilation_template import CompilationBlock
 from cutmind.models_cm.db_models import Segment
-from shared.utils.logger import get_logger
-
-logger = get_logger("CutMind")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
-def select_segments_for_block(block: CompilationBlock, repo: CutMindRepository) -> list[Segment]:
-    segments = repo.get_segments_by_category(block.category)
-    with db_conn() as conn:
+@with_child_logger
+def select_segments_for_block(
+    block: CompilationBlock, repo: CutMindRepository, logger: LoggerProtocol | None = None
+) -> list[Segment]:
+    logger = ensure_logger(logger, __name__)
+    segments = repo.get_segments_by_category(block.category, logger=logger)
+    with db_conn(logger=logger) as conn:
         with get_dict_cursor(conn) as cur:
             for seg in segments:
                 if not seg.id:
                     continue
-                seg.keywords = repo.get_keywords_for_segment(cur, seg.id)
+                seg.keywords = repo.get_keywords_for_segment(cur, seg.id, logger=logger)
     # --- Étape 1 : filtre strict keywords_exclude
     segments = [s for s in segments if not any(keyword in block.keywords_exclude for keyword in s.keywords)]
 

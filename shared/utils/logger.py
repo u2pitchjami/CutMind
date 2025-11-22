@@ -6,11 +6,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import functools
 import logging
+from logging import Filter, LogRecord
 import logging.handlers
 import os
 from typing import Any, ParamSpec, Protocol, TypeVar, cast
 
-from shared.utils.config import LOG_FILE_PATH, LOG_LEVEL, LOG_ROTATION_DAYS
+from shared.utils.config import LOG_FILE_PATH, LOG_LEVEL, LOG_ROTATION_DAYS, LOG_SPLIT_LEVELS
 from shared.utils.log_rotation import rotate_logs
 
 
@@ -66,7 +67,7 @@ class LoggerProtocol(Protocol):
 
 
 @dataclass(frozen=True)
-class BrainopsLogger:
+class CutmindLogger:
     """
     A logger class for Brainops projects.
 
@@ -154,44 +155,96 @@ class BrainopsLogger:
         Returns:
         A new BrainopsLogger instance that is a child of this logger.
         """
-        return BrainopsLogger(self._base.getChild(suffix))
+        return CutmindLogger(self._base.getChild(suffix))
+
+
+class InfoOnlyFilter(Filter):
+    def filter(self, record: LogRecord) -> bool:
+        return record.levelno >= logging.INFO
 
 
 def _ensure_handlers(base: logging.Logger, global_log_file: str, script_log_file: str) -> None:
-    if getattr(base, "_brainops_configured", False):
+    # ✅ Double sécurité anti-reconfiguration
+    if getattr(base, "_cutmind_configured", False) or base.handlers:
         return
 
     formatter = logging.Formatter("%(asctime)s - %(levelname)s - [%(name)s] %(message)s")
 
+    if LOG_SPLIT_LEVELS:
+        # --- Global logs split ---
+        global_info_log = global_log_file.replace(".log", "_INFO.log")
+        global_debug_log = global_log_file.replace(".log", "_DEBUG.log")
+
+        fh_global_info = logging.handlers.TimedRotatingFileHandler(
+            filename=global_info_log,
+            when="midnight",
+            backupCount=LOG_ROTATION_DAYS,
+            encoding="utf-8",
+        )
+        fh_global_info.setFormatter(formatter)
+        fh_global_info.addFilter(InfoOnlyFilter())
+        base.addHandler(fh_global_info)
+
+        fh_global_debug = logging.handlers.TimedRotatingFileHandler(
+            filename=global_debug_log,
+            when="midnight",
+            backupCount=LOG_ROTATION_DAYS,
+            encoding="utf-8",
+        )
+        fh_global_debug.setFormatter(formatter)
+        base.addHandler(fh_global_debug)
+
+        # --- Script logs split ---
+        script_info_log = script_log_file.replace(".log", "_INFO.log")
+        script_debug_log = script_log_file.replace(".log", "_DEBUG.log")
+
+        fh_script_info = logging.handlers.TimedRotatingFileHandler(
+            filename=script_info_log,
+            when="midnight",
+            backupCount=LOG_ROTATION_DAYS,
+            encoding="utf-8",
+        )
+        fh_script_info.setFormatter(formatter)
+        fh_script_info.addFilter(InfoOnlyFilter())
+        base.addHandler(fh_script_info)
+
+        fh_script_debug = logging.handlers.TimedRotatingFileHandler(
+            filename=script_debug_log,
+            when="midnight",
+            backupCount=LOG_ROTATION_DAYS,
+            encoding="utf-8",
+        )
+        fh_script_debug.setFormatter(formatter)
+        base.addHandler(fh_script_debug)
+
+    else:
+        # --- Fallback global/script unique ---
+        fh_global = logging.handlers.TimedRotatingFileHandler(
+            filename=global_log_file,
+            when="midnight",
+            backupCount=LOG_ROTATION_DAYS,
+            encoding="utf-8",
+        )
+        fh_global.setFormatter(formatter)
+        fh_global.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+        base.addHandler(fh_global)
+
+        fh_script = logging.handlers.TimedRotatingFileHandler(
+            filename=script_log_file,
+            when="midnight",
+            backupCount=LOG_ROTATION_DAYS,
+            encoding="utf-8",
+        )
+        fh_script.setFormatter(formatter)
+        fh_script.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+        base.addHandler(fh_script)
+
+    # ✅ Console output toujours active
     stream = logging.StreamHandler()
     stream.setFormatter(formatter)
     base.addHandler(stream)
 
-    # Global log: rotation quotidienne à minuit, conserver 14 jours
-    fh_global = logging.handlers.TimedRotatingFileHandler(
-        filename=global_log_file,
-        when="midnight",
-        backupCount=14,
-        encoding="utf-8",
-        utc=False,  # mets True si tu veux les dates en UTC
-    )
-    fh_global.setFormatter(formatter)
-    base.addHandler(fh_global)
-
-    # Script log: rotation quotidienne à minuit, conserver 14 jours
-    fh_script = logging.handlers.TimedRotatingFileHandler(
-        filename=script_log_file,
-        when="midnight",
-        backupCount=14,
-        encoding="utf-8",
-        utc=False,
-    )
-    fh_script.setFormatter(formatter)
-    base.addHandler(fh_script)
-
-    # Évite double impression si root a des handlers
     base.propagate = False
-
     setattr(base, "_cutmind_configured", True)
 
 
@@ -207,7 +260,7 @@ def get_logger(script_name: str) -> LoggerProtocol:
     """
     os.makedirs(LOG_FILE_PATH, exist_ok=True)
     # date_str = datetime.now().strftime("%Y-%m-%d")
-    global_log_file = os.path.join(LOG_FILE_PATH, "CutMind.log")
+    global_log_file = os.path.join(LOG_FILE_PATH, "CutMind_Global.log")
     script_log_file = os.path.join(LOG_FILE_PATH, f"{script_name}.log")
 
     try:
@@ -218,14 +271,14 @@ def get_logger(script_name: str) -> LoggerProtocol:
         log_level = getattr(logging, log_level_str, logging.INFO)
         base_fallback.setLevel(log_level)
         _ensure_handlers(base_fallback, global_log_file, script_log_file)
-        BrainopsLogger(base_fallback).warning(f"Rotation des logs échouée: {exc}")
+        CutmindLogger(base_fallback).warning(f"Rotation des logs échouée: {exc}")
 
     base = logging.getLogger(script_name)
     log_level_str = LOG_LEVEL.upper()
     log_level = getattr(logging, log_level_str, logging.INFO)
     base.setLevel(log_level)
     _ensure_handlers(base, global_log_file, script_log_file)
-    return BrainopsLogger(base)  # ← classe concrète, pas le Protocol
+    return CutmindLogger(base)  # ← classe concrète, pas le Protocol
 
 
 # ---------- Utilities ----------

@@ -5,18 +5,19 @@ from typing import Literal
 
 from cutmind.models_cm.db_models import Segment
 from shared.utils.config import EXPORTS_COMPIL, TEMP_COMPIL
-from shared.utils.logger import get_logger
-
-logger = get_logger("CutMind")
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
+@with_child_logger
 def make_compilation(
     segments: list[Segment],
     output_path: Path = EXPORTS_COMPIL,
     temp_path: Path = TEMP_COMPIL,
     manifest_path: Path | None = EXPORTS_COMPIL,
     compress: Literal["copy", "cpu", "cuda"] = "cuda",
+    logger: LoggerProtocol | None = None,
 ) -> None:
+    logger = ensure_logger(logger, __name__)
     if not segments:
         logger.warning("❌ Aucun segment à compiler.")
         return
