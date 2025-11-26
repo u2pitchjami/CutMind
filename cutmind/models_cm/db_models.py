@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
+import uuid
 
 
 # -------------------------------------------------------------
@@ -12,10 +14,10 @@ from typing import Any
 @dataclass
 class Segment:
     id: int | None = None
-    uid: str = ""
+    uid: str = field(default_factory=lambda: str(uuid.uuid4()))
     video_id: int = 0
-    start: float | None = None
-    end: float | None = None
+    start: float = 0.0
+    end: float = 0.0
     duration: float | None = None
     status: str = "raw"
     confidence: float | None = None
@@ -39,7 +41,7 @@ class Segment:
     tags: list[str] = field(default_factory=list)
     error: str | None = None
     created_at: datetime | None = None
-    last_updated: datetime | None = None
+    last_updated: str = field(default_factory=lambda: datetime.now().isoformat())
     keywords: list[str] = field(default_factory=list)
 
     # --- Factory : construit à partir d’une ligne SQL
@@ -69,6 +71,23 @@ class Segment:
     def has_tag(self, tag: str) -> bool:
         return tag in self.tags
 
+    def compute_duration(self) -> None:
+        """Calcule et met à jour la durée du segment."""
+        self.duration = round(self.end - self.start, 3)
+        self.last_updated = datetime.now().isoformat()
+
+    def predict_filename(self, base_dir: str | Path = "./outputs", folder_name: str = "folder") -> None:
+        """
+        Génère un nom de fichier prédictif stable et unique.
+        Exemple : seg_0001_a1b2c3d4.mp4
+        """
+        base = Path(base_dir) / folder_name
+        base.mkdir(parents=True, exist_ok=True)
+        name = f"seg_{self.id:04d}_{self.uid}.mp4"
+        self.filename_predicted = name
+        self.output_path = str(base / name)
+        self.last_updated = datetime.now().isoformat()
+
 
 # -------------------------------------------------------------
 # 🎬 VIDEO : version unique (DB + logique)
@@ -78,6 +97,7 @@ class Video:
     id: int | None = None
     uid: str = ""
     name: str = ""
+    video_path: str | None = None
     duration: float | None = None
     fps: float | None = None
     resolution: str | None = None
@@ -86,8 +106,8 @@ class Video:
     filesize_mb: float | None = None
     status: str = "init"
     origin: str | None = "smartcut"
-    created_at: datetime | None = None
-    last_updated: datetime | None = None
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    last_updated: str = field(default_factory=lambda: datetime.now().isoformat())
     segments: list[Segment] = field(default_factory=list)
 
     @classmethod
@@ -95,6 +115,25 @@ class Video:
         allowed = cls.__annotations__.keys()
         data = {k: row[k] for k in row if k in allowed}
         return cls(**data)
+
+    def finalize_segments(self, output_dir: str | Path = "./outputs") -> None:
+        """
+        Calcule la durée et le nom de fichier de sortie pour chaque segment.
+        """
+        folder_name = self.name or Path(self.video_path).stem
+        for seg in self.segments:
+            seg.compute_duration()
+            seg.predict_filename(output_dir, folder_name)
+            seg.video_id = self.id or 0
+            seg.fps = self.fps
+            seg.resolution = self.resolution
+            seg.codec = self.codec
+            seg.bitrate = self.bitrate
+        self.last_updated = datetime.now().isoformat()
+
+    def get_pending_segments(self) -> list[Segment]:
+        """Retourne les segments non traités par l'IA."""
+        return [s for s in self.segments if s.status != "ai_done"]
 
 
 # -------------------------------------------------------------

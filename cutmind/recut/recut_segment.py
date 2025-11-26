@@ -20,38 +20,61 @@ def perform_recut(
     recut_points: list[float],
     logger: LoggerProtocol | None = None,
 ) -> None:
+    """Recoupe un segment déjà extrait — sécurisé avec validations strictes."""
     logger = ensure_logger(logger, __name__)
     repo = CutMindRepository()
-    if not segment or not segment.start or not segment.end or not segment.id:
-        return
-    input_path = Path(str(segment.output_path))
 
+    if not segment or not segment.id or not segment.duration:
+        logger.error("Segment invalide pour recut : %s", segment)
+        return
+
+    input_path = Path(str(segment.output_path))
     if not input_path.exists():
         logger.error("❌ Fichier segment introuvable : %s", input_path)
         return
 
-    recut_points = sorted(x for x in recut_points if segment.start < segment.start + x < segment.end)
+    # 1 — Vérification stricte
+    if any(p <= 0 or p >= segment.duration for p in recut_points):
+        logger.error("❌ Recut refusé : points invalides %s (durée segment = %.2fs)", recut_points, segment.duration)
+        return
 
-    # Construit les fenêtres temporelles
-    cuts = [segment.start, *(segment.start + p for p in recut_points), segment.end]
+    valid_points = sorted(recut_points)
+    cuts = [0.0, *valid_points, float(segment.duration)]
 
     output_dir = input_path.parent / "recut"
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    generated_files: list[Path] = []
+    new_segments = []
+
+    # 2 — Génération segments
     for i in range(len(cuts) - 1):
         start = cuts[i]
         end = cuts[i + 1]
 
-        # UID UNIQUE PAR SEGMENT
         new_uid = str(uuid.uuid4())
-
         output_path = output_dir / f"seg_{segment.id:04d}_{new_uid}.mp4"
 
         try:
-            ffmpeg_cut_one_segment(input_path, start, end, output_path, logger=logger)
-        except Exception as e:
-            logger.error("❌ Erreur ffmpeg (cut %s): %s", segment.uid, e)
+            ffmpeg_cut_one_segment(
+                input_path=input_path,
+                start=start,
+                end=end,
+                output_path=output_path,
+                logger=logger,
+            )
+        except Exception as exc:
+            logger.error("❌ Erreur ffmpeg (cut): %s", exc)
             continue
+
+        # 3 — Vérification du fichier généré (anti-1Ko)
+        if not output_path.exists() or output_path.stat().st_size < 50 * 1024:
+            logger.error("❌ Fichier recut invalide : %s (taille trop faible)", output_path)
+            if output_path.exists():
+                output_path.unlink()
+            continue
+
+        generated_files.append(output_path)
 
         new_seg = Segment(
             uid=new_uid,
@@ -72,13 +95,35 @@ def perform_recut(
             merged_from=[segment.uid],
         )
 
-        repo._insert_segment(new_seg, logger=logger)
+        new_segments.append(new_seg)
 
-    # une fois TOUT recut → poubelle l’ancien
-    move_to_trash(input_path, TRASH_DIR_SC, logger=logger)
+    # 4 — SÉCURITÉ : si tout n’est pas généré correctement → on NE SUPPRIME RIEN
+    if len(new_segments) != len(cuts) - 1:
+        logger.error(
+            "❌ Recut échoué : %d/%d segments valides seulement. Original conservé.",
+            len(new_segments),
+            len(cuts) - 1,
+        )
+        # Nettoyage propre
+        for p in generated_files:
+            try:
+                p.unlink()
+            except OSError:
+                logger.warning("Impossible de supprimer %s", p)
+        return
+
+    # 5 — Recuts OK → on supprime l’ancien
+    for seg in new_segments:
+        repo._insert_segment(seg, logger=logger)
+
+    move_to_trash(input_path, TRASH_DIR_SC)
     repo.delete_segment(segment.id, logger=logger)
 
-    logger.info("🔪 Recut OK pour %s → %d nouveaux segments", segment.uid, len(cuts) - 1)
+    logger.info(
+        "🔪 Recut OK pour %s → %d nouveaux segments",
+        segment.uid,
+        len(new_segments),
+    )
 
 
 def parse_recut_points(status: str) -> list[float]:

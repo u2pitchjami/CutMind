@@ -1,23 +1,15 @@
-services:
-  comfyui-router-dev:
-    container_name: comfyui-router-dev
-    image: u2pitchjami/comfyui_video_router:cpu
-    restart: unless-stopped
-    command: ["python3", "-m", "comfyui_router.main"]
-    
-    # 🧠 Volumes montés (ton code et ton dossier de travail)
-    volumes:
-      - .:/app                   # code source local monté en direct
-      - /mnt/user/Zin-progress/comfyui-nvidia/basedir:/basedir  # dossier partagé avec ComfyUI
-      - /home/pipo/data/logs/comfyui_router:/app/logs
-      - /home/pipo/data/appdata/comfyui_router/env:/app/config
-
-    # 🌍 Variables d’environnement
+services:  
+  cutmind:
+    container_name: cutmind
+    image: u2pitchjami/cutmind:dev
+    entrypoint: ["/bin/sh", "-c", "python3 -m cutmind.main"]
     environment:
-      - TZ=Europe/Paris
-      - PYTHONPATH=/app:/app
-      - PYTHONUNBUFFERED=1
-
-    # 🧾 Log direct dans le terminal
-    tty: true
-    stdin_open: true
+      TZ: Europe/Paris
+      HF_HOME: /app/hf_cache
+    volumes:
+      - /mnt/user/Zin-progress/CutMind/dev:/basedir
+      - /mnt/user/Zin-progress/CutMind/dev/CutMind:/cutmind
+      - /home/pipo/data/logs/cutmind/logs:/app/logs
+      - /home/pipo/data/appdata/cutmind/env:/app/config
+      - /mnt/user/appdata/cutmind/models:/app/hf_cache
+    restart: always

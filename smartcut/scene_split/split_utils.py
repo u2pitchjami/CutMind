@@ -10,7 +10,7 @@ import shutil
 
 import cv2
 
-from shared.utils.config import OUPUT_DIR_SC
+from shared.utils.config import OUTPUT_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
@@ -67,7 +67,7 @@ def export_segments_csv(
     Sauvegarde les segments dans un CSV pour vérification.
     """
     logger = ensure_logger(logger, __name__)
-    out_path = Path(f"{OUPUT_DIR_SC}/{Path(video_path).stem}_segments.csv")
+    out_path = Path(f"{OUTPUT_DIR_SC}/{Path(video_path).stem}_segments.csv")
     os.makedirs(out_path.parent, exist_ok=True)
     with open(out_path, "w", newline="") as f:
         writer = csv.writer(f)

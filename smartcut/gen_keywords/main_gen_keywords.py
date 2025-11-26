@@ -31,7 +31,4 @@ def generate_keywords_for_segment(
         frame_dir, processor, model, segment_id, num_frames, prompt_name="keywords", logger=logger
     )
 
-    # responses = [r1, r2]
-    # result = "\n".join([f"Réponse {i+1}: {r}" for i, r in enumerate(responses)])
-
     return response

@@ -15,7 +15,7 @@ from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 def check_enhanced_segments(max_videos: int = 10, logger: LoggerProtocol | None = None) -> None:
     logger = ensure_logger(logger, __name__)
     repo = CutMindRepository()
-    videos = repo.get_videos_by_status("enhanced", logger=logger)[:max_videos]
+    videos = repo.get_videos_by_status("enhanced", logger=logger)
     if not videos:
         logger.info("No enhanced videos found for checking.")
         return

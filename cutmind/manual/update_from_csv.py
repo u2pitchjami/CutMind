@@ -62,7 +62,7 @@ def update_segments_csv(
                     if status in ("delete", "to_delete"):
                         if segment.output_path:
                             old_output = Path(segment.output_path)
-                            move_to_trash(file_path=old_output, trash_root=TRASH_DIR_SC, logger=logger)
+                            move_to_trash(file_path=old_output, trash_root=TRASH_DIR_SC)
                         repo.delete_segment(int(seg_id), logger=logger)
                         stats["deleted"] += 1
                         log_rows.append({"segment_id": seg_id, "action": "deleted", "differences": "ALL"})

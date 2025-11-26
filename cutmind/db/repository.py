@@ -48,6 +48,13 @@ class CutMindRepository:
                 logger.debug("🔍 video_exists(%s) → %s", uid, exists)
                 return exists
 
+    def video_exists_by_video_path(self, video_path: str) -> int | None:
+        with db_conn() as conn:
+            with get_dict_cursor(conn) as cur:
+                safe_execute_dict(cur, "SELECT COUNT(*) AS count FROM videos WHERE video_path=%s", (video_path,))
+                row = cur.fetchone()
+                return row["id"] if row else None
+
     # -------------------------------------------------------------
     # 📥 Insertion vidéo + segments
     # -------------------------------------------------------------

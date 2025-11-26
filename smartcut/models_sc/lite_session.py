@@ -21,9 +21,11 @@ import uuid
 import cv2
 from pymediainfo import MediaInfo
 
+from shared.models.exceptions import CutMindError, ErrCode
+from shared.services.video_preparation import prepare_video
 from shared.utils.config import JSON_STATES_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
-from smartcut.models_sc.smartcut_model import Segment, SmartCutSession  # ton modèle actuel
+from smartcut.models_sc.smartcut_model import Segment, SmartCutSession
 
 
 class SmartCutLiteSession(SmartCutSession):
@@ -59,35 +61,66 @@ class SmartCutLiteSession(SmartCutSession):
     # ============================================================
     # 🎞️ 1️⃣ Chargement des segments depuis le dossier
     # ============================================================
+
     @with_child_logger
     def load_segments_from_directory(self, logger: LoggerProtocol | None = None) -> None:
         """
-        Crée un Segment() pour chaque fichier vidéo trouvé dans le dossier.
+        Crée un Segment() pour chaque fichier vidéo du dossier,
+        en passant chaque fichier par prepare_video() pour normalisation + métadonnées.
         """
         logger = ensure_logger(logger, __name__)
-        video_files = sorted(list(self.dir_path.glob("*.mp4")) + list(self.dir_path.glob("*.mkv")))
+
+        # on accepte plus d’extensions (mp4, mkv, mov, etc.)
+        exts = (".mp4", ".mkv", ".mov", ".avi")
+        video_files = sorted(f for f in self.dir_path.iterdir() if f.is_file() and f.suffix.lower() in exts)
+
         if not video_files:
-            logger.warning("⚠️ Aucun segment trouvé dans %s", self.dir_path)
+            logger.warning("⚠️ Aucun segment vidéo trouvé dans %s", self.dir_path)
             return
 
-        for idx, file in enumerate(video_files, start=1):
+        self.segments = []
+        self.errors = []
+
+        for idx, file_path in enumerate(video_files, start=1):
+            try:
+                prepared = prepare_video(file_path)
+            except CutMindError as exc:
+                # E3 : on continue, mais on enregistre l’erreur
+                msg = f"Erreur préparation segment {file_path.name}: {exc}"
+                logger.error(msg)
+                self.errors.append(msg)
+                continue
+
             seg = Segment(
                 id=idx,
                 uid=str(uuid.uuid4()),
                 start=0.0,
-                end=0.0,
-                duration=None,
+                end=prepared.duration,
+                duration=prepared.duration,
                 description="",
                 keywords=[],
                 ai_status="pending",
                 status="wait_ia",
-                output_path=str(file),
+                fps=prepared.fps,
+                resolution=prepared.resolution,
+                codec=prepared.codec,
+                bitrate=prepared.bitrate,
+                filesize_mb=prepared.filesize_mb,
+                output_path=str(prepared.path),
             )
-            seg.filename_predicted = file.name
+            seg.filename_predicted = Path(prepared.path).name
             self.segments.append(seg)
 
         self.last_updated = datetime.now().isoformat()
-        logger.info("📦 %d segments détectés dans %s", len(self.segments), self.dir_path)
+        logger.info("📦 %d segments prêts (après prepare_video) dans %s", len(self.segments), self.dir_path)
+
+        if not self.segments:
+            # aucun segment exploitable → on peut décider de lever une erreur globale
+            raise CutMindError(
+                "Aucun segment exploitable après préparation.",
+                code=ErrCode.FILEERROR,  # ou un ErrCode plus spécifique si tu en ajoutes
+                ctx={"dir": str(self.dir_path)},
+            )
 
     # ============================================================
     # 🧠 2️⃣ Enrichissement des métadonnées segment par segment

@@ -50,7 +50,7 @@ def analyze_from_cutmind(
 
     start: float = 0.0
     if seg.duration is None:
-        end: float = get_duration(Path(seg.output_path), logger=logger)
+        end: float = get_duration(Path(seg.output_path))
     else:
         end = seg.duration
 

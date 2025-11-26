@@ -8,24 +8,26 @@ smart_multicut_lite.py — Orchestrateur SmartCut-Lite
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 import shutil
+import uuid
 
-from shared.utils.config import JSON_STATES_DIR_SC
+from cutmind.db.repository import CutMindRepository
+from cutmind.models_cm.db_models import Video
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.safe_runner import safe_main
 from shared.utils.settings import get_settings
-from smartcut.analyze.analyze_confidence import compute_confidence
-from smartcut.analyze.analyze_utils import extract_keywords_from_filename
-from smartcut.analyze.main_analyze import analyze_video_segments
+from smartcut.lite.load_segments import load_segments_from_directory
 from smartcut.lite.relocate_and_rename_segments import relocate_and_rename_segments
-from smartcut.models_sc.lite_session import SmartCutLiteSession
+from smartcut.services.analyze.apply_confidence import apply_confidence_to_session
+from smartcut.services.analyze.ia_pipeline_service import run_ia_pipeline
 
 settings = get_settings()
 
 FRAME_PER_SEGMENT = settings.smartcut.frame_per_segment
 AUTO_FRAMES = settings.smartcut.auto_frames
+FPS_EXTRACT = settings.analyse_segment.fps_extract
+BASE_RATE = settings.analyse_segment.base_rate
 
 
 @safe_main
@@ -37,62 +39,68 @@ def lite_cut(directory_path: Path, logger: LoggerProtocol | None = None) -> None
         directory_path: Dossier contenant les segments vidéo (.mp4/.mkv)
     """
     logger = ensure_logger(logger, __name__)
+    repo = CutMindRepository()
     logger.info("🚀 Démarrage SmartCut-Lite sur : %s", directory_path)
     if any(directory_path.iterdir()):
         # Étape 0️⃣ — Initialisation session
-        session = SmartCutLiteSession(directory_path, logger=logger)
-        session.load_segments_from_directory(logger=logger)
-        session.status = "scenes_done"
+        session = repo.video_exists_by_video_path(str(directory_path))
+        if not session:
+            new_vid = Video(
+                uid=str(uuid.uuid4()),
+                name=directory_path.name,
+                video_path=str(directory_path),
+                status="init",
+                origin="smartcut_lite",
+            )
+        repo.insert_video_with_segments(new_vid)
+        vid = repo.get_video_with_segments(video_uid=new_vid.uid)
 
-        state_path = JSON_STATES_DIR_SC / f"{session.dir_path.name}.smartcut_state.json"
-        session.enrich_segments_metadata(logger=logger)
-        session.save(str(state_path), logger=logger)
-        logger.info("💾 Session initialisée (%d segments).", len(session.segments))
+        if not vid:
+            raise Exception("Impossible de créer ou récupérer la vidéo SmartCut-Lite.")
+
+        load_segments_from_directory(vid, directory_path, logger=logger)
+
+        vid.status = "scenes_done"
+        repo.update_video(vid)
+
+        vid = repo.get_video_with_segments(video_uid=vid.uid)
+        if not vid or not vid.status:
+            raise Exception("Impossible de récupérer la vidéo SmartCut-Lite après chargement des segments.")
+
+        logger.info("💾 Session initialisée (%d segments).", len(vid.segments))
 
         # Étape 1️⃣ — Analyse IA
         logger.info("🧠 Analyse IA des segments...")
         try:
-            analyze_video_segments(
-                video_path=session.dir_path.name,
+            ia_results = run_ia_pipeline(
+                video_path=str(vid.video_path),
+                segments=vid.segments,
                 frames_per_segment=FRAME_PER_SEGMENT,
                 auto_frames=AUTO_FRAMES,
-                session=session,
+                base_rate=BASE_RATE,
+                fps_extract=FPS_EXTRACT,
                 lite=True,
                 logger=logger,
             )
-            session.status = "ia_done"
-            session.save(str(state_path), logger=logger)
+
+            vid.status = "ia_done"
+            repo.update_video(vid)
             logger.info("✅ Analyse IA terminée.")
 
         except Exception as exc:
             logger.error("💥 Erreur durant l’analyse IA : %s", exc)
-            session.errors.append(str(exc))
-            session.save(str(state_path), logger=logger)
             raise
 
         # Étape 2️⃣ — Calcul du score de confiance
         logger.info("📊 Calcul des scores de confiance...")
-        for seg in session.segments:
-            if seg.ai_status == "done":
-                seg.confidence = compute_confidence(seg.description, seg.keywords, logger=logger)
-                seg.last_updated = datetime.now().isoformat()
-                seg.status = "confidence_done"
-                logger.info(f"  - Segment {seg.id}: confidence = {seg.confidence:.3f}")
-                if not seg.filename_predicted:
-                    logger.warning(f"⚠️ Seg {seg.uid} sans filename_predicted, impossible d'extraire les mots-clés.")
-                    continue
-                auto_keywords = extract_keywords_from_filename(seg.filename_predicted)
-                if seg.keywords:
-                    merged = set(seg.keywords + auto_keywords)
-                    seg.keywords = list(merged)
-                else:
-                    seg.keywords = auto_keywords.copy()
+        apply_confidence_to_session(
+            session=vid,
+            video_or_dir_name=vid.name,
+            model_name=settings.analyse_confidence.model_confidence,
+            logger=logger,
+        )
 
-                logger.debug(f"🏷️ Seg {seg.uid}: keywords enrichis → {seg.keywords}")
-                session.save(str(state_path), logger=logger)
-        session.status = "smartcut_done"
-        session.save(str(state_path), logger=logger)
-        logger.info("✅ Scores de confiance calculés pour %d segments.", len(session.segments))
+        logger.info("✅ Scores de confiance calculés pour %d segments.", len(vid.segments))
 
         # Étape 3️⃣ — Finalisation
         logger.info("📊 Déplacement des fichiers")

@@ -112,7 +112,7 @@ class VideoProcessor:
         else:
             shutil.move(job.output_file, final_output)
 
-        move_to_trash(file_path=job.path, trash_root=TRASH_DIR, logger=logger)
+        move_to_trash(file_path=job.path, trash_root=TRASH_DIR)
         cleanup_outputs(video_path.stem, final_output, OUTPUT_DIR, logger=logger)
         purge_old_trash(trash_root=TRASH_DIR, days=PURGE_DAYS, logger=logger)
         logger.info(f"🧹 Nettoyage des fichiers intermédiaires terminé pour {video_path.stem}")
@@ -175,7 +175,7 @@ class VideoProcessor:
                                 delta,
                                 ratio * 100,
                             )
-                            if "duration_warning" not in seg.tags:
+                            if not seg.tags or "duration_warning" not in seg.tags:
                                 seg.add_tag("duration_warning")
                     elif not duration_real:
                         logger.warning("⏱️ Impossible de lire la durée de sortie pour %s", final_output)

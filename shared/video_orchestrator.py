@@ -34,13 +34,11 @@ from shared.utils.config import (
     COLOR_RESET,
     COLOR_YELLOW,
     IMPORT_DIR_SC,
-    JSON_STATES_DIR_SC,
-    OUPUT_DIR_SC,
+    OUTPUT_DIR_SC,
 )
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
 from smartcut.lite.smartcut_lite import lite_cut
-from smartcut.models_sc.smartcut_model import SmartCutSession
 from smartcut.smartcut import multi_stage_cut
 
 settings = get_settings()
@@ -83,22 +81,11 @@ def auto_clean_gpu(max_wait_sec: int = 30, logger: LoggerProtocol | None = None)
 # ============================================================
 @with_child_logger
 def process_smartcut_video(video_path: Path, logger: LoggerProtocol | None = None) -> None:
-    """Flow SmartCut complet (vidéo non découpée)."""
     logger = ensure_logger(logger, __name__)
     try:
-        state_path = JSON_STATES_DIR_SC / f"{video_path.stem}.smartcut_state.json"
-        session = SmartCutSession.load(str(state_path), logger=logger)
-
-        if session and session.status == "cut":
-            logger.info(f"✅ {video_path.name} déjà traitée par SmartCut.")
-            return
-
-        if not session:
-            session = SmartCutSession(video=str(video_path), duration=0.0, fps=0.0)
-            session.save(str(state_path), logger=logger)
-
         logger.info(f"🚀 SmartCut (complet) : {video_path.name}")
-        multi_stage_cut(video_path=video_path, out_dir=OUPUT_DIR_SC, use_cuda=USE_CUDA, logger=logger)
+
+        multi_stage_cut(video_path=video_path, out_dir=OUTPUT_DIR_SC, use_cuda=USE_CUDA, logger=logger)
 
     except Exception as exc:
         logger.error(f"💥 Erreur SmartCut {video_path.name} : {exc}")

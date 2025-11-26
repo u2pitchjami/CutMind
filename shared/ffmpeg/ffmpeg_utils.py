@@ -8,18 +8,21 @@ import json
 from pathlib import Path
 import subprocess
 
+from shared.models.exceptions import CutMindError, ErrCode
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 # ========== Utils FFprobe/FFmpeg ==========
 
 
-@with_child_logger
-def get_duration(video_path: Path, logger: LoggerProtocol | None = None) -> float:
+def get_duration(video_path: Path) -> float:
     """
-    Retourne la durée en secondes (0.0 si échec).
+    Retourne la durée en secondes.
+    - Lève CutMindError(code=BADFORMAT) si le fichier n'est pas une vidéo
+    - Lève CutMindError(code=FFMPEG) en cas d'erreur technique ffprobe
+    - Lève CutMindError(code=UNEXPECTED) pour toute erreur Python inattendue
     """
-    logger = ensure_logger(logger, __name__)
-    cmd: list[str] = [
+
+    cmd = [
         "ffprobe",
         "-v",
         "error",
@@ -29,12 +32,64 @@ def get_duration(video_path: Path, logger: LoggerProtocol | None = None) -> floa
         "default=noprint_wrappers=1:nokey=1",
         str(video_path),
     ]
+
     try:
-        out = subprocess.check_output(cmd).decode().strip()
-        return float(out)
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.error("ffprobe duration error: %s", exc)
-        return 0.0
+        output = (
+            subprocess.check_output(
+                cmd,
+                stderr=subprocess.STDOUT,  # capture la sortie erreur de ffprobe
+            )
+            .decode(errors="ignore")
+            .strip()
+        )
+
+        return float(output)
+
+    except subprocess.CalledProcessError as exc:
+        # ffprobe a échoué → analysons la sortie
+        ffout = exc.output.decode(errors="ignore")
+
+        # 🟥 Cas 1 : Fichier non vidéo / format illisible
+        if (
+            "Invalid data" in ffout
+            or "Invalid argument" in ffout
+            or "moov atom" in ffout
+            or "could not find codec parameters" in ffout.lower()
+        ):
+            raise CutMindError(
+                "Fichier non vidéo ou format illisible.",
+                code=ErrCode.BADFORMAT,
+                ctx={
+                    "video_path": str(video_path),
+                    "ffprobe_output": ffout,
+                },
+            ) from exc
+
+        # 🟧 Cas 2 : Erreur technique ffmpeg (codec, lib, etc.)
+        raise CutMindError(
+            "Erreur technique FFmpeg lors de la récupération de la durée.",
+            code=ErrCode.FFMPEG,
+            ctx={
+                "video_path": str(video_path),
+                "ffprobe_output": ffout,
+            },
+        ) from exc
+
+    except ValueError as exc:
+        # ffprobe a renvoyé une durée vide ou non convertible
+        raise CutMindError(
+            "FFmpeg a renvoyé une durée invalide.",
+            code=ErrCode.FFMPEG,
+            ctx={"video_path": str(video_path), "output": output},
+        ) from exc
+
+    except Exception as exc:
+        # 🟦 Cas 3 : erreur Python inattendue
+        raise CutMindError(
+            "Erreur inattendue lors de la récupération de durée.",
+            code=ErrCode.UNEXPECTED,
+            ctx={"video_path": str(video_path)},
+        ) from exc
 
 
 def get_resolution(filepath: Path) -> tuple[int, int]:

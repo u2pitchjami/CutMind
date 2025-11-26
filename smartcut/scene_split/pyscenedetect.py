@@ -24,7 +24,8 @@ def detect_scenes_with_pyscenedetect(
     video_manager = VideoManager([video_path])
     video_manager.set_downscale_factor(downscale_factor)
     scene_manager = SceneManager()
-    scene_manager.add_detector(ContentDetector(threshold=threshold, min_scene_len=min_scene_len))
+    min_scene: int = int(min_scene_len)
+    scene_manager.add_detector(ContentDetector(threshold=threshold, min_scene_len=min_scene))
 
     start_tc = FrameTimecode(timecode=start, fps=video_manager.frame_rate) if start else None
     end_tc = FrameTimecode(timecode=end, fps=video_manager.frame_rate) if end else None

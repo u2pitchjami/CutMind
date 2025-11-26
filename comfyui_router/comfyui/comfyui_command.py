@@ -35,7 +35,6 @@ def run_comfy(workflow: dict[str, Any], logger: LoggerProtocol | None = None) ->
     try:
         response = requests.post("http://192.168.50.12:8188/prompt", json=payload, timeout=60)
         response.raise_for_status()
-        # logger.debug(response)
         return True
     except requests.HTTPError as e:
         logger.error(f"❌ Erreur HTTP : {e}")

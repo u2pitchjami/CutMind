@@ -8,9 +8,6 @@ from datetime import datetime
 from pathlib import Path
 import subprocess
 
-import ffmpeg  # type: ignore
-
-from shared.utils.config import SAFE_FORMATS
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
 from smartcut.models_sc.smartcut_model import SmartCutSession
@@ -129,19 +126,3 @@ def cut_video(
                 if state_path:
                     session.save(str(state_path))
         return None
-
-
-def ensure_safe_video_format(video_path: str) -> str:
-    ext = Path(video_path).suffix.lower()
-    if ext not in SAFE_FORMATS:
-        safe_path = Path(video_path).with_suffix(".mp4")
-        ffmpeg.input(video_path).output(
-            str(safe_path),
-            vcodec=VCODEC,
-            preset=PRESET,
-            rc=RC,
-            cq=CQ,
-            pix_fmt=PIX_FMT,
-        ).run(quiet=True, overwrite_output=True)
-        return str(safe_path)
-    return video_path

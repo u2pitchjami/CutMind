@@ -114,7 +114,7 @@ def smart_recut_hybrid(
     Découpe la vidéo au début et à la fin selon les changements de scène.
     """
     logger = ensure_logger(logger, __name__)
-    duration = get_duration(video_path, logger=logger)
+    duration = get_duration(video_path)
     if duration == 0:
         logger.error("Impossible de déterminer la durée de %s", video_path)
         return video_path

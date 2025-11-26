@@ -27,7 +27,7 @@ from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Video
 from cutmind.process.file_mover import CUTMIND_BASEDIR, FileMover, sanitize
 from shared.models.timer_manager import Timer
-from shared.utils.config import OUPUT_DIR_SC
+from shared.utils.config import OUTPUT_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.remove_empty_dirs import remove_empty_dirs
 from shared.utils.safe_segments import safe_segments
@@ -141,7 +141,7 @@ def analyze_session_validation_db(
         repo.update_video(video, logger=logger)
 
     logger.info("✅ Auto-validation + déplacement : %s (%d segments)", video.name, valid_count)
-    remove_empty_dirs(root_path=OUPUT_DIR_SC, logger=logger)
+    remove_empty_dirs(root_path=OUTPUT_DIR_SC, logger=logger)
 
     return {
         "uid": video.uid,

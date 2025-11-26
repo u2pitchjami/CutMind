@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 import shutil
 
+from shared.models.exceptions import CutMindError, ErrCode
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
@@ -21,28 +22,32 @@ def delete_files(path: Path, ext: str = "*.jpg", logger: LoggerProtocol | None =
             logger.warning(f"⚠️ Impossible de supprimer {file.name} : {e}")
 
 
-@with_child_logger
-def move_to_trash(file_path: Path, trash_root: Path, logger: LoggerProtocol | None = None) -> Path:
+def move_to_trash(file_path: Path, trash_root: Path) -> Path:
     """
     Déplace un fichier vers la corbeille (trash/YYYY-MM-DD/).
-    """
-    logger = ensure_logger(logger, __name__)
-    try:
-        if not file_path.exists():
-            logger.warning(f"⚠️ Fichier introuvable : {file_path}")
-            return file_path
 
+    Renvoie le chemin final.
+    Lève CutMindError en cas d'échec.
+    """
+    if not file_path.exists():
+        raise CutMindError(
+            "Fichier introuvable lors du move_to_trash.", code=ErrCode.FILEERROR, ctx={"file_path": str(file_path)}
+        )
+
+    try:
         date_dir = trash_root / datetime.now().strftime("%Y-%m-%d")
         date_dir.mkdir(parents=True, exist_ok=True)
 
         dest_path = date_dir / file_path.name
         shutil.move(str(file_path), dest_path)
-        logger.info(f"🗑️ Fichier déplacé vers corbeille : {dest_path}")
         return dest_path
 
-    except Exception as e:
-        logger.error(f"❌ Impossible de déplacer {file_path} vers la corbeille : {e}")
-        return file_path
+    except Exception as exc:  # pylint: disable=broad-except
+        raise CutMindError(
+            "Impossible de déplacer le fichier vers la corbeille.",
+            code=ErrCode.FILEERROR,
+            ctx={"file_path": str(file_path), "trash_root": str(trash_root)},
+        ) from exc
 
 
 @with_child_logger

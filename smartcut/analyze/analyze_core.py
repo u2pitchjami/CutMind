@@ -108,7 +108,7 @@ def analyze_by_segments(
             seg.last_updated = datetime.now().isoformat()
             frame_data[seg.uid] = keywords_list
 
-            session.save(str(state_path), logger=logger)
+            session.save(str(state_path))
             logger.debug(f"💾 Session mise à jour (segment {seg.id})")
             # logger.debug(f"session : {session}")
 
