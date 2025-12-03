@@ -3,7 +3,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from shared.models.exceptions import CutMindError, ErrCode
-from smartcut.ffsmartcut.ffmpeg_cut_executor import FfmpegCutExecutor
+from shared.utils.settings import get_settings
+from smartcut.executors.ffmpeg_cut_executor import FfmpegCutExecutor
+
+settings = get_settings()
+
+USE_CUDA = settings.smartcut.use_cuda
+PRESET = settings.smartcut.preset_gpu if USE_CUDA else settings.smartcut.preset_cpu
+RC = settings.ffsmartcut.rc
+CQ = settings.ffsmartcut.cq
+PIX_FMT = settings.ffsmartcut.pix_fmt
+VCODEC = settings.smartcut.vcodec_gpu if USE_CUDA else settings.smartcut.vcodec_cpu
+CRF = settings.smartcut.crf
 
 
 @dataclass
@@ -45,7 +56,7 @@ class CutService:
                 )
 
             try:
-                self.executor.cut(input_video, seg.start, seg.end, seg.output_path)
+                self.executor.cut(input_video, seg.start, seg.end, seg.output_path, USE_CUDA, VCODEC, CRF, PRESET)
 
             except Exception as exc:
                 raise CutMindError(

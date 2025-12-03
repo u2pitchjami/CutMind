@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from enum import Enum
+import inspect
 from typing import Any
 
 
@@ -15,7 +16,8 @@ class ErrCode(str, Enum):
     VIDEO = "VIDEO"
     UNEXPECTED = "UNEXPECTED"
     NOFILE = "NOFILE"
-    FILEERROR = "FILEERROR"
+    IAERROR = "IAERROR"
+    DB = "DB"
     NOT_FOUND = "NOT_FOUND"
 
 
@@ -39,3 +41,18 @@ class CutMindError(RuntimeError):
 
     def __str__(self) -> str:  # utile dans les logs
         return f"{self.code}: {super().__str__()}"
+
+
+def get_step_ctx(extra: dict[str, Any] | None = None, depth: int = 1) -> dict[str, Any]:
+    """
+    Génère un contexte enrichi avec le nom de la fonction appelante ('step').
+
+    :param extra: autres clés à fusionner dans le contexte
+    :param depth: niveau d'appel dans la stack (1 par défaut)
+    :return: dict compatible pour ctx=...
+    """
+    func_name = inspect.stack()[depth][3]
+    base = {"step": func_name}
+    if extra:
+        base.update(extra)
+    return base

@@ -47,7 +47,7 @@ def load_segments_from_directory(video: Video, directory_path: Path, logger: Log
             ctx={"dir": str(directory_path)},
         )
 
-    for idx, file_path in enumerate(video_files, start=1):
+    for _, file_path in enumerate(video_files, start=1):
         try:
             prepared = prepare_video(file_path)
         except CutMindError as exc:
@@ -82,6 +82,6 @@ def load_segments_from_directory(video: Video, directory_path: Path, logger: Log
         # aucun segment exploitable → on peut décider de lever une erreur globale
         raise CutMindError(
             "Aucun segment exploitable après préparation.",
-            code=ErrCode.FILEERROR,  # ou un ErrCode plus spécifique si tu en ajoutes
+            code=ErrCode.FILE_ERROR,  # ou un ErrCode plus spécifique si tu en ajoutes
             ctx={"dir": str(directory_path)},
         )

@@ -35,20 +35,6 @@ def run_pyscenedetect(
         # for each scene that was found.
         scenes = scene_manager.get_scene_list()
 
-        # video = open_video(video_path)
-
-        # manager = SceneManager()
-        # manager.add_detector(ContentDetector(threshold=threshold))
-        # print(f"manager = {manager}")
-
-        # # scenes = manager.get_scene_list()
-        # print(f"run_pyscenedetect video_path: {video_path}, threshold: {threshold}, downscale: {downscale}, min_scene_len: {min_scene_len}, start: {start}, end: {end}")
-
-        # # Détection de scènes
-        # manager.detect_scenes(video=video, downscale=downscale)
-        # scenes = manager.get_scene_list()
-        print(f"Scenes detected: {scenes}")
-
         return [(s.get_seconds(), e.get_seconds()) for s, e in scenes]
 
     except Exception as exc:

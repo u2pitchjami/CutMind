@@ -120,7 +120,7 @@ class Video:
         """
         Calcule la durée et le nom de fichier de sortie pour chaque segment.
         """
-        folder_name = self.name or Path(self.video_path).stem
+        folder_name = self.name if self.name else f"video_{self.id or 0}"
         for seg in self.segments:
             seg.compute_duration()
             seg.predict_filename(output_dir, folder_name)

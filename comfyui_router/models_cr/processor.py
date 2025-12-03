@@ -19,7 +19,7 @@ from cutmind.db.data_utils import format_resolution
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Video
 from cutmind.process.file_mover import FileMover
-from shared.ffmpeg.ffmpeg_utils import detect_nvenc_available, get_fps, get_resolution
+from shared.executors.ffmpeg_utils import detect_nvenc_available, get_fps, get_resolution
 from shared.utils.config import OK_DIR, OUTPUT_DIR, TRASH_DIR
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
@@ -136,7 +136,7 @@ class VideoProcessor:
 
         try:
             seg_uid = job.path.stem.split("_")[2]
-            seg = self.repo.get_segment_by_uid(seg_uid, logger=logger)
+            seg = self.repo.get_segment_by_uid(seg_uid)
             logger.debug(f"_notify_cutmind seg_uid : {seg_uid}")
 
             if not seg:
@@ -186,7 +186,7 @@ class VideoProcessor:
 
                 # --- 🛠️ Remplacement
                 try:
-                    FileMover.safe_replace(final_output, target_path, logger=logger)
+                    FileMover.safe_replace(final_output, target_path)
                     logger.info("📦 Fichier remplacé (via safe_copy) : %s → %s", final_output.name, target_path)
 
                 except Exception as move_err:
@@ -205,12 +205,12 @@ class VideoProcessor:
             seg.status = status
             seg.source_flow = "comfyui_router"
             seg.fps = getattr(job, "fps_out", None)
-            seg.resolution = format_resolution(job.resolution_out, logger=logger)
+            seg.resolution = format_resolution(job.resolution_out)
             seg.processed_by = job.workflow_name or "comfyui_router"
             if not replace_original:
                 seg.output_path = str(final_output)
 
-            self.repo.update_segment_postprocess(seg, logger=logger)
+            self.repo.update_segment_postprocess(seg)
             logger.info("🧠 CutMind synchronisé pour segment %s (%s)", seg.uid, status)
 
         except Exception as err:

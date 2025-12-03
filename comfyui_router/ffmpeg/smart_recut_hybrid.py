@@ -7,7 +7,7 @@ import re
 import shutil
 import subprocess
 
-from shared.ffmpeg.ffmpeg_utils import get_duration
+from shared.executors.ffmpeg_utils import get_duration
 from shared.utils.config import TRASH_DIR
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 

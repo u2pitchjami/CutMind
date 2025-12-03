@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from shared.ffmpeg.ffmpeg_utils import get_fps, get_resolution
+from shared.executors.ffmpeg_utils import get_fps, get_resolution
 from shared.utils.config import WORKFLOW_MAP
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 

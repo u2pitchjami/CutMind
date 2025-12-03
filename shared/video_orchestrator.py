@@ -19,10 +19,10 @@ import torch
 from cutmind.check.enhanced import check_enhanced_segments
 from cutmind.check.secure_in_router import check_secure_in_router
 from cutmind.db.repository import CutMindRepository
-from cutmind.imports.importer import import_all_smartcut_jsons
-from cutmind.manual.update_from_csv import update_segments_csv
 from cutmind.process.already_enhanced import process_standard_videos
 from cutmind.process.router_worker import RouterWorker
+from cutmind.services.manual.update_from_csv import update_segments_csv
+from cutmind.validation.main_validation import validation
 from shared.models.config_manager import reload_and_apply
 from shared.utils.config import (
     CM_NB_VID_ROUTER,
@@ -173,7 +173,7 @@ def orchestrate(priority: str = "smartcut", logger: LoggerProtocol | None = None
             smartcut_pending = len(smartcut_videos) + len(smartcut_dirs)
 
             repo = CutMindRepository()
-            router_pending = len(repo.get_nonstandard_videos(limit_videos=CM_NB_VID_ROUTER, logger=logger))
+            router_pending = len(repo.get_nonstandard_videos(limit_videos=CM_NB_VID_ROUTER))
 
             logger.info(f"📦 SmartCut: {smartcut_pending} | Router: {router_pending}")
 
@@ -234,9 +234,7 @@ def orchestrate(priority: str = "smartcut", logger: LoggerProtocol | None = None
             logger.info(f"⏳ Pause {SCAN_INTERVAL}s avant le prochain scan.")
             reload_and_apply(logger=logger)
             time.sleep(SCAN_INTERVAL)
-            # 🔹 Import automatique dans CutMind
-            logger.info("📥 Import SmartCut JSONs vers CutMind...")
-            import_all_smartcut_jsons(logger=logger)
+            validation()
 
             # 🔹 Import CSV automatique dans CutMind
             logger.info("📥 Import SmartCut CSVs vers CutMind...")

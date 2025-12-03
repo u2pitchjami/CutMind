@@ -1,13 +1,13 @@
 # check/check_enhanced_segments.py
 
-from datetime import datetime
 from pathlib import Path
 import random
 
 from pymediainfo import MediaInfo
 
-from cutmind.categ.categorization import match_category
 from cutmind.db.repository import CutMindRepository
+from cutmind.services.categ.categ_serv import match_category
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
@@ -15,7 +15,7 @@ from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 def check_enhanced_segments(max_videos: int = 10, logger: LoggerProtocol | None = None) -> None:
     logger = ensure_logger(logger, __name__)
     repo = CutMindRepository()
-    videos = repo.get_videos_by_status("enhanced", logger=logger)
+    videos = repo.get_videos_by_status("enhanced")
     if not videos:
         logger.info("No enhanced videos found for checking.")
         return
@@ -70,14 +70,17 @@ def check_enhanced_segments(max_videos: int = 10, logger: LoggerProtocol | None 
                             updated = True
 
                         if updated:
-                            seg.last_updated = datetime.now()
                             seg.status = "enhanced"
                             seg.category = match_category(seg.keywords, logger=logger)
-                            repo.update_segment_postprocess(seg, logger=logger)
+                            repo.update_segment_postprocess(seg)
                             logger.info("✅ Segment mis à jour : %s", seg.uid)
                             modified_count += 1
 
             except Exception as exc:
-                logger.error("❌ Erreur sur %s : %s", seg.enhanced_path, exc)
+                raise CutMindError(
+                    "❌ Erreur inattendue lors de check_enhanced.",
+                    code=ErrCode.UNEXPECTED,
+                    ctx=get_step_ctx({"video": video.name, "segment_id": seg.id}),
+                ) from exc
 
     logger.info("✔️ Vérification terminée. %d segments mis à jour.", modified_count)

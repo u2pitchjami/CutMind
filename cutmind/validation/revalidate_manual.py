@@ -18,7 +18,7 @@ def revalidate_manual_videos(min_confidence: float = MIN_CONFIDENCE, logger: Log
     """
     logger = ensure_logger(logger, __name__)
     repo = CutMindRepository()
-    videos = repo.get_videos_by_status("manual_review", logger=logger)
+    videos = repo.get_videos_by_status("manual_review")
 
     if not videos:
         logger.info("✅ Aucune vidéo à revalider (manual_review).")

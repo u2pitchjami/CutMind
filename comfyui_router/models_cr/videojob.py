@@ -9,7 +9,7 @@ import psutil
 
 from comfyui_router.comfyui.comfyui_workflow import optimal_batch_size
 from comfyui_router.ffmpeg.ffmpeg_command import get_total_frames, video_has_audio
-from shared.ffmpeg.ffmpeg_utils import get_fps, get_resolution
+from shared.executors.ffmpeg_utils import get_fps, get_resolution
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
 

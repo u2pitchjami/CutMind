@@ -26,11 +26,11 @@ from shared.utils.config import ERROR_DIR_SC, OUTPUT_DIR_SC, TRASH_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
 from shared.utils.trash import move_to_trash, purge_old_trash
-from smartcut.scene_split.split_utils import get_downscale_factor, move_to_error
+from smartcut.executors.analyze.split_utils import get_downscale_factor, move_to_error
 from smartcut.services.analyze.apply_confidence import apply_confidence_to_session
 from smartcut.services.analyze.ia_pipeline_service import run_ia_pipeline
 from smartcut.services.cut_service import CutRequest, CutService
-from smartcut.services.merge_service import MergeService
+from smartcut.services.merge.merge_service import MergeService
 from smartcut.services.scene_split.pipeline_service import adaptive_scene_split
 
 settings = get_settings()
@@ -98,7 +98,7 @@ def multi_stage_cut(
         # 2. Crée une nouvelle session à partir des métadonnées préparées
         new_vid = Video(
             uid=str(uuid.uuid4()),
-            name=prep.path.name,
+            name=prep.path.stem,
             video_path=str(prep.path),
             duration=prep.duration,
             fps=prep.fps,
@@ -124,7 +124,7 @@ def multi_stage_cut(
     # ======================
     # 🎬 Étape 1 : Découpage pyscenedetect
     # ======================
-    if not vid or not vid.status or not vid.duration or not vid.id:
+    if not vid or not vid.status or not vid.duration or not vid.id or not vid.video_path:
         raise CutMindError(
             "Vidéo sans statut valide en base de données.",
             code=ErrCode.CONTEXT,
@@ -146,7 +146,10 @@ def multi_stage_cut(
                 )
             except CutMindError as e:
                 logger.error("❌ Scene split error: %s", e)
-                move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC, logger=logger)
+                if not Path(vid.video_path).exists():
+                    logger.warning(f"⚠️ Vidéo introuvable : {vid.video_path}")
+                error_path = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
+                logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
                 raise
 
         # Création des segments SmartCut
@@ -185,7 +188,7 @@ def multi_stage_cut(
             logger.info("📊 %d segments à traiter par l’IA...", len(pending_segments))
 
             try:
-                ia_results = run_ia_pipeline(
+                run_ia_pipeline(
                     video_path=str(video_path),
                     segments=pending_segments,
                     frames_per_segment=FRAME_PER_SEGMENT,
@@ -200,8 +203,10 @@ def multi_stage_cut(
                 repo.update_video(vid)
 
             except Exception as exc:  # pylint: disable=broad-except
-                logger.error("💥 Erreur pendant l’analyse IA : %s", exc)
-                raise
+                raise CutMindError(
+                    f"❌ Erreur lors de l'analyse IA {vid.name}",
+                    code=ErrCode.UNEXPECTED,
+                ) from exc
     else:
         logger.info("⏩ Étape IA déjà effectuée — skip.")
     # ======================
@@ -217,9 +222,9 @@ def multi_stage_cut(
         )
 
     vid = repo.get_video_with_segments(video_id=vid.id)
-    if not vid or not vid.status:
+    if not vid or not vid.status or not vid.name:
         raise CutMindError(
-            f"Vidéo introuvable en base de données pour l'ID {session}",
+            "Vidéo introuvable en base de données pour l'ID",
             code=ErrCode.NOT_FOUND,
         )
 
@@ -233,13 +238,15 @@ def multi_stage_cut(
             min_duration=MIN_DURATION,
             max_duration=MAX_DURATION,
         )
-
+        print(f"service_merge : {service_merge}")
         merged_results = service_merge.merge(vid.segments)
+        print(f"merged_results : {merged_results}")
 
         # vid.segments = []
         for res_merged in merged_results:
             seg = Segment(
-                video_id=vid.id,
+                id=res_merged.segment_id,
+                video_id=vid.id if vid.id else 0,
                 start=res_merged.start,
                 end=res_merged.end,
                 description=res_merged.description,
@@ -253,15 +260,26 @@ def multi_stage_cut(
                 codec=vid.codec,
                 bitrate=vid.bitrate,
             )
-            seg.predict_filename(Path(OUTPUT_DIR_SC))
-            repo._insert_segment(seg)
+            print(f"seg : {seg}")
+            seg.predict_filename(Path(OUTPUT_DIR_SC), vid.name)
+            print(f"seg.predict_filename : {seg.predict_filename}")
+            new_id = repo._insert_segment(seg)
+            repo.insert_keywords_standalone(new_id, seg.keywords)
+            for uid in seg.merged_from:
+                merged_seg = repo.get_segment_by_uid(uid)
+                if not merged_seg or not merged_seg.id:
+                    raise CutMindError(
+                        "Segment introuvable en base de données pour l'ID",
+                        code=ErrCode.NOT_FOUND,
+                    )
+                repo.delete_segment(merged_seg.id)
 
         vid.status = "merged"
         repo.update_video(vid)
         vid = repo.get_video_with_segments(video_id=vid.id)
         if not vid or not vid.status:
             raise CutMindError(
-                f"Vidéo introuvable en base de données pour l'ID {session}",
+                "Vidéo introuvable en base de données pour l'ID",
                 code=ErrCode.NOT_FOUND,
             )
 
@@ -281,7 +299,6 @@ def multi_stage_cut(
                     code=ErrCode.CONTEXT,
                     ctx={"segment_id": seg.id},
                 )
-            seg.predict_filename(OUTPUT_DIR_SC)
             cut_requests.append(
                 CutRequest(
                     uid=seg.uid,
@@ -301,6 +318,7 @@ def multi_stage_cut(
         for seg in vid.segments:
             seg.status = "cut"
             seg.last_updated = datetime.now().isoformat()
+            repo.update_segment_validation(seg)
 
         vid.status = "smartcut_done"
         repo.update_video(vid)
@@ -308,6 +326,8 @@ def multi_stage_cut(
 
     logger.info("───────────────────────────────")
     logger.info("🏁 Traitement terminé pour %s", video_path)
-    move_to_trash(video_path, TRASH_DIR_SC)
+    video_trash = move_to_trash(video_path, TRASH_DIR_SC)
+    vid.video_path = str(video_trash)
+    repo.update_video(vid)
     purge_old_trash(TRASH_DIR_SC, days=PURGE_DAYS, logger=logger)
     return

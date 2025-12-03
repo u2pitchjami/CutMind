@@ -21,7 +21,6 @@ def adaptive_scene_split(
     Pipeline complet (scenedetect → refine → gaps → refine final).
     Version pure, sans logs.
     """
-    print("adaptive_scene_split")
     # Étape 1 : détection initiale
     scenes = detect_initial_scenes(
         video_path=video_path,

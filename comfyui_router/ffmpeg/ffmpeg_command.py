@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import subprocess
 
-from shared.ffmpeg.ffmpeg_utils import detect_nvenc_available
+from shared.executors.ffmpeg_utils import detect_nvenc_available
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 

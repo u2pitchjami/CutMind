@@ -8,10 +8,18 @@ import uuid
 
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Segment
-from cutmind.recut.ffmpeg_recut import ffmpeg_cut_one_segment
 from shared.utils.config import TRASH_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.settings import get_settings
 from shared.utils.trash import move_to_trash
+from smartcut.executors.ffmpeg_cut_executor import FfmpegCutExecutor
+
+settings = get_settings()
+
+USE_CUDA = settings.smartcut.use_cuda
+PRESET = settings.smartcut.preset_gpu if USE_CUDA else settings.smartcut.preset_cpu
+VCODEC = settings.smartcut.vcodec_gpu if USE_CUDA else settings.smartcut.vcodec_cpu
+CRF = settings.smartcut.crf
 
 
 @with_child_logger
@@ -46,6 +54,7 @@ def perform_recut(
 
     generated_files: list[Path] = []
     new_segments = []
+    executor = FfmpegCutExecutor()
 
     # 2 — Génération segments
     for i in range(len(cuts) - 1):
@@ -56,13 +65,14 @@ def perform_recut(
         output_path = output_dir / f"seg_{segment.id:04d}_{new_uid}.mp4"
 
         try:
-            ffmpeg_cut_one_segment(
-                input_path=input_path,
-                start=start,
-                end=end,
-                output_path=output_path,
-                logger=logger,
-            )
+            executor.cut(str(input_path), start, end, str(output_path), USE_CUDA, VCODEC, CRF, PRESET)
+            # ffmpeg_cut_one_segment(
+            #     input_path=input_path,
+            #     start=start,
+            #     end=end,
+            #     output_path=output_path,
+            #     logger=logger,
+            # )
         except Exception as exc:
             logger.error("❌ Erreur ffmpeg (cut): %s", exc)
             continue
@@ -114,10 +124,10 @@ def perform_recut(
 
     # 5 — Recuts OK → on supprime l’ancien
     for seg in new_segments:
-        repo._insert_segment(seg, logger=logger)
+        repo._insert_segment(seg)
 
     move_to_trash(input_path, TRASH_DIR_SC)
-    repo.delete_segment(segment.id, logger=logger)
+    repo.delete_segment(segment.id)
 
     logger.info(
         "🔪 Recut OK pour %s → %d nouveaux segments",

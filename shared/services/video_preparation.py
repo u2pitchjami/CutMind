@@ -108,21 +108,21 @@ def validate_video(prep: VideoPrepared) -> None:
     if prep.duration <= 0:
         raise CutMindError(
             "Durée vidéo invalide (<= 0).",
-            code=ErrCode.FILEERROR,
+            code=ErrCode.FILE_ERROR,
             ctx={"video_path": str(prep.path), "duration": prep.duration},
         )
 
     if prep.fps <= 0:
         raise CutMindError(
             "FPS invalide (<= 0).",
-            code=ErrCode.FILEERROR,
+            code=ErrCode.FILE_ERROR,
             ctx={"video_path": str(prep.path), "fps": prep.fps},
         )
 
     if not prep.resolution or "x" not in prep.resolution:
         raise CutMindError(
             "Résolution vidéo introuvable.",
-            code=ErrCode.FILEERROR,
+            code=ErrCode.FILE_ERROR,
             ctx={"video_path": str(prep.path), "resolution": prep.resolution},
         )
 

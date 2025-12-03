@@ -54,7 +54,7 @@ class RouterWorker:
         processed_count = 0
 
         # 1️⃣ Sélectionner les vidéos concernées
-        video_uids = self.repo.get_nonstandard_videos(self.limit_videos, logger=logger)
+        video_uids = self.repo.get_nonstandard_videos(self.limit_videos)
         if not video_uids:
             logger.info("📭 Aucun segment non standard trouvé — base à jour.")
             return 0
@@ -63,7 +63,7 @@ class RouterWorker:
 
         # 2️⃣ Parcourir les vidéos et segments
         for uid in video_uids:
-            video = self.repo.get_video_with_segments(uid, logger=logger)
+            video = self.repo.get_video_with_segments(uid)
             if not video:
                 logger.warning("⚠️ Vidéo UID introuvable : %s", uid)
                 continue
@@ -76,21 +76,21 @@ class RouterWorker:
             if not prepared:
                 logger.info("ℹ️ Tous les segments de %s sont conformes.", video.name)
                 video.status = "validated"
-                self.repo.update_video(video, logger=logger)
+                self.repo.update_video(video)
                 continue
 
             # 3️⃣ Transaction : copie + maj DB
             with Timer(f"Traitement Comfyui pour la vidéo : {video.name}", logger):
                 try:
-                    with self.repo.transaction(logger=logger) as conn:
+                    with self.repo.transaction() as conn:
                         video.status = "processing_router"
-                        self.repo.update_video(video, conn, logger=logger)
+                        self.repo.update_video(video, conn)
 
                         for seg, src, dst in prepared:
-                            self.file_mover.safe_copy(src, dst, logger=logger)
+                            self.file_mover.safe_copy(src, dst)
                             seg.status = "in_router"
                             seg.source_flow = "comfyui_router"
-                            self.repo.update_segment_validation(seg, conn, logger=logger)
+                            self.repo.update_segment_validation(seg, conn)
 
                     for _seg, _src, dst in prepared:
                         # --- DÉCISION INTELLIGENTE ---
@@ -110,11 +110,11 @@ class RouterWorker:
                                     {COLOR_RESET}"
                             )
                             video.status = "validated"
-                            self.repo.update_video(video, conn, logger=logger)
+                            self.repo.update_video(video, conn)
                             return processed_count
 
                     video.status = "enhanced"
-                    self.repo.update_video(video, conn, logger=logger)
+                    self.repo.update_video(video, conn)
 
                     logger.info("📬 Vidéo %s envoyée vers Router (%d segments).", video.uid, len(prepared))
 

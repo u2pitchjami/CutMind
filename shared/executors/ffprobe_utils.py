@@ -60,7 +60,7 @@ def _get_video_stream(probe: FFprobeData, video_path: Path) -> FFprobeStream:
         if stream.get("codec_type") == "video":
             return stream
 
-    raise CutMindError("Aucun flux vidéo trouvé.", code=ErrCode.FILEERROR, ctx={"video_path": str(video_path)})
+    raise CutMindError("Aucun flux vidéo trouvé.", code=ErrCode.FILE_ERROR, ctx={"video_path": str(video_path)})
 
 
 # ============================================================
@@ -80,7 +80,7 @@ def get_duration(video_path: Path) -> float:
         return float(fmt.get("duration", 0.0))
     except Exception as exc:  # pylint: disable=broad-except
         raise CutMindError(
-            "Durée illisible dans FFprobe.", code=ErrCode.FILEERROR, ctx={"video_path": str(video_path)}
+            "Durée illisible dans FFprobe.", code=ErrCode.FILE_ERROR, ctx={"video_path": str(video_path)}
         ) from exc
 
 
@@ -100,7 +100,7 @@ def get_fps(video_path: Path) -> float:
     except Exception as exc:  # pylint: disable=broad-except
         raise CutMindError(
             "FPS illisible dans FFprobe.",
-            code=ErrCode.FILEERROR,
+            code=ErrCode.FILE_ERROR,
             ctx={"video_path": str(video_path), "avg_frame_rate": avg_rate},
         ) from exc
 
@@ -117,7 +117,7 @@ def get_resolution(video_path: Path) -> str:
 
     if not width or not height:
         raise CutMindError(
-            "Impossible de lire la résolution.", code=ErrCode.FILEERROR, ctx={"video_path": str(video_path)}
+            "Impossible de lire la résolution.", code=ErrCode.FILE_ERROR, ctx={"video_path": str(video_path)}
         )
 
     return f"{width}x{height}"

@@ -2,6 +2,7 @@
 
 from cutmind.db.repository import CutMindRepository
 from cutmind.validation.validation import analyze_session_validation_db
+from shared.models.timer_manager import Timer
 from shared.utils.config import MIN_CONFIDENCE
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
@@ -10,7 +11,7 @@ from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 def validation(logger: LoggerProtocol | None = None) -> None:
     logger = ensure_logger(logger, __name__)
     repo = CutMindRepository()
-    videos = repo.get_videos_by_status("smartcut_done", logger=logger)
+    videos = repo.get_videos_by_status("smartcut_done")
     auto_valid_count = 0
     manual_valid_count = 0
     logger.info("⭐ Lancement de la Validation")
@@ -19,11 +20,12 @@ def validation(logger: LoggerProtocol | None = None) -> None:
         logger.info("▶️ Tentative de validation pour : %s", video.name)
         # --- Validation automatique ---
         try:
-            result = analyze_session_validation_db(video=video, min_confidence=MIN_CONFIDENCE, logger=logger)
-            auto_valid = result["auto_valid"]
-            valid = result["valid"]
-            total = result["total"]
-            moved = result["moved"]
+            with Timer(f"Traitement Keywords Recut : {video.name}", logger):
+                result = analyze_session_validation_db(video=video, min_confidence=MIN_CONFIDENCE)
+                auto_valid = result["auto_valid"]
+                valid = result["valid"]
+                total = result["total"]
+                moved = result["moved"]
 
             if auto_valid:
                 logger.info("🎯 Auto-validation complète (%d/%d segments)", valid, total)

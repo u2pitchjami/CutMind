@@ -31,7 +31,7 @@ def move_to_trash(file_path: Path, trash_root: Path) -> Path:
     """
     if not file_path.exists():
         raise CutMindError(
-            "Fichier introuvable lors du move_to_trash.", code=ErrCode.FILEERROR, ctx={"file_path": str(file_path)}
+            "Fichier introuvable lors du move_to_trash.", code=ErrCode.FILE_ERROR, ctx={"file_path": str(file_path)}
         )
 
     try:
@@ -45,7 +45,7 @@ def move_to_trash(file_path: Path, trash_root: Path) -> Path:
     except Exception as exc:  # pylint: disable=broad-except
         raise CutMindError(
             "Impossible de déplacer le fichier vers la corbeille.",
-            code=ErrCode.FILEERROR,
+            code=ErrCode.FILE_ERROR,
             ctx={"file_path": str(file_path), "trash_root": str(trash_root)},
         ) from exc
 
