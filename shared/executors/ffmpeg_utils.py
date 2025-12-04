@@ -9,7 +9,6 @@ from pathlib import Path
 import subprocess
 
 from shared.models.exceptions import CutMindError, ErrCode
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 # ========== Utils FFprobe/FFmpeg ==========
 
@@ -142,15 +141,12 @@ def get_fps(filepath: Path) -> float:
         return 0.0
 
 
-@with_child_logger
-def detect_nvenc_available(logger: LoggerProtocol | None = None) -> bool:
+def detect_nvenc_available() -> bool:
     """
     Vérifie si l'encodeur NVIDIA NVENC (hevc_nvenc) est disponible.
     """
-    logger = ensure_logger(logger, __name__)
     try:
         result = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True, check=True)
         return "hevc_nvenc" in result.stdout
     except subprocess.CalledProcessError:
-        logger.warning("⚠️ Impossible de détecter les encodeurs FFmpeg.")
         return False

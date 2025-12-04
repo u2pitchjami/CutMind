@@ -16,11 +16,11 @@ import time
 
 import torch
 
-from cutmind.check.enhanced import check_enhanced_segments
-from cutmind.check.secure_in_router import check_secure_in_router
 from cutmind.db.repository import CutMindRepository
-from cutmind.process.already_enhanced import process_standard_videos
 from cutmind.process.router_worker import RouterWorker
+from cutmind.services.check.already_enhanced import process_standard_videos
+from cutmind.services.check.check_files import check_enhanced_segments
+from cutmind.services.check.secure_in_router import check_secure_in_router
 from cutmind.services.manual.update_from_csv import update_segments_csv
 from cutmind.validation.main_validation import validation
 from shared.models.config_manager import reload_and_apply

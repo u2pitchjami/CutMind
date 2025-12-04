@@ -9,6 +9,7 @@ from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 @with_child_logger
 def check_secure_in_router(logger: LoggerProtocol | None = None) -> None:
     logger = ensure_logger(logger, __name__)
+    logger.info("💫 Démarrage du check_secure_in_router.")
     repo = CutMindRepository()
     try:
         videos = repo.get_videos_by_status("processing_router")

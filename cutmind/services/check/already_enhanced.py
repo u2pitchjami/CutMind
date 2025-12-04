@@ -3,13 +3,13 @@
 from pathlib import Path
 from shutil import copy2
 
-from comfyui_router.ffmpeg.deinterlace import ensure_deinterlaced
-from comfyui_router.ffmpeg.smart_recut_hybrid import smart_recut_hybrid
+from comfyui_router.services.smart_recut_hybrid import smart_recut_hybrid
 from cutmind.db.repository import CutMindRepository
 from cutmind.process.file_mover import FileMover
 from shared.executors.ffmpeg_utils import detect_nvenc_available
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
+from shared.services.ensure_deinterlaced import ensure_deinterlaced
 from shared.utils.config import WORKDIR_CM
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.safe_segments import safe_segments
@@ -53,7 +53,7 @@ def process_standard_videos(limit: int = 10, logger: LoggerProtocol | None = Non
                         all_done = False
                         continue
 
-                    use_nvenc = detect_nvenc_available(logger=logger)
+                    use_nvenc = detect_nvenc_available()
                     if use_nvenc:
                         cuda = True
                     else:
@@ -65,10 +65,10 @@ def process_standard_videos(limit: int = 10, logger: LoggerProtocol | None = Non
                     copy2(seg_path, temp_path)
 
                     # Étape 1 : désentrelacement
-                    processed_path = ensure_deinterlaced(temp_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
+                    processed_path = ensure_deinterlaced(temp_path, use_cuda=cuda, cleanup=CLEANUP)
 
                     # Étape 2 : recut intelligent
-                    processed_path = smart_recut_hybrid(processed_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
+                    processed_path = smart_recut_hybrid(processed_path, use_cuda=cuda, cleanup=CLEANUP)
 
                     # Vérifie si le chemin a changé (fichier modifié)
                     # if processed_path.name != seg_path.name:

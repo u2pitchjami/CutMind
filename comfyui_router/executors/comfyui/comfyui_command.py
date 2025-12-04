@@ -7,8 +7,8 @@ from typing import Any
 
 import requests
 
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import HOST_ROOT, VISIBLE_ROOT
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
 def comfyui_path(full_path: Path) -> Path:
@@ -17,15 +17,12 @@ def comfyui_path(full_path: Path) -> Path:
     return visible_root / full_path.relative_to(host_root)
 
 
-@with_child_logger
-def run_comfy(workflow: dict[str, Any], logger: LoggerProtocol | None = None) -> bool:
+def run_comfy(workflow: dict[str, Any]) -> bool:
     """
     Envoie un workflow complet à ComfyUI.
     """
-    logger = ensure_logger(logger, __name__)
     payload = {"prompt": workflow}
 
-    logger.info("==== JSON ENVOYÉ À COMFYUI ====")
     # ⚠️ Supposons que `workflow` est ton dict JSON après remplacement des chemins vidéo
     # On filtre les nodes invalides (ex: commentaires, nodes UI)
 
@@ -36,7 +33,15 @@ def run_comfy(workflow: dict[str, Any], logger: LoggerProtocol | None = None) ->
         response = requests.post("http://192.168.50.12:8188/prompt", json=payload, timeout=60)
         response.raise_for_status()
         return True
-    except requests.HTTPError as e:
-        logger.error(f"❌ Erreur HTTP : {e}")
-        logger.error("📥 Réponse brute :", response.text)
-        return False
+    except requests.HTTPError as err:
+        raise CutMindError(
+            "❌ Erreur inattendue lors de l'envoie du worflow à Comfyui.",
+            code=ErrCode.UNEXPECTED,
+            ctx=get_step_ctx({"Réponse brute": response.text}),
+        ) from err
+    except Exception as exc:
+        raise CutMindError(
+            "❌ Erreur inattendue lors de l'envoie du worflow à Comfyui.",
+            code=ErrCode.UNEXPECTED,
+            ctx=get_step_ctx(),
+        ) from exc

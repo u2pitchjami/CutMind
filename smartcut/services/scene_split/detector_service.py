@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from shared.executors.pyscenedetect_executor import run_pyscenedetect
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from smartcut.executors.pyscenedetect_executor import run_pyscenedetect
 
 
 def detect_initial_scenes(

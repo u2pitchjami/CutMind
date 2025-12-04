@@ -7,19 +7,19 @@ import shutil
 
 from pymediainfo import MediaInfo
 
-from comfyui_router.comfyui.comfyui_command import comfyui_path
-from comfyui_router.ffmpeg.deinterlace import ensure_deinterlaced
+from comfyui_router.executors.comfyui.comfyui_command import comfyui_path
+from comfyui_router.executors.output import cleanup_outputs
 from comfyui_router.ffmpeg.ffmpeg_command import convert_to_60fps
-from comfyui_router.ffmpeg.smart_recut_hybrid import smart_recut_hybrid
 from comfyui_router.models_cr.comfy_workflow_manager import ComfyWorkflowManager
 from comfyui_router.models_cr.output_manager import OutputManager
 from comfyui_router.models_cr.videojob import VideoJob
-from comfyui_router.output.output import cleanup_outputs
+from comfyui_router.services.smart_recut_hybrid import smart_recut_hybrid
 from cutmind.db.data_utils import format_resolution
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Video
 from cutmind.process.file_mover import FileMover
 from shared.executors.ffmpeg_utils import detect_nvenc_available, get_fps, get_resolution
+from shared.services.ensure_deinterlaced import ensure_deinterlaced
 from shared.utils.config import OK_DIR, OUTPUT_DIR, TRASH_DIR
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
@@ -61,9 +61,9 @@ class VideoProcessor:
         logger.info(f"🚀 Début traitement ComfyUI : {video_path.name} sur {len(self.video.segments)}")
 
         job = VideoJob(video_path)
-        job.analyze(logger=logger)
+        job.analyze()
 
-        use_nvenc = detect_nvenc_available(logger=logger)
+        use_nvenc = detect_nvenc_available()
         if use_nvenc:
             cuda = True
         else:
@@ -74,15 +74,17 @@ class VideoProcessor:
         video_path = smart_recut_hybrid(video_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
         job.path = Path(video_path)
         job.comfyui_path = comfyui_path(full_path=video_path)
-        workflow = self.workflow_mgr.prepare_workflow(job, logger=logger)
+        workflow = self.workflow_mgr.prepare_workflow(job)
         if not workflow:
+            logger.info(f"❌ Ignorée (résolution trop basse) : {job.path.name}")
             return
 
-        if not self.workflow_mgr.run(workflow, logger=logger):
+        if not self.workflow_mgr.run(workflow):
             logger.warning(f"❌ Échec traitement ComfyUI : {job.path.name}")
             return
 
-        if not self.output_mgr.wait_for_output(job, logger=logger):
+        logger.info("==== WORKFLOW ENVOYÉ À COMFYUI ====")
+        if not self.output_mgr.wait_for_output(job):
             logger.warning(f"❌ Fichier de sortie introuvable : {job.path.name}")
             return
 
@@ -97,7 +99,8 @@ class VideoProcessor:
         if job.fps_out > 60:
             temp_output = final_output.with_name(f"{job.path.stem}_60fps.mp4")
             logger.debug(f"fps_out > 60 -> temp_output : {temp_output}")
-            if convert_to_60fps(job.output_file, temp_output, logger=logger):
+            if convert_to_60fps(job.output_file, temp_output):
+                logger.info(f"✅ Conversion 60 FPS terminée : {job.path.stem}")
                 job.output_file.unlink()
                 final_output = temp_output
                 logger.debug(f"fps_out > 60 -> final_output : {final_output}")
@@ -113,7 +116,8 @@ class VideoProcessor:
             shutil.move(job.output_file, final_output)
 
         move_to_trash(file_path=job.path, trash_root=TRASH_DIR)
-        cleanup_outputs(video_path.stem, final_output, OUTPUT_DIR, logger=logger)
+        cleanup_outputs(video_path.stem, final_output, OUTPUT_DIR)
+        logger.debug(f"🧹 Supprimé : {video_path.stem}")
         purge_old_trash(trash_root=TRASH_DIR, days=PURGE_DAYS, logger=logger)
         logger.info(f"🧹 Nettoyage des fichiers intermédiaires terminé pour {video_path.stem}")
         logger.info(f"✅ Terminé : {final_output.name}")

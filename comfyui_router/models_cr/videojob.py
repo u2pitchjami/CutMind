@@ -7,9 +7,10 @@ from pathlib import Path
 
 import psutil
 
-from comfyui_router.comfyui.comfyui_workflow import optimal_batch_size
+from comfyui_router.executors.comfyui.comfyui_workflow import optimal_batch_size
 from comfyui_router.ffmpeg.ffmpeg_command import get_total_frames, video_has_audio
 from shared.executors.ffmpeg_utils import get_fps, get_resolution
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
 
@@ -37,16 +38,14 @@ class VideoJob:
         COMFYUI_VISIBLE_ROOT = Path("/basedir")
         return COMFYUI_VISIBLE_ROOT / full_path.relative_to(COMFYUI_HOST_ROOT)
 
-    @with_child_logger
-    def analyze(self, logger: LoggerProtocol | None = None) -> None:
+    def analyze(self) -> None:
         """
         Récupère les métadonnées vidéo via ffprobe.
         """
-        logger = ensure_logger(logger, __name__)
         self.resolution = get_resolution(self.path)
         self.fps_in = get_fps(self.path)
-        self.has_audio = video_has_audio(self.path, logger=logger)
-        self.nb_frames = get_total_frames(self.path, logger=logger)
+        self.has_audio = video_has_audio(self.path)
+        self.nb_frames = get_total_frames(self.path)
 
     def compute_optimal_batch(self, min_size: int, max_size: int) -> None:
         """
@@ -104,6 +103,9 @@ class VideoJob:
                 batch_dynamic,
                 hard_ceiling,
             )
-
-        except Exception as e:
-            logger.warning("[AdaptiveBatch] Erreur calcul batch dynamique: %s", e)
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur innatendue lors du calcul batch dynamique.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"wf_path": wf_path}),
+            ) from exc

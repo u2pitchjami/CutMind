@@ -5,8 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from comfyui_router.models_cr.videojob import VideoJob
-from comfyui_router.output.output import wait_for_output_v2
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from comfyui_router.services.wait_for_output import wait_for_output_v2
 from shared.utils.settings import get_settings
 
 settings = get_settings()
@@ -17,19 +16,16 @@ TIMEOUT = settings.router_wait_output.timeout
 
 
 class OutputManager:
-    @with_child_logger
-    def wait_for_output(self, video_job: VideoJob, logger: LoggerProtocol | None = None) -> Path | None:
+    def wait_for_output(self, video_job: VideoJob) -> Path | None:
         """
         Récupère le fichier final généré par ComfyUI.
         """
-        logger = ensure_logger(logger, __name__)
         file = wait_for_output_v2(
             filename_prefix=video_job.path.stem,
             expect_audio=video_job.has_audio,
             stable_time=STABLE_TIME,
             check_interval=CHECK_INTERVAL,
             timeout=TIMEOUT,
-            logger=logger,
         )
         if file:
             video_job.output_file = file
