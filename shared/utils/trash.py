@@ -6,20 +6,22 @@ from datetime import datetime
 from pathlib import Path
 import shutil
 
-from shared.models.exceptions import CutMindError, ErrCode
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
-@with_child_logger
-def delete_files(path: Path, ext: str = "*.jpg", logger: LoggerProtocol | None = None) -> None:
-    logger = ensure_logger(logger, __name__)
+def delete_files(path: Path, ext: str = "*.jpg") -> None:
     for file in Path(path).glob(ext):
         # logger.debug(f"🧹 Vérifié : {file.name}")
         try:
             file.unlink()
             # logger.debug(f"🧹 Supprimé : {file.name}")
-        except Exception as e:
-            logger.warning(f"⚠️ Impossible de supprimer {file.name} : {e}")
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur inatendue lors de la suppression.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"path": path, "file": file.name}),
+            ) from exc
 
 
 def move_to_trash(file_path: Path, trash_root: Path) -> Path:
@@ -46,7 +48,7 @@ def move_to_trash(file_path: Path, trash_root: Path) -> Path:
         raise CutMindError(
             "Impossible de déplacer le fichier vers la corbeille.",
             code=ErrCode.FILE_ERROR,
-            ctx={"file_path": str(file_path), "trash_root": str(trash_root)},
+            ctx=get_step_ctx({"file_path": str(file_path), "trash_root": str(trash_root)}),
         ) from exc
 
 

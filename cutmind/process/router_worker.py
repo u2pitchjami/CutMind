@@ -17,6 +17,7 @@ from comfyui_router.models_cr.processor import VideoProcessor
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Segment, Video
 from cutmind.process.file_mover import FileMover
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
 from shared.utils.config import CM_NB_VID_ROUTER, COLOR_RED, COLOR_RESET, INPUT_DIR, OUTPUT_DIR
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
@@ -98,8 +99,8 @@ class RouterWorker:
                         router_allowed = current_hour not in forbidden_hours
                         if router_allowed:
                             with Timer(f"Traitement du segment : {seg.filename_predicted}", logger):
-                                delete_files(path=OUTPUT_DIR, ext="*.png", logger=logger)
-                                delete_files(path=OUTPUT_DIR, ext="*.mp4", logger=logger)
+                                delete_files(path=OUTPUT_DIR, ext="*.png")
+                                delete_files(path=OUTPUT_DIR, ext="*.mp4")
                                 repo = CutMindRepository()
                                 processor = VideoProcessor(cutmind_repo=repo, video=video, logger=logger)
                                 processor.process(Path(dst), logger=logger)
@@ -118,8 +119,16 @@ class RouterWorker:
 
                     logger.info("📬 Vidéo %s envoyée vers Router (%d segments).", video.uid, len(prepared))
 
-                except Exception as err:
-                    logger.exception("❌ Erreur durant l'envoi de %s : %s", video.uid, err)
+                except CutMindError as err:
+                    raise err.with_context(
+                        get_step_ctx({"video.name": video.name, "video.status": video.status})
+                    ) from err
+                except Exception as exc:
+                    raise CutMindError(
+                        "❌ Erreur inatendue durant l'envoi à Processor Comfyui.",
+                        code=ErrCode.UNEXPECTED,
+                        ctx=get_step_ctx({"video.name": video.name, "video.status": video.status}),
+                    ) from exc
 
         if processed_count == 0:
             logger.info("📭 Aucun segment traité lors de ce cycle.")
@@ -164,7 +173,10 @@ class RouterWorker:
                     dst = INPUT_DIR / src.name
                     prepared.append((seg, src, dst))
                     logger.debug("🧩 Segment à router : %s → %s", src, dst)
-                except Exception as prep_err:
-                    logger.warning("⚠️ Erreur préparation segment %s : %s", seg.uid, prep_err)
-
+                except Exception as exc:
+                    raise CutMindError(
+                        "❌ Erreur inatendue lors de la préparation du segement pour : Processor Comfyui.",
+                        code=ErrCode.UNEXPECTED,
+                        ctx=get_step_ctx({"seg.uid": seg.uid}),
+                    ) from exc
         return prepared

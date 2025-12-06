@@ -35,7 +35,7 @@ def generate_keywords_for_segment(
         raise err.with_context(get_step_ctx({"segment_id": segment_id})) from err
     except Exception as exc:
         raise CutMindError(
-            "Erreur lors du traitement IA.",
+            "❌ Erreur lors du traitement IA.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"segment_id": segment_id}),
         ) from exc

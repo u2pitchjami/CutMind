@@ -20,8 +20,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--deinterlace", action="store_true", help="Forcer le désentrelacement des vidéos")
     args = parser.parse_args()
-    delete_files(path=OUTPUT_DIR, ext="*.png", logger=logger)
-    delete_files(path=OUTPUT_DIR, ext="*.mp4", logger=logger)
+    delete_files(path=OUTPUT_DIR, ext="*.png")
+    delete_files(path=OUTPUT_DIR, ext="*.mp4")
     processor = VideoProcessor()
     videos = sorted(chain.from_iterable(INPUT_DIR.glob(f"*{ext}") for ext in SAFE_FORMATS))
     for i, video in enumerate(videos):

@@ -19,6 +19,7 @@ from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Video
 from cutmind.process.file_mover import FileMover
 from shared.executors.ffmpeg_utils import detect_nvenc_available, get_fps, get_resolution
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.services.ensure_deinterlaced import ensure_deinterlaced
 from shared.utils.config import OK_DIR, OUTPUT_DIR, TRASH_DIR
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
@@ -54,75 +55,102 @@ class VideoProcessor:
     ) -> None:
         logger = ensure_logger(logger, __name__)
         if not self.video or not self.video.name:
-            logger.warning("🚨 Vidéo inconnue")
-            return
+            raise CutMindError(
+                "❌ Erreur inattendue : Vidéo inconnue.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"video_path": str(video_path)}),
+            )
 
         logger.info(f"🎞️ Traitement de {self.video.name} : {self.video.resolution} - {self.video.fps} fps")
         logger.info(f"🚀 Début traitement ComfyUI : {video_path.name} sur {len(self.video.segments)}")
 
-        job = VideoJob(video_path)
-        job.analyze()
+        try:
+            job = VideoJob(video_path)
+            job.analyze()
 
-        use_nvenc = detect_nvenc_available()
-        if use_nvenc:
-            cuda = True
-        else:
-            cuda = False
+            use_nvenc = detect_nvenc_available()
+            if use_nvenc:
+                cuda = True
+            else:
+                cuda = False
 
-        # 🧩 Étape 2 : détection / désentrelacement
-        video_path = ensure_deinterlaced(video_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
-        video_path = smart_recut_hybrid(video_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
-        job.path = Path(video_path)
-        job.comfyui_path = comfyui_path(full_path=video_path)
-        workflow = self.workflow_mgr.prepare_workflow(job)
-        if not workflow:
-            logger.info(f"❌ Ignorée (résolution trop basse) : {job.path.name}")
-            return
+            # 🧩 Étape 2 : détection / désentrelacement
+            video_path = ensure_deinterlaced(video_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
+            video_path = smart_recut_hybrid(video_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
+            job.path = Path(video_path)
+            job.comfyui_path = comfyui_path(full_path=video_path)
+            workflow = self.workflow_mgr.prepare_workflow(job)
+            if not workflow:
+                raise CutMindError(
+                    "❌ Ignorée (résolution trop basse).",
+                    code=ErrCode.VIDEO,
+                    ctx=get_step_ctx({"video_path": str(video_path)}),
+                )
 
-        if not self.workflow_mgr.run(workflow):
-            logger.warning(f"❌ Échec traitement ComfyUI : {job.path.name}")
-            return
+            if not self.workflow_mgr.run(workflow):
+                raise CutMindError(
+                    "❌ Échec traitement ComfyUI.",
+                    code=ErrCode.VIDEO,
+                    ctx=get_step_ctx({"video_path": str(video_path)}),
+                )
 
-        logger.info("==== WORKFLOW ENVOYÉ À COMFYUI ====")
-        if not self.output_mgr.wait_for_output(job):
-            logger.warning(f"❌ Fichier de sortie introuvable : {job.path.name}")
-            return
+            logger.info("==== WORKFLOW ENVOYÉ À COMFYUI ====")
+            if not self.output_mgr.wait_for_output(job):
+                raise CutMindError(
+                    "❌ Échec traitement ComfyUI : fichier de sortie introuvable.",
+                    code=ErrCode.VIDEO,
+                    ctx=get_step_ctx({"video_path": str(video_path)}),
+                )
 
-        if not job.output_file:
-            return
-        job.fps_out = get_fps(job.output_file)
-        job.resolution_out = get_resolution(job.output_file)
-        final_output = OK_DIR / job.output_file.name
-        logger.debug(f"✅ OK_DIR : {OK_DIR}, TRASH_DIR : {TRASH_DIR}")
-        logger.debug(f"✅ Fichier de sortie trouvé : {final_output}")
+            if not job.output_file:
+                raise CutMindError(
+                    "❌ Échec traitement ComfyUI : fichier de sortie introuvable.",
+                    code=ErrCode.VIDEO,
+                    ctx=get_step_ctx({"video_path": str(video_path)}),
+                )
 
-        if job.fps_out > 60:
-            temp_output = final_output.with_name(f"{job.path.stem}_60fps.mp4")
-            logger.debug(f"fps_out > 60 -> temp_output : {temp_output}")
-            if convert_to_60fps(job.output_file, temp_output):
-                logger.info(f"✅ Conversion 60 FPS terminée : {job.path.stem}")
-                job.output_file.unlink()
-                final_output = temp_output
-                logger.debug(f"fps_out > 60 -> final_output : {final_output}")
-        elif job.fps_out < 59:
-            retry_path = job.path.parent / f"{job.path.name}"
-            logger.debug(f"fps_out < 60 -> retry_path : {retry_path}")
-            self._notify_cutmind(job, retry_path, status="rejected", logger=logger)
-            # shutil.move(job.output_file, retry_path)
-            logger.info(f"↩️ Rejet : {job.path.name} (FPS {job.fps_out:.2f})")
+            job.fps_out = get_fps(job.output_file)
+            job.resolution_out = get_resolution(job.output_file)
+            final_output = OK_DIR / job.output_file.name
+            logger.debug(f"✅ OK_DIR : {OK_DIR}, TRASH_DIR : {TRASH_DIR}")
+            logger.debug(f"✅ Fichier de sortie trouvé : {final_output}")
 
-            return
-        else:
-            shutil.move(job.output_file, final_output)
+            if job.fps_out > 60:
+                temp_output = final_output.with_name(f"{job.path.stem}_60fps.mp4")
+                logger.debug(f"fps_out > 60 -> temp_output : {temp_output}")
+                if convert_to_60fps(job.output_file, temp_output):
+                    logger.info(f"✅ Conversion 60 FPS terminée : {job.path.stem}")
+                    job.output_file.unlink()
+                    final_output = temp_output
+                    logger.debug(f"fps_out > 60 -> final_output : {final_output}")
+            elif job.fps_out < 59:
+                retry_path = job.path.parent / f"{job.path.name}"
+                logger.debug(f"fps_out < 60 -> retry_path : {retry_path}")
+                self._notify_cutmind(job, retry_path, status="rejected", logger=logger)
+                # shutil.move(job.output_file, retry_path)
+                logger.info(f"↩️ Rejet : {job.path.name} (FPS {job.fps_out:.2f})")
 
-        move_to_trash(file_path=job.path, trash_root=TRASH_DIR)
-        cleanup_outputs(video_path.stem, final_output, OUTPUT_DIR)
-        logger.debug(f"🧹 Supprimé : {video_path.stem}")
-        purge_old_trash(trash_root=TRASH_DIR, days=PURGE_DAYS, logger=logger)
-        logger.info(f"🧹 Nettoyage des fichiers intermédiaires terminé pour {video_path.stem}")
-        logger.info(f"✅ Terminé : {final_output.name}")
-        logger.debug(f"for _notif -> final_output : {final_output}")
-        self._notify_cutmind(job, final_output, status="enhanced", logger=logger)
+                return
+            else:
+                shutil.move(job.output_file, final_output)
+
+            move_to_trash(file_path=job.path, trash_root=TRASH_DIR)
+            cleanup_outputs(video_path.stem, final_output, OUTPUT_DIR)
+            logger.debug(f"🧹 Supprimé : {video_path.stem}")
+            purge_old_trash(trash_root=TRASH_DIR, days=PURGE_DAYS, logger=logger)
+            logger.info(f"🧹 Nettoyage des fichiers intermédiaires terminé pour {video_path.stem}")
+            logger.info(f"✅ Terminé : {final_output.name}")
+            logger.debug(f"for _notif -> final_output : {final_output}")
+            self._notify_cutmind(job, final_output, status="enhanced", logger=logger)
+
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx({"video.name": self.video.name})) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur innatendue Processor Comfyui.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"job.path.name": job.path.name, "video.name": self.video.name}),
+            ) from exc
 
     @with_child_logger
     def _notify_cutmind(
@@ -136,7 +164,11 @@ class VideoProcessor:
         logger = ensure_logger(logger, __name__)
 
         if not self.repo:
-            return
+            raise CutMindError(
+                "❌ Échec init du repo.",
+                code=ErrCode.DB,
+                ctx=get_step_ctx({"job.path": str(job.path)}),
+            )
 
         try:
             seg_uid = job.path.stem.split("_")[2]
@@ -144,13 +176,19 @@ class VideoProcessor:
             logger.debug(f"_notify_cutmind seg_uid : {seg_uid}")
 
             if not seg:
-                logger.warning("⚠️ Segment UID introuvable : %s", seg_uid)
-                return
+                raise CutMindError(
+                    "❌ Segment UID introuvable.",
+                    code=ErrCode.NOFILE,
+                    ctx=get_step_ctx({"seg_uid": seg_uid, "job.path": str(job.path)}),
+                )
 
             if replace_original:
                 if not seg.output_path:
-                    logger.error("❌ Segment sans chemin de sortie défini : %s", seg.uid)
-                    return
+                    raise CutMindError(
+                        "❌ Segment sans chemin de sortie défini.",
+                        code=ErrCode.NOFILE,
+                        ctx=get_step_ctx({"seg_uid": seg_uid, "job.path": str(job.path)}),
+                    )
 
                 target_path = Path(seg.output_path)
                 target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -194,13 +232,32 @@ class VideoProcessor:
                     logger.info("📦 Fichier remplacé (via safe_copy) : %s → %s", final_output.name, target_path)
 
                 except Exception as move_err:
-                    logger.error("❌ Impossible de déplacer le fichier : %s → %s", final_output, target_path)
-                    logger.exception(str(move_err))
-                    return
+                    raise CutMindError(
+                        "❌ Impossible de déplacer le fichier.",
+                        code=ErrCode.NOFILE,
+                        ctx=get_step_ctx(
+                            {
+                                "final_output": final_output,
+                                "target_path": target_path,
+                                "seg_uid": seg_uid,
+                                "job.path": str(job.path),
+                            }
+                        ),
+                    ) from move_err
 
                 if not target_path.exists():
-                    logger.error("❌ Fichier manquant après remplacement : %s", target_path)
-                    return
+                    raise CutMindError(
+                        "❌ Fichier manquant après remplacement.",
+                        code=ErrCode.NOFILE,
+                        ctx=get_step_ctx(
+                            {
+                                "final_output": final_output,
+                                "target_path": target_path,
+                                "seg_uid": seg_uid,
+                                "job.path": str(job.path),
+                            }
+                        ),
+                    )
 
             else:
                 logger.info("ℹ️ Remplacement original désactivé — fichier conservé dans OK_DIR")
@@ -217,5 +274,11 @@ class VideoProcessor:
             self.repo.update_segment_postprocess(seg)
             logger.info("🧠 CutMind synchronisé pour segment %s (%s)", seg.uid, status)
 
-        except Exception as err:
-            logger.exception("❌ Erreur notification CutMind pour %s : %s", job.path.name, err)
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx({"seg_uid": seg_uid})) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur innatendue notification CutMind.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"job.path.name": job.path.name, "seg_uid": seg_uid}),
+            ) from exc

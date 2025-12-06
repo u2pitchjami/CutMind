@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from cutmind.models_cm.db_models import Segment
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from smartcut.executors.merge_executor import MergedSegment, MergeExecutor, RawSegment
 from smartcut.services.merge.rattrapage_service import PostMergeRattrapage
 
@@ -50,46 +51,57 @@ class MergeService:
         )
 
     def merge(self, segments: list[Segment]) -> list[MergeResult]:
-        raw_list: list[RawSegment] = [
-            RawSegment(
-                start=s.start,
-                end=s.end,
-                description=s.description or "",
-                keywords=list(s.keywords),
-                confidence=s.confidence or 0.0,
-                uid=s.uid,
-            )
-            for s in segments
-        ]
-
-        merged: list[MergedSegment] = self.executor.merge(raw_list)
-        if self.apply_rattrapage:
-            merged = self.rattrapage.apply(merged)
-
-        results: list[MergeResult] = []
-        for seg in merged:
-            duration = seg.end - seg.start
-            if duration < self.min_duration or duration > self.max_duration:
-                continue
-
-            # ⛔️ Skip segments qui n'ont pas été fusionnés (1 seul UID)
-            if len(seg.merged_from) <= 1:
-                continue
-
-            results.append(
-                MergeResult(
-                    segment_id=None,  # ➜ sera défini juste après
-                    start=seg.start,
-                    end=seg.end,
-                    description=seg.description.strip(),
-                    keywords=seg.keywords,
-                    confidence=seg.confidence,
-                    merged_from=seg.merged_from,
+        try:
+            raw_list: list[RawSegment] = [
+                RawSegment(
+                    start=s.start,
+                    end=s.end,
+                    description=s.description or "",
+                    keywords=list(s.keywords),
+                    confidence=s.confidence or 0.0,
+                    uid=s.uid,
                 )
-            )
+                for s in segments
+            ]
 
-        # 🔁 Réattribution d’un ID local (utile pour nommage prédictif)
-        for i, result in enumerate(results, start=len(segments) + 1):
-            result.segment_id = i
+            merged: list[MergedSegment] = self.executor.merge(raw_list)
+            if self.apply_rattrapage:
+                merged = self.rattrapage.apply(merged)
 
-        return results
+            results: list[MergeResult] = []
+            for seg in merged:
+                duration = seg.end - seg.start
+                if duration < self.min_duration or duration > self.max_duration:
+                    continue
+
+                # ⛔️ Skip segments qui n'ont pas été fusionnés (1 seul UID)
+                if len(seg.merged_from) <= 1:
+                    continue
+
+                results.append(
+                    MergeResult(
+                        segment_id=None,  # ➜ sera défini juste après
+                        start=seg.start,
+                        end=seg.end,
+                        description=seg.description.strip(),
+                        keywords=seg.keywords,
+                        confidence=seg.confidence,
+                        merged_from=seg.merged_from,
+                    )
+                )
+
+            # 🔁 Réattribution d’un ID local (utile pour nommage prédictif)
+            for i, result in enumerate(results, start=len(segments) + 1):
+                result.segment_id = i
+
+            return results
+        except CutMindError as err:
+            raise err.with_context(
+                get_step_ctx({"start": seg.start, "end": seg.end, "merged_from": seg.merged_from})
+            ) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur inattendue lors du merge Smartcut.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"start": seg.start, "end": seg.end, "merged_from": seg.merged_from}),
+            ) from exc

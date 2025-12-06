@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from cutmind.models_cm.db_models import Segment
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from smartcut.executors.confidence_executor import ConfidenceExecutor
 
 
@@ -29,23 +30,32 @@ class ConfidenceService:
     ) -> list[ConfidenceResult]:
         results: list[ConfidenceResult] = []
 
-        for seg in segments:
-            if seg.status != "ia_done":
-                continue
+        try:
+            for seg in segments:
+                if seg.status != "ia_done":
+                    continue
 
-            if not seg.description or not seg.id:
-                score = 0.0
-                continue
-            score = self.executor.compute(seg.description, seg.keywords)
+                if not seg.description or not seg.id:
+                    score = 0.0
+                    continue
+                score = self.executor.compute(seg.description, seg.keywords)
 
-            merged = list(set(seg.keywords + auto_keywords)) if seg.keywords else auto_keywords.copy()
+                merged = list(set(seg.keywords + auto_keywords)) if seg.keywords else auto_keywords.copy()
 
-            results.append(
-                ConfidenceResult(
-                    segment_id=seg.id,
-                    confidence=score,
-                    merged_keywords=merged,
+                results.append(
+                    ConfidenceResult(
+                        segment_id=seg.id,
+                        confidence=score,
+                        merged_keywords=merged,
+                    )
                 )
-            )
 
-        return results
+            return results
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx({"seg.id": seg.id})) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur inattendue lors de du traitement compute_for_segments.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"seg.id": seg.id}),
+            ) from exc

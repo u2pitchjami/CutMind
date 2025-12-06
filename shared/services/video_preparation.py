@@ -77,7 +77,7 @@ def get_video_metadata_all(video_path: Path) -> VideoPrepared:
         raise err.with_context({"step": "get_video_metadata_all"}) from err
     except Exception as exc:
         raise CutMindError(
-            "Erreur inattendue lors de l'extraction des métadonnées.",
+            "❌ Erreur inattendue lors de l'extraction des métadonnées.",
             code=ErrCode.UNEXPECTED,
             ctx={"video_path": str(video_path)},
         ) from exc

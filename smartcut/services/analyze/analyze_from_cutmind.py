@@ -55,7 +55,11 @@ def analyze_from_cutmind(
         cleanup_temp()
 
         if not seg.output_path:
-            raise
+            raise CutMindError(
+                "❌ Erreur segment : Aucune output path défini.",
+                code=ErrCode.DB,
+                ctx=get_step_ctx({"seg.id": seg.id}),
+            )
         cap, video_name = open_vid(seg.output_path)
 
         # Chargement du modèle IA + paramètres de batching
@@ -80,7 +84,11 @@ def analyze_from_cutmind(
         frame_paths = extract_segment_frames(cap, video_name, start, end, auto_frames, fps_extract, base_rate)
         if not frame_paths:
             logger.warning(f"Aucune frame extraite pour le segment {seg.id}")
-            raise
+            raise CutMindError(
+                "❌ Erreur segment : Aucune frame extraite pour le segment.",
+                code=ErrCode.VIDEO,
+                ctx=get_step_ctx({"video_name": video_name, "seg.id": seg.id}),
+            )
 
         logger.info(f"🎬 Analyse segment {seg.id} ({start:.2f}s → {end:.2f}s) : {len(frame_paths)} frames extraites.")
         with Timer(f"Traitement Keywords : {seg.id}", logger):
@@ -140,7 +148,11 @@ def analyze_from_cutmind(
         seg.ai_model = model_name
         repo.update_segment_validation(seg)
         if not seg.id:
-            raise
+            raise CutMindError(
+                "❌ Erreur DB : aucun seg.id.",
+                code=ErrCode.DB,
+                ctx=get_step_ctx({"video_name": video_name}),
+            )
         repo.insert_keywords_standalone(segment_id=seg.id, keywords=seg.keywords)
 
         logger.debug(f"💾 Session mise à jour (segment {seg.id})")

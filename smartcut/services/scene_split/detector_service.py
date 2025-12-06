@@ -44,7 +44,7 @@ def detect_initial_scenes(
         raise err.with_context(get_step_ctx({"video_path": video_path})) from err
     except Exception as exc:
         raise CutMindError(
-            "Erreur lors de la détection de scènes.",
+            "❌ Erreur lors de la détection de scènes.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": video_path}),
         ) from exc
