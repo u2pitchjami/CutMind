@@ -61,11 +61,20 @@ def auto_threshold_pass(video_path: Path, base_threshold: float = 0.005) -> list
     """
     Fait une détection, puis relance avec un seuil réduit seulement si rien trouvé.
     """
-    cuts = detect_scene_changes_with_scores(video_path, base_threshold)
-    if not cuts:
-        new_threshold = base_threshold / 2
-        cuts = detect_scene_changes_with_scores(video_path, new_threshold)
-    return cuts
+    try:
+        cuts = detect_scene_changes_with_scores(video_path, base_threshold)
+        if not cuts:
+            new_threshold = base_threshold / 2
+            cuts = detect_scene_changes_with_scores(video_path, new_threshold)
+        return cuts
+    except CutMindError as err:
+        raise err.with_context(get_step_ctx({"video_path": video_path})) from err
+    except Exception as exc:
+        raise CutMindError(
+            "❌ Erreur inatendue durant auto_threshold_pass.",
+            code=ErrCode.UNEXPECTED,
+            ctx=get_step_ctx({"video_path": video_path}),
+        ) from exc
 
 
 def choose_best_cuts(

@@ -146,6 +146,17 @@ class WaitOutputSettings:
 
 
 # ==========================================================
+#            CUTMIND — DATACLASSES
+# ==========================================================
+
+
+@dataclass
+class ValidationSettings:
+    normal: str
+    manual: str
+
+
+# ==========================================================
 #                 SETTINGS ROOT OBJECT
 # ==========================================================
 
@@ -164,6 +175,8 @@ class Settings:
     router_optimal_batch_size: OptimalBatchSizeSettings
     router_processor: ProcessorSettings
     router_wait_output: WaitOutputSettings
+
+    cutmind_validation: ValidationSettings
 
     # IMPORTANT :
     # adaptive_batch reste un dict car le code actuel utilise .get() et accès dynamiques
@@ -186,6 +199,7 @@ def init_settings(config: Any) -> None:
 
     sc = config.smartcut
     rt = config.comfyui_router
+    cm = config.cutmind
 
     SETTINGS = Settings(
         smartcut=SmartcutCoreSettings(
@@ -231,6 +245,10 @@ def init_settings(config: Any) -> None:
         router_optimal_batch_size=OptimalBatchSizeSettings(min_size=rt["optimal_batch_size"]["min_size"]),
         router_processor=ProcessorSettings(**rt["processor"]),
         router_wait_output=WaitOutputSettings(**rt["wait_for_output"]),
+        cutmind_validation=ValidationSettings(
+            normal=cm["validation"]["normal"],
+            manual=cm["validation"]["manual"],
+        ),
         adaptive_batch=rt["adaptive_batch"],  # ← laissé en dict volontairement
     )
 

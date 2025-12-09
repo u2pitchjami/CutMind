@@ -5,8 +5,10 @@ import random
 
 from cutmind.db.repository import CutMindRepository
 from cutmind.executors.check.enhanced import check_segments
+from cutmind.executors.check.log_metadata_diff import log_metadata_diff
 from cutmind.services.categ.categ_serv import match_category
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.services.video_preparation import get_metadata_all
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
@@ -26,6 +28,8 @@ def check_enhanced_segments(max_videos: int = 10, logger: LoggerProtocol | None 
     for video in selected:
         logger.info("▶️ check_enhanced : %s", video.name)
         for seg in video.segments:
+            if not seg or not seg.id:
+                continue
             if seg.status != "enhanced":
                 logger.debug("🛑 segment non enrichi  :  %s", seg.status)
                 continue
@@ -36,12 +40,15 @@ def check_enhanced_segments(max_videos: int = 10, logger: LoggerProtocol | None 
                 continue
 
             try:
-                updated = check_segments(seg, path)
+                metadata = get_metadata_all(video_path=path)
+                updated = check_segments(seg, metadata, path)
 
                 if updated:
+                    log_metadata_diff(seg, metadata, logger)
                     seg.status = "enhanced"
                     seg.category = match_category(seg.keywords, logger=logger)
-                    repo.update_segment_postprocess(seg)
+                    repo.update_segment_from_metadata(segment_id=seg.id, metadata=metadata)
+                    repo.update_segment_validation(seg)
                     logger.info("✅ Segment mis à jour : %s", seg.uid)
                     modified_count += 1
 

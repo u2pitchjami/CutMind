@@ -32,11 +32,10 @@ from shared.utils.remove_empty_dirs import remove_empty_dirs
 from shared.utils.safe_segments import safe_segments
 from smartcut.services.analyze.analyze_from_cutmind import analyze_from_cutmind
 
+
 # =====================================================================
 # ⚙️ Validation automatique d'une vidéo
 # =====================================================================
-
-
 @safe_segments
 def analyze_session_validation_db(video: Video, min_confidence: float = 0.45) -> dict[str, Any]:
     repo = CutMindRepository()
@@ -137,6 +136,8 @@ def analyze_session_validation_db(video: Video, min_confidence: float = 0.45) ->
             "auto_valid": True,
             "moved": True,
         }
+    except CutMindError as err:
+        raise err.with_context(get_step_ctx({"name": video.name})) from err
     except Exception as exc:
         raise CutMindError(
             "❌ Erreur innatendue lors de la validation.",

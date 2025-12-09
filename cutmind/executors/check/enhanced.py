@@ -4,42 +4,45 @@ from pathlib import Path
 
 from cutmind.models_cm.db_models import Segment
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
-from shared.services.video_preparation import get_video_metadata_all
+from shared.services.video_preparation import VideoPrepared
 
 
-def check_segments(seg: Segment, path: Path) -> bool:
+def check_segments(seg: Segment, metadata: VideoPrepared, path: Path) -> bool:
+    """
+    Compare les métadonnées stockées dans le Segment avec celles du fichier réel.
+    Si des différences sont détectées → mise à jour du segment → return True.
+    """
     updated = False
     try:
-        metadata = get_video_metadata_all(video_path=path)
+        # Mapping Segment <-> VideoPrepared
+        mapping: dict[str, str] = {
+            "resolution": "resolution",
+            "fps": "fps",
+            "duration": "duration",
+            "codec": "codec",
+            "bitrate": "bitrate",
+            "filesize_mb": "filesize_mb",
+            "nb_frames": "nb_frames",
+            "has_audio": "has_audio",
+            "audio_codec": "audio_codec",
+            "audio_bitrate": "audio_bitrate",
+            "audio_channels": "audio_channels",
+            "audio_sample_rate": "audio_sample_rate",
+        }
 
-        if seg.resolution != metadata.resolution:
-            seg.resolution = metadata.resolution
-            updated = True
+        for seg_attr, meta_attr in mapping.items():
+            seg_val = getattr(seg, seg_attr, None)
+            meta_val = getattr(metadata, meta_attr, None)
 
-        if seg.codec != metadata.codec:
-            seg.codec = metadata.codec
-            updated = True
-
-        if seg.bitrate != metadata.bitrate:
-            seg.bitrate = metadata.bitrate
-            updated = True
-
-        if seg.filesize_mb != metadata.filesize_mb:
-            seg.filesize_mb = metadata.filesize_mb
-            updated = True
-
-        if seg.duration != metadata.duration:
-            seg.duration = metadata.duration
-            updated = True
-
-        if seg.fps != metadata.fps:
-            seg.fps = metadata.fps
-            updated = True
+            if seg_val != meta_val:
+                setattr(seg, seg_attr, meta_val)
+                updated = True
 
         return updated
-    except Exception as exc:
+
+    except Exception as exc:  # pylint: disable=broad-except
         raise CutMindError(
-            "❌ Erreur inattendue lors de check_enhanced.",
+            "❌ Erreur inattendue lors de check_segments.",
             code=ErrCode.UNEXPECTED,
-            ctx=get_step_ctx({"seg.id": seg.id, "path": seg.id}),
+            ctx=get_step_ctx({"seg.id": seg.id, "path": str(path)}),
         ) from exc

@@ -1,5 +1,5 @@
 """
-CutMind Repository (v3.3)
+CutMind Repository (v3.4)
 =========================
 
 Couche d’accès à la base de données MariaDB pour le projet CutMind.
@@ -7,25 +7,23 @@ Couche d’accès à la base de données MariaDB pour le projet CutMind.
 - Gestion des vidéos et segments
 - Insertion / lecture / mise à jour cohérente
 - Basé sur db_conn() et safe_execute_dict() pour sécurité et logs
-
-Dépendances :
--------------
-from cutmind.db.db_connection import db_conn, get_dict_cursor
-from cutmind.sql.db_utils import safe_execute_dict
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from typing import Any
 
 from pymysql.connections import Connection
 
+from comfyui_router.models_cr.processed_segment import ProcessedSegment
 from cutmind.db.db_connection import db_conn, get_dict_cursor
 from cutmind.db.db_utils import safe_execute_dict
 from cutmind.models_cm.cursor_protocol import DictCursorProtocol
 from cutmind.models_cm.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.services.video_preparation import VideoPrepared
 
 
 # =====================================================================
@@ -34,17 +32,72 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 class CutMindRepository:
     """Gestion centralisée des accès à la base de données CutMind."""
 
+    # ------------------------------------------------------------------
+    # 🧱 Helpers internes génériques
+    # ------------------------------------------------------------------
+    def _exec_sql(
+        self,
+        sql: str,
+        params: Sequence[Any] | None = None,
+        conn: Connection | None = None,
+    ) -> None:
+        """
+        Exécute une requête SQL (INSERT/UPDATE/DELETE) sans retourner de lignes.
+        Gère automatiquement la connexion lorsque conn est None.
+        """
+        sql_params: tuple[Any, ...] = tuple(params) if params else ()
+
+        if conn is None:
+            with db_conn() as _conn:
+                with get_dict_cursor(_conn) as cur:
+                    safe_execute_dict(cur, sql, sql_params)
+                    _conn.commit()
+        else:
+            with get_dict_cursor(conn) as cur:
+                safe_execute_dict(cur, sql, sql_params)
+
+    def _fetch_one(
+        self,
+        sql: str,
+        params: Sequence[Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """
+        Exécute un SELECT et retourne une seule ligne (ou None).
+        """
+        sql_params: tuple[Any, ...] = tuple(params) if params else ()
+        with db_conn() as conn:
+            with get_dict_cursor(conn) as cur:
+                safe_execute_dict(cur, sql, sql_params)
+                return cur.fetchone()
+
+    def _fetch_all(
+        self,
+        sql: str,
+        params: Sequence[Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Exécute un SELECT et retourne toutes les lignes.
+        """
+        if params is None:
+            params = ()
+
+        sql_params: tuple[Any, ...] = tuple(params) if params else ()
+        with db_conn() as conn:
+            with get_dict_cursor(conn) as cur:
+                safe_execute_dict(cur, sql, sql_params)
+                return list(cur.fetchall())
+
     # -------------------------------------------------------------
     # 🔍 Vérifie si une vidéo existe déjà
     # -------------------------------------------------------------
     def video_exists(self, uid: str) -> bool:
         try:
-            with db_conn() as conn:
-                with get_dict_cursor(conn) as cur:
-                    safe_execute_dict(cur, "SELECT COUNT(*) AS count FROM videos WHERE uid=%s", (uid,))
-                    row = cur.fetchone()
-                    exists = bool(row and row["count"] > 0)
-                    return exists
+            row = self._fetch_one(
+                "SELECT COUNT(*) AS count FROM videos WHERE uid=%s",
+                (uid,),
+            )
+            exists = bool(row and row["count"] > 0)
+            return exists
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"uid": uid})) from err
         except Exception as exc:
@@ -56,11 +109,11 @@ class CutMindRepository:
 
     def video_exists_by_video_path(self, video_path: str) -> int | None:
         try:
-            with db_conn() as conn:
-                with get_dict_cursor(conn) as cur:
-                    safe_execute_dict(cur, "SELECT id FROM videos WHERE video_path=%s", (video_path,))
-                    row = cur.fetchone()
-                    return row["id"] if row else None
+            row = self._fetch_one(
+                "SELECT id FROM videos WHERE video_path=%s",
+                (video_path,),
+            )
+            return row["id"] if row else None
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"video_path": video_path})) from err
         except Exception as exc:
@@ -76,6 +129,7 @@ class CutMindRepository:
 
     def insert_video_with_segments(self, video: Video) -> int:
         """Insère une vidéo et ses segments associés."""
+        video_id: int | None = None
         try:
             with db_conn() as conn:
                 with get_dict_cursor(conn) as cur:
@@ -104,13 +158,14 @@ class CutMindRepository:
                     )
                     video_id = cur.lastrowid
 
-                    # --- Segments ---
                     if not video_id:
                         raise CutMindError(
                             "❌ Erreur Repo insert_video_with_segments : ID non retourné.",
                             code=ErrCode.DB,
                             ctx=get_step_ctx({"video_id": video_id}),
                         )
+
+                    # --- Segments ---
                     for seg in video.segments:
                         seg.video_id = video_id
                         seg_id = self._insert_segment(seg, cur)
@@ -142,9 +197,11 @@ class CutMindRepository:
                 with db_conn() as conn:
                     with get_dict_cursor(conn) as cur2:
                         seg_id = self._insert_segment(seg, cur=cur2)
+                        conn.commit()
                         return seg_id
 
             # --- Mode manuel : on utilise le cursor fourni ---
+            assert cur is not None
             safe_execute_dict(
                 cur,
                 """
@@ -260,12 +317,18 @@ class CutMindRepository:
         Retourne un objet Video complet (avec ses segments et mots-clés).
         Peut recevoir soit video_uid, soit video_id.
         """
+        ctx_base: dict[str, Any] = {}
+        if video_id is not None:
+            ctx_base["video.id"] = video_id
+        if video_uid is not None:
+            ctx_base["video.uid"] = video_uid
+
         try:
             if video_id is None and video_uid is None:
                 raise CutMindError(
                     "❌ Erreur Repo get_video_with_segments : video_uid ou video_id doit être fourni.",
                     code=ErrCode.DB,
-                    ctx=get_step_ctx(),
+                    ctx=get_step_ctx(ctx_base),
                 )
 
             with db_conn() as conn:
@@ -280,7 +343,6 @@ class CutMindRepository:
                     if not video_row:
                         return None
 
-                    # --- Construction Video ---
                     video = Video(**{k: video_row[k] for k in video_row if k in Video.__annotations__})
                     video.id = video_row["id"]
 
@@ -299,31 +361,25 @@ class CutMindRepository:
 
                     return video
         except CutMindError as err:
-            raise err.with_context(get_step_ctx({"video.id": video.id})) from err
+            raise err.with_context(get_step_ctx(ctx_base)) from err
         except Exception as exc:
             raise CutMindError(
                 "❌ Erreur Repo get_video_with_segments.",
                 code=ErrCode.DB,
-                ctx=get_step_ctx({"video.id": video.id}),
+                ctx=get_step_ctx(ctx_base),
             ) from exc
 
     def get_videos_by_status(self, status: str) -> list[Video]:
         """
         Retourne toutes les vidéos (avec leurs segments et mots-clés)
         correspondant à un statut donné.
-
-        Args:
-            status: Statut de la vidéo (ex: 'manual_review', 'validated', 'processing_router').
-
-        Returns:
-            list[Video]: liste d'objets Video complets avec leurs segments.
         """
         try:
+            videos: list[Video] = []
             with db_conn() as conn:
                 with get_dict_cursor(conn) as cur:
                     safe_execute_dict(cur, "SELECT * FROM videos WHERE status=%s", (status,))
                     video_rows = cur.fetchall()
-                    videos: list[Video] = []
 
                     for video_row in video_rows:
                         video = Video(**{k: video_row[k] for k in video_row if k in Video.__annotations__})
@@ -342,7 +398,7 @@ class CutMindRepository:
 
                         videos.append(video)
 
-                    return videos
+            return videos
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"status": status})) from err
         except Exception as exc:
@@ -357,11 +413,11 @@ class CutMindRepository:
         Retourne video_id à partir d'un id de segment.
         """
         try:
-            with db_conn() as conn:
-                with get_dict_cursor(conn) as cur:
-                    safe_execute_dict(cur, "SELECT video_id FROM segments WHERE id=%s", (segment_id,))
-                    row = cur.fetchone()
-                    return row["video_id"] if row else None
+            row = self._fetch_one(
+                "SELECT video_id FROM segments WHERE id=%s",
+                (segment_id,),
+            )
+            return row["video_id"] if row else None
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"segment_id": segment_id})) from err
         except Exception as exc:
@@ -374,11 +430,11 @@ class CutMindRepository:
     def get_segments_by_status(self, status: str) -> list[Segment]:
         """Retourne tous les segments d’un statut donné."""
         try:
-            with db_conn() as conn:
-                with get_dict_cursor(conn) as cur:
-                    safe_execute_dict(cur, "SELECT * FROM segments WHERE status=%s", (status,))
-                    seg_rows = cur.fetchall()
-                    return [Segment(**{k: row[k] for k in row if k in Segment.__annotations__}) for row in seg_rows]
+            rows = self._fetch_all(
+                "SELECT * FROM segments WHERE status=%s",
+                (status,),
+            )
+            return [Segment(**{k: row[k] for k in row if k in Segment.__annotations__}) for row in rows]
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"status": status})) from err
         except Exception as exc:
@@ -392,13 +448,10 @@ class CutMindRepository:
         """Retourne tous les segments en attente de validation manuelle."""
         statuses = ("manual_review", "pending_check", "manual_review_pending")
         try:
-            with db_conn() as conn:
-                with get_dict_cursor(conn) as cur:
-                    placeholders = ",".join(["%s"] * len(statuses))
-                    query = f"SELECT * FROM segments WHERE status IN ({placeholders})"
-                    safe_execute_dict(cur, query, statuses)
-                    seg_rows = cur.fetchall()
-                    return [Segment(**{k: row[k] for k in row if k in Segment.__annotations__}) for row in seg_rows]
+            placeholders = ",".join(["%s"] * len(statuses))
+            query = f"SELECT * FROM segments WHERE status IN ({placeholders})"
+            rows = self._fetch_all(query, statuses)
+            return [Segment(**{k: row[k] for k in row if k in Segment.__annotations__}) for row in rows]
         except CutMindError as err:
             raise err.with_context(get_step_ctx()) from err
         except Exception as exc:
@@ -411,13 +464,10 @@ class CutMindRepository:
     def get_segment_by_id(self, segment_id: int) -> Segment | None:
         query = "SELECT * FROM segments WHERE id = %s LIMIT 1"
         try:
-            with db_conn() as conn:
-                with get_dict_cursor(conn) as cur:
-                    cur.execute(query, (segment_id,))
-                    row = cur.fetchone()
-                    if not row:
-                        return None
-                    return Segment.from_row(row)
+            row = self._fetch_one(query, (segment_id,))
+            if not row:
+                return None
+            return Segment.from_row(row)
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"segment_id": segment_id})) from err
         except Exception as exc:
@@ -430,13 +480,13 @@ class CutMindRepository:
     def get_segment_by_uid(self, uid: str) -> Segment | None:
         """Retourne un segment spécifique par son UID."""
         try:
-            with db_conn() as conn:
-                with get_dict_cursor(conn) as cur:
-                    safe_execute_dict(cur, "SELECT * FROM segments WHERE uid=%s", (uid,))
-                    row = cur.fetchone()
-                    if not row:
-                        return None
-                    return Segment(**{k: row[k] for k in row if k in Segment.__annotations__})
+            row = self._fetch_one(
+                "SELECT * FROM segments WHERE uid=%s",
+                (uid,),
+            )
+            if not row:
+                return None
+            return Segment(**{k: row[k] for k in row if k in Segment.__annotations__})
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"uid": uid})) from err
         except Exception as exc:
@@ -451,21 +501,17 @@ class CutMindRepository:
         Récupère tous les segments 'enhanced' d'une catégorie donnée.
         """
         try:
-            with db_conn() as conn:
-                with get_dict_cursor(conn) as cur:
-                    safe_execute_dict(
-                        cur,
-                        """
-                        SELECT s.*
-                        FROM segments s
-                        WHERE s.status = 'enhanced'
-                        AND s.category = %s
-                        ORDER BY s.created_at DESC
-                        """,
-                        (category,),
-                    )
-                    rows = cur.fetchall()
-                    return [Segment.from_row(row) for row in rows]
+            rows = self._fetch_all(
+                """
+                SELECT s.*
+                FROM segments s
+                WHERE s.status = 'enhanced'
+                AND s.category = %s
+                ORDER BY s.created_at DESC
+                """,
+                (category,),
+            )
+            return [Segment.from_row(row) for row in rows]
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"category": category})) from err
         except Exception as exc:
@@ -478,7 +524,6 @@ class CutMindRepository:
     # -------------------------------------------------------------
     # 🏷️ Récupération des mots-clés d’un segment
     # -------------------------------------------------------------
-
     def get_keywords_for_segment(self, cur: DictCursorProtocol, segment_id: int) -> list[str]:
         try:
             safe_execute_dict(
@@ -508,30 +553,26 @@ class CutMindRepository:
         dont la résolution ou les FPS sont inférieurs aux standards (1920x1080, 60fps).
         """
         try:
-            with db_conn() as conn:
-                with get_dict_cursor(conn) as cur:
-                    safe_execute_dict(
-                        cur,
-                        """
-                        SELECT DISTINCT v.uid
-                        FROM videos v
-                        JOIN segments s ON v.id = s.video_id
-                        WHERE
-                            v.status = 'validated'
-                            AND s.status = 'validated'
-                            AND (
-                                CAST(SUBSTRING_INDEX(s.resolution, 'x', 1) AS UNSIGNED) < 1920
-                                OR CAST(SUBSTRING_INDEX(s.resolution, 'x', -1) AS UNSIGNED) < 1080
-                                OR s.fps IS NULL
-                                OR s.fps <> 60.0
-                            )
-                        ORDER BY RAND()
-                        LIMIT %s
-                        """,
-                        (limit_videos,),
+            rows = self._fetch_all(
+                """
+                SELECT DISTINCT v.uid
+                FROM videos v
+                JOIN segments s ON v.id = s.video_id
+                WHERE
+                    v.status = 'validated'
+                    AND s.status = 'validated'
+                    AND (
+                        CAST(SUBSTRING_INDEX(s.resolution, 'x', 1) AS UNSIGNED) < 1920
+                        OR CAST(SUBSTRING_INDEX(s.resolution, 'x', -1) AS UNSIGNED) < 1080
+                        OR s.fps IS NULL
+                        OR s.fps <> 60.0
                     )
-                    rows = cur.fetchall()
-                    return [row["uid"] for row in rows if "uid" in row]
+                ORDER BY RAND()
+                LIMIT %s
+                """,
+                (limit_videos,),
+            )
+            return [row["uid"] for row in rows if "uid" in row]
         except CutMindError as err:
             raise err.with_context(get_step_ctx()) from err
         except Exception as exc:
@@ -546,29 +587,25 @@ class CutMindRepository:
         Retourne les UID de vidéos 'validated' dont tous les segments sont déjà en 1080p 60fps.
         """
         try:
-            with db_conn() as conn:
-                with get_dict_cursor(conn) as cur:
-                    safe_execute_dict(
-                        cur,
-                        """
-                        SELECT DISTINCT v.uid
-                        FROM videos v
-                        JOIN segments s ON v.id = s.video_id
-                        WHERE
-                            v.status = 'validated'
-                            AND s.status = 'validated'
-                            AND (
-                                CAST(SUBSTRING_INDEX(s.resolution, 'x', 1) AS UNSIGNED) = 1920
-                                AND CAST(SUBSTRING_INDEX(s.resolution, 'x', -1) AS UNSIGNED) = 1080
-                                AND s.fps = 60.0
-                            )
-                        ORDER BY RAND()
-                        LIMIT %s
-                        """,
-                        (limit_videos,),
+            rows = self._fetch_all(
+                """
+                SELECT DISTINCT v.uid
+                FROM videos v
+                JOIN segments s ON v.id = s.video_id
+                WHERE
+                    v.status = 'validated'
+                    AND s.status = 'validated'
+                    AND (
+                        CAST(SUBSTRING_INDEX(s.resolution, 'x', 1) AS UNSIGNED) = 1920
+                        AND CAST(SUBSTRING_INDEX(s.resolution, 'x', -1) AS UNSIGNED) = 1080
+                        AND s.fps = 60.0
                     )
-                    rows = cur.fetchall()
-                    return [row["uid"] for row in rows if "uid" in row]
+                ORDER BY RAND()
+                LIMIT %s
+                """,
+                (limit_videos,),
+            )
+            return [row["uid"] for row in rows if "uid" in row]
         except CutMindError as err:
             raise err.with_context(get_step_ctx()) from err
         except Exception as exc:
@@ -581,70 +618,36 @@ class CutMindRepository:
     # -------------------------------------------------------------
     # 🔄 Mise à jour d’un segment
     # -------------------------------------------------------------
-
     def update_segment_validation(self, seg: Segment, conn: Connection | None = None) -> None:
         """Mise à jour suite à validation automatique ou manuelle."""
         try:
-            if conn is None:
-                with db_conn() as conn:
-                    with get_dict_cursor(conn) as cur:
-                        safe_execute_dict(
-                            cur,
-                            """
-                            UPDATE segments
-                            SET status=%s,
-                                source_flow=%s,
-                                confidence=%s,
-                                description=%s,
-                                output_path=%s,
-                                category=%s,
-                                ai_model=%s,
-                                tags=%s,
-                                last_updated=NOW()
-                            WHERE uid=%s
-                            """,
-                            (
-                                seg.status,
-                                seg.source_flow,
-                                seg.confidence,
-                                seg.description,
-                                seg.output_path,
-                                seg.category,
-                                seg.ai_model,
-                                seg.tags,
-                                seg.uid,
-                            ),
-                        )
-                        conn.commit()
-            else:
-                with get_dict_cursor(conn) as cur:
-                    safe_execute_dict(
-                        cur,
-                        """
-                        UPDATE segments
-                        SET status=%s,
-                            source_flow=%s,
-                            confidence=%s,
-                            description=%s,
-                            output_path=%s,
-                            category=%s,
-                            ai_model=%s,
-                            tags=%s,
-                            last_updated=NOW()
-                        WHERE uid=%s
-                        """,
-                        (
-                            seg.status,
-                            seg.source_flow,
-                            seg.confidence,
-                            seg.description,
-                            seg.output_path,
-                            seg.category,
-                            seg.ai_model,
-                            seg.tags,
-                            seg.uid,
-                        ),
-                    )
+            self._exec_sql(
+                """
+                UPDATE segments
+                SET status=%s,
+                    source_flow=%s,
+                    confidence=%s,
+                    description=%s,
+                    output_path=%s,
+                    category=%s,
+                    ai_model=%s,
+                    tags=%s,
+                    last_updated=NOW()
+                WHERE uid=%s
+                """,
+                (
+                    seg.status,
+                    seg.source_flow,
+                    seg.confidence,
+                    seg.description,
+                    seg.output_path,
+                    seg.category,
+                    seg.ai_model,
+                    seg.tags,
+                    seg.uid,
+                ),
+                conn=conn,
+            )
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"seg.id": seg.id})) from err
         except Exception as exc:
@@ -654,43 +657,41 @@ class CutMindRepository:
                 ctx=get_step_ctx({"seg.id": seg.id}),
             ) from exc
 
-    def update_segment_postprocess(self, seg: Segment) -> None:
+    def update_segment_postprocess(self, seg: ProcessedSegment) -> None:
         """Mise à jour après traitement ComfyUI."""
         try:
-            with db_conn() as conn:
-                with get_dict_cursor(conn) as cur:
-                    safe_execute_dict(
-                        cur,
-                        """
-                        UPDATE segments
-                        SET resolution=%s,
-                            fps=%s,
-                            codec=%s,
-                            bitrate=%s,
-                            filesize_mb=%s,
-                            duration=%s,
-                            status=%s,
-                            source_flow=%s,
-                            processed_by=%s,
-                            tags=%s,
-                            last_updated=NOW()
-                        WHERE uid=%s
-                        """,
-                        (
-                            seg.resolution,
-                            seg.fps,
-                            seg.codec,
-                            seg.bitrate,
-                            seg.filesize_mb,
-                            seg.duration,
-                            seg.status,
-                            seg.source_flow,
-                            seg.processed_by,
-                            seg.tags,
-                            seg.uid,
-                        ),
-                    )
-                    conn.commit()
+            self._exec_sql(
+                """
+                UPDATE segments
+                SET resolution=%s,
+                    fps=%s,
+                    codec=%s,
+                    bitrate=%s,
+                    filesize_mb=%s,
+                    duration=%s,
+                    status=%s,
+                    source_flow=%s,
+                    processed_by=%s,
+                    tags=%s,
+                    nb_frames=%s,
+                    last_updated=NOW()
+                WHERE id=%s
+                """,
+                (
+                    seg.resolution,
+                    seg.fps,
+                    seg.codec,
+                    seg.bitrate,
+                    seg.filesize_mb,
+                    seg.duration,
+                    seg.status,
+                    seg.source_flow,
+                    seg.processed_by,
+                    seg.tags,
+                    seg.nb_frames,
+                    seg.id,
+                ),
+            )
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"seg.id": seg.id})) from err
         except Exception as exc:
@@ -700,47 +701,90 @@ class CutMindRepository:
                 ctx=get_step_ctx({"seg.id": seg.id}),
             ) from exc
 
+    def update_segment_from_metadata(
+        self,
+        segment_id: int,
+        metadata: VideoPrepared,
+        conn: Connection | None = None,
+    ) -> None:
+        """
+        Met à jour les métadonnées techniques d'un segment à partir d'un VideoPrepared.
+        Utilise _exec_sql() pour respecter l'architecture Repository.
+        """
+
+        # mapping: attribut VideoPrepared → colonne SQL
+        FIELD_MAP: dict[str, str] = {
+            "resolution": "resolution",
+            "fps": "fps",
+            "duration": "duration",
+            "codec": "codec",
+            "bitrate": "bitrate",
+            "filesize_mb": "filesize_mb",
+            "nb_frames": "nb_frames",
+            "has_audio": "has_audio",
+            "audio_codec": "audio_codec",
+            "audio_bitrate": "audio_bitrate",
+            "audio_channels": "audio_channels",
+            "audio_sample_rate": "audio_sample_rate",
+        }
+
+        try:
+            # auto-gestion de connexion
+            if conn is None:
+                with db_conn() as conn:
+                    self.update_segment_from_metadata(segment_id, metadata, conn)
+                    conn.commit()
+                return
+
+            # SQL dynamique
+            sql_parts = []
+            values: list[Any] = []
+
+            for meta_attr, col in FIELD_MAP.items():
+                values.append(getattr(metadata, meta_attr, None))
+                sql_parts.append(f"{col}=%s")
+
+            values.append(segment_id)
+
+            sql = f"""
+                UPDATE segments
+                SET {", ".join(sql_parts)}, last_updated=NOW()
+                WHERE id=%s
+            """
+
+            # exécution via le helper générique
+            self._exec_sql(sql, tuple(values), conn)
+
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx({"segment.id": segment_id})) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur Repo update_segment_from_metadata.",
+                code=ErrCode.DB,
+                ctx=get_step_ctx({"segment.id": segment_id}),
+            ) from exc
+
     # -------------------------------------------------------------
     # 🔄 Mise à jour d’une vidéo
     # -------------------------------------------------------------
-
     def update_video(self, video: Video, conn: Connection | None = None) -> None:
         """Met à jour le statut ou autres champs d’une vidéo."""
         try:
-            if conn is None:
-                with db_conn() as conn:
-                    with get_dict_cursor(conn) as cur:
-                        safe_execute_dict(
-                            cur,
-                            """
-                            UPDATE videos
-                            SET status=%s, video_path=%s,
-                                last_updated=NOW()
-                            WHERE uid=%s
-                            """,
-                            (
-                                video.status,
-                                video.video_path,
-                                video.uid,
-                            ),
-                        )
-                        conn.commit()
-            else:
-                with get_dict_cursor(conn) as cur:
-                    safe_execute_dict(
-                        cur,
-                        """
-                        UPDATE videos
-                        SET status=%s, video_path=%s,
-                                last_updated=NOW()
-                            WHERE uid=%s
-                            """,
-                        (
-                            video.status,
-                            video.video_path,
-                            video.uid,
-                        ),
-                    )
+            self._exec_sql(
+                """
+                UPDATE videos
+                SET status=%s,
+                    video_path=%s,
+                    last_updated=NOW()
+                WHERE uid=%s
+                """,
+                (
+                    video.status,
+                    video.video_path,
+                    video.uid,
+                ),
+                conn=conn,
+            )
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"video.name": video.name})) from err
         except Exception as exc:
@@ -753,15 +797,14 @@ class CutMindRepository:
     # ------------------------------------------------------------------
     # 🔹 SUPPRESSION
     # ------------------------------------------------------------------
-
     def delete_segment_by_uid(self, seg_uid: str) -> bool:
         """Supprime un segment spécifique."""
         try:
-            with db_conn() as conn:
-                with get_dict_cursor(conn) as cur:
-                    safe_execute_dict(cur, "DELETE FROM segments WHERE uid=%s", (seg_uid,))
-                    conn.commit()
-                    return True
+            self._exec_sql(
+                "DELETE FROM segments WHERE uid=%s",
+                (seg_uid,),
+            )
+            return True
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"seg_uid": seg_uid})) from err
         except Exception as exc:

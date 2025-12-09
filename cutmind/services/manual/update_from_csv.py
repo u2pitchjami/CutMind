@@ -25,7 +25,7 @@ from cutmind.executors.manual.manual_utils import (
     write_csv_log,
 )
 from cutmind.process.recut_segment import parse_recut_points, perform_recut
-from cutmind.validation.revalidate_manual import revalidate_manual_videos
+from cutmind.services.main_validation import validation
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import CSV_LOG_PATH, MANUAL_CSV_PATH, TRASH_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
@@ -54,6 +54,8 @@ def update_segments_csv(
                     repo = CutMindRepository()
                     try:
                         video_id = repo.get_video_id_from_segment_id(int(seg_id))
+                        if not video_id:
+                            continue
                         video = repo.get_video_with_segments(video_id=video_id)
                         if not video:
                             continue
@@ -103,7 +105,7 @@ def update_segments_csv(
 
         write_csv_log(csv_log, log_rows)
         summarize_import(stats, csv_log, logger=logger)
-        revalidate_manual_videos(logger=logger)
+        validation(manual=True, logger=logger)
     except CutMindError as err:
         raise err.with_context(get_step_ctx({"manual_csv": manual_csv})) from err
     except Exception as exc:

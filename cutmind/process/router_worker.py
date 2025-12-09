@@ -102,8 +102,9 @@ class RouterWorker:
                                 delete_files(path=OUTPUT_DIR, ext="*.png")
                                 delete_files(path=OUTPUT_DIR, ext="*.mp4")
                                 repo = CutMindRepository()
-                                processor = VideoProcessor(cutmind_repo=repo, video=video, logger=logger)
-                                processor.process(Path(dst), logger=logger)
+                                processor = VideoProcessor(segment=seg, logger=logger)
+                                new_seg = processor.process(Path(dst), logger=logger)
+                                repo.update_segment_postprocess(new_seg)
                                 processed_count += 1
                         else:
                             logger.info(
@@ -111,11 +112,11 @@ class RouterWorker:
                                     {COLOR_RESET}"
                             )
                             video.status = "validated"
-                            self.repo.update_video(video, conn)
+                            self.repo.update_video(video)
                             return processed_count
 
                     video.status = "enhanced"
-                    self.repo.update_video(video, conn)
+                    self.repo.update_video(video)
 
                     logger.info("📬 Vidéo %s envoyée vers Router (%d segments).", video.uid, len(prepared))
 

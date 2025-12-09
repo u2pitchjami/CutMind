@@ -42,24 +42,20 @@ def is_interlaced(video_path: Path) -> str:
         ) from exc
 
 
-def deinterlace_video(input_path: Path, output_path: Path, use_cuda: bool = False) -> bool:
+def deinterlace_video(input_path: Path, output_path: Path) -> bool:
     """
-    Désentrelace une vidéo (CPU ou GPU selon l’option).
+    Désentrelace une vidéo en utilisant yadif CPU (fiable à 100%).
     """
     try:
-        filter_type = "yadif_cuda" if use_cuda else "yadif"
-        codec = "hevc_nvenc" if use_cuda else "libx265"
         cmd = [
             "ffmpeg",
             "-y",
-            "-hwaccel",
-            "cuda" if use_cuda else "auto",
             "-i",
             str(input_path),
             "-vf",
-            filter_type,
+            "yadif",
             "-c:v",
-            codec,
+            "libx265",
             "-preset",
             "slow",
             "-crf",
@@ -68,17 +64,20 @@ def deinterlace_video(input_path: Path, output_path: Path, use_cuda: bool = Fals
             "copy",
             str(output_path),
         ]
+
         subprocess.run(cmd, check=True)
         return True
+
     except subprocess.CalledProcessError as e:
         raise CutMindError(
-            "❌ Erreur FFMPEG lors du deinterlace de la vidéo.",
+            "❌ Erreur FFMPEG lors du désentrelacement.",
             code=ErrCode.FFMPEG,
             ctx=get_step_ctx({"video_path": str(input_path)}),
         ) from e
+
     except Exception as exc:
         raise CutMindError(
-            "❌ Erreur inattendue lors du deinterlace de la vidéo.",
+            "❌ Erreur inattendue lors du désentrelacement.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": str(input_path)}),
         ) from exc

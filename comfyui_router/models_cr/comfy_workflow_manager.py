@@ -11,6 +11,7 @@ from comfyui_router.executors.comfyui.comfyui_workflow import (
     route_workflow,
 )
 from comfyui_router.models_cr.videojob import VideoJob
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.settings import get_settings
 
 settings = get_settings()
@@ -25,23 +26,40 @@ class ComfyWorkflowManager:
         wf_path = route_workflow(video_job.path)
         if not wf_path:
             return None
+        try:
+            # 🧠 Calcul du batch adaptatif
+            video_job.apply_adaptive_batch(wf_path)
+            video_job.workflow_path = wf_path
+            video_job.workflow_name = wf_path.stem
+            # 🔢 Calcul concret des lots à partir du batch max déterminé
+            video_job.compute_optimal_batch(min_size=MIN_SIZE, max_size=video_job.nb_frames_batch)
 
-        # 🧠 Calcul du batch adaptatif
-        video_job.apply_adaptive_batch(wf_path)
-        video_job.workflow_path = wf_path
-        video_job.workflow_name = wf_path.stem
-        # 🔢 Calcul concret des lots à partir du batch max déterminé
-        video_job.compute_optimal_batch(min_size=MIN_SIZE, max_size=video_job.nb_frames_batch)
-
-        # 🚀 Injection du workflow
-        if not video_job.comfyui_path:
-            video_job.comfyui_path = comfyui_path(full_path=video_job.path)
-        workflow = inject_video_path(load_workflow(wf_path), video_job.comfyui_path, video_job.nb_frames_batch)
-        return workflow
+            # 🚀 Injection du workflow
+            if not video_job.comfyui_path:
+                video_job.comfyui_path = comfyui_path(full_path=video_job.path)
+            workflow = inject_video_path(load_workflow(wf_path), video_job.comfyui_path, video_job.nb_frames_batch)
+            return workflow
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx({"video_path": video_job.path})) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur inatendue durant la préparation du workflow.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"video_path": video_job.path}),
+            ) from exc
 
     def run(self, workflow: dict[str, Any]) -> bool:
         """
         Envoie le workflow à ComfyUI.
         """
-        run_comfy(workflow)
-        return True
+        try:
+            run_comfy(workflow)
+            return True
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx()) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur inatendue durant le lancement du workflow.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx(),
+            ) from exc

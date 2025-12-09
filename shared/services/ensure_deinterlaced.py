@@ -31,7 +31,7 @@ def ensure_deinterlaced(
         logger.info(f"⚙️ Vidéo entrelacée détectée : {video_path.name}")
         deint_path = video_path.with_name(f"{video_path.stem}_deint.mp4")
         logger.info(f"🧩 Désentrelacement en cours : {video_path.name} → {deint_path.name}")
-        if deinterlace_video(video_path, deint_path, use_cuda=use_cuda):
+        if deinterlace_video(video_path, deint_path):
             logger.info(f"✅ Vidéo désentrelacée : {deint_path.name}")
 
             if cleanup:

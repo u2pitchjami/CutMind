@@ -22,3 +22,15 @@ def format_resolution(res: tuple[int, int] | None) -> str | None:
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"res": res}),
         ) from exc
+
+
+def resolution_str_to_tuple(res: str) -> tuple[int, int]:
+    try:
+        w, h = res.lower().split("x")
+        return int(w), int(h)
+    except Exception as exc:
+        raise CutMindError(
+            "❌ Résolution invalide (format attendu 'WxH')",
+            code=ErrCode.FILE_ERROR,
+            ctx={"resolution": res},
+        ) from exc

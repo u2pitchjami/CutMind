@@ -21,8 +21,8 @@ from cutmind.process.router_worker import RouterWorker
 from cutmind.services.check.already_enhanced import process_standard_videos
 from cutmind.services.check.check_files import check_enhanced_segments
 from cutmind.services.check.secure_in_router import check_secure_in_router
+from cutmind.services.main_validation import validation
 from cutmind.services.manual.update_from_csv import update_segments_csv
-from cutmind.validation.main_validation import validation
 from shared.models.config_manager import reload_and_apply
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import (
@@ -287,7 +287,7 @@ def orchestrate(priority: str = "smartcut", logger: LoggerProtocol | None = None
                 logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
             time.sleep(SCAN_INTERVAL)
             try:
-                validation()
+                validation(logger=logger)
             except CutMindError as exc:
                 logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
 

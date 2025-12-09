@@ -30,8 +30,14 @@ class Segment:
     source_flow: str | None = None
     resolution: str | None = None
     fps: float | None = None
+    nb_frames: int | None = None
     codec: str | None = None
     bitrate: int | None = None
+    has_audio: bool | None = None
+    audio_codec: str | None = None
+    sample_rate: int | None = None
+    channels: int | None = None
+    audio_duration: float | None = None
     filesize_mb: float | None = None
     filename_predicted: str | None = None
     output_path: str | None = None
@@ -54,7 +60,17 @@ class Segment:
         data["tags"] = data.get("tags") or []
         data["keywords"] = data.get("keywords") or []
         data["merged_from"] = data.get("merged_from") or []
+        if "sample_rate" in data and data["sample_rate"] is not None:
+            data["sample_rate"] = int(data["sample_rate"])
 
+        if "channels" in data and data["channels"] is not None:
+            data["channels"] = int(data["channels"])
+
+        if "audio_duration" in data and data["audio_duration"] is not None:
+            data["audio_duration"] = float(data["audio_duration"])
+
+        if "nb_frames" in data and data["nb_frames"] is not None:
+            data["nb_frames"] = int(data["nb_frames"])
         return cls(**data)
 
     # --- Prépare les valeurs pour un INSERT/UPDATE

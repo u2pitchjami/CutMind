@@ -12,9 +12,16 @@ from shared.utils.config import HOST_ROOT, VISIBLE_ROOT
 
 
 def comfyui_path(full_path: Path) -> Path:
-    host_root = Path(HOST_ROOT)
-    visible_root = Path(VISIBLE_ROOT)
-    return visible_root / full_path.relative_to(host_root)
+    try:
+        host_root = Path(HOST_ROOT)
+        visible_root = Path(VISIBLE_ROOT)
+        return visible_root / full_path.relative_to(host_root)
+    except Exception as exc:
+        raise CutMindError(
+            "❌ Erreur inattendue lors de la construction du path Comfyui.",
+            code=ErrCode.UNEXPECTED,
+            ctx=get_step_ctx(),
+        ) from exc
 
 
 def run_comfy(workflow: dict[str, Any]) -> bool:

@@ -4,7 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from shared.executors.ffmpeg_convert import convert_safe_video_format
-from shared.executors.ffprobe_utils import get_bitrate, get_codec, get_duration, get_fps, get_resolution
+from shared.executors.ffprobe_utils import (
+    get_metadata_all,
+)
 from shared.models.exceptions import CutMindError, ErrCode
 from shared.utils.config import SAFE_FORMATS
 
@@ -22,6 +24,16 @@ class VideoPrepared:
     codec: str | None
     bitrate: int | None
     filesize_mb: float
+
+    # 🎧 Nouveaux champs audio
+    has_audio: bool = False
+    audio_codec: str | None = None
+    sample_rate: int | None = None
+    channels: int | None = None
+    audio_duration: float | None = None
+
+    # 🎞️ Pour Router
+    nb_frames: int | None = None
 
 
 # ============================================================
@@ -52,48 +64,6 @@ def normalize_format(video_path: Path) -> Path:
 
 
 # ============================================================
-# 🔧 Étape 2 : Récupération des métadonnées
-# ============================================================
-
-
-def get_video_metadata_all(video_path: Path) -> VideoPrepared:
-    """
-    Récupère TOUTES les métadonnées techniques.
-    - duration
-    - fps
-    - resolution
-    - codec
-    - bitrate
-    - filesize
-    """
-    try:
-        duration = get_duration(video_path)
-        fps = get_fps(video_path)
-        resolution = get_resolution(video_path)
-        codec = get_codec(video_path)
-        bitrate = get_bitrate(video_path)
-        filesize_mb = round(video_path.stat().st_size / (1024 * 1024), 2)
-    except CutMindError as err:
-        raise err.with_context({"step": "get_video_metadata_all"}) from err
-    except Exception as exc:
-        raise CutMindError(
-            "❌ Erreur inattendue lors de l'extraction des métadonnées.",
-            code=ErrCode.UNEXPECTED,
-            ctx={"video_path": str(video_path)},
-        ) from exc
-
-    return VideoPrepared(
-        path=video_path,
-        duration=duration,
-        fps=fps,
-        resolution=resolution,
-        codec=codec,
-        bitrate=bitrate,
-        filesize_mb=filesize_mb,
-    )
-
-
-# ============================================================
 # 🔧 Étape 3 : Validation métier
 # ============================================================
 
@@ -105,25 +75,36 @@ def validate_video(prep: VideoPrepared) -> None:
     - fps cohérent
     - résolution présente
     """
-    if prep.duration <= 0:
+
+    # Support dict (TypedDict)
+    if isinstance(prep, dict):
+        duration = prep.get("duration", 0)
+        fps = prep.get("fps", 0)
+        resolution = prep.get("resolution", "")
+    else:
+        duration = prep.duration
+        fps = prep.fps
+        resolution = prep.resolution
+
+    if duration <= 0:
         raise CutMindError(
             "Durée vidéo invalide (<= 0).",
             code=ErrCode.FILE_ERROR,
-            ctx={"video_path": str(prep.path), "duration": prep.duration},
+            ctx={"duration": duration},
         )
 
-    if prep.fps <= 0:
+    if fps <= 0:
         raise CutMindError(
             "FPS invalide (<= 0).",
             code=ErrCode.FILE_ERROR,
-            ctx={"video_path": str(prep.path), "fps": prep.fps},
+            ctx={"fps": fps},
         )
 
-    if not prep.resolution or "x" not in prep.resolution:
+    if not resolution or "x" not in resolution:
         raise CutMindError(
             "Résolution vidéo introuvable.",
             code=ErrCode.FILE_ERROR,
-            ctx={"video_path": str(prep.path), "resolution": prep.resolution},
+            ctx={"resolution": resolution},
         )
 
 
@@ -134,22 +115,23 @@ def validate_video(prep: VideoPrepared) -> None:
 
 def prepare_video(video_path: Path) -> VideoPrepared:
     """
-    Pipeline complet pour préparer une vidéo :
-    1️⃣ Normalisation format
-    2️⃣ Extraction métadonnées complètes
-    3️⃣ Validation métier
-    4️⃣ Retourne VideoPrepared
+    Pipeline complet en version optimisée :
+    - 1 seul ffprobe
+    - validation basée sur VideoMetadata
+    - retour d’un dict directement
     """
-    # 1. Format
     try:
         normalized_path = normalize_format(video_path)
     except CutMindError as err:
         raise err.with_context({"pipeline_step": "prepare_video"}) from err
 
-    # 2. Metadata
-    prep = get_video_metadata_all(normalized_path)
+    # 1 seul ffprobe
+    try:
+        meta = get_metadata_all(normalized_path)
+    except CutMindError as err:
+        raise err.with_context({"pipeline_step": "metadata_extraction"}) from err
 
-    # 3. Validation
-    validate_video(prep)
+    # validation (dict-compatible)
+    validate_video(meta)
 
-    return prep
+    return meta
