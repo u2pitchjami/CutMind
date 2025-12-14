@@ -35,7 +35,6 @@ class RouterWorker:
     @with_child_logger
     def __init__(self, limit_videos: int = CM_NB_VID_ROUTER, logger: LoggerProtocol | None = None):
         logger = ensure_logger(logger, __name__)
-        self.repo = CutMindRepository()
         self.limit_videos = limit_videos
         self.file_mover = FileMover()
 
@@ -55,7 +54,8 @@ class RouterWorker:
         processed_count = 0
 
         # 1️⃣ Sélectionner les vidéos concernées
-        video_uids = self.repo.get_nonstandard_videos(self.limit_videos)
+        repo = CutMindRepository()
+        video_uids = repo.get_nonstandard_videos(self.limit_videos)
         if not video_uids:
             logger.info("📭 Aucun segment non standard trouvé — base à jour.")
             return 0
@@ -64,7 +64,7 @@ class RouterWorker:
 
         # 2️⃣ Parcourir les vidéos et segments
         for uid in video_uids:
-            video = self.repo.get_video_with_segments(uid)
+            video = repo.get_video_with_segments(uid)
             if not video:
                 logger.warning("⚠️ Vidéo UID introuvable : %s", uid)
                 continue
@@ -77,23 +77,21 @@ class RouterWorker:
             if not prepared:
                 logger.info("ℹ️ Tous les segments de %s sont conformes.", video.name)
                 video.status = "validated"
-                self.repo.update_video(video)
+                repo.update_video(video)
                 continue
 
             # 3️⃣ Transaction : copie + maj DB
             with Timer(f"Traitement Comfyui pour la vidéo : {video.name}", logger):
                 try:
-                    with self.repo.transaction() as conn:
-                        video.status = "processing_router"
-                        self.repo.update_video(video, conn)
+                    video.status = "processing_router"
+                    repo.update_video(video)
 
-                        for seg, src, dst in prepared:
-                            self.file_mover.safe_copy(src, dst)
-                            seg.status = "in_router"
-                            seg.source_flow = "comfyui_router"
-                            self.repo.update_segment_validation(seg, conn)
+                    for seg, src, dst in prepared:
+                        self.file_mover.safe_copy(src, dst)
+                        seg.status = "in_router"
+                        seg.source_flow = "comfyui_router"
+                        repo.update_segment_validation(seg)
 
-                    for _seg, _src, dst in prepared:
                         # --- DÉCISION INTELLIGENTE ---
                         current_hour = datetime.now().hour
                         router_allowed = current_hour not in forbidden_hours
@@ -101,10 +99,11 @@ class RouterWorker:
                             with Timer(f"Traitement du segment : {seg.filename_predicted}", logger):
                                 delete_files(path=OUTPUT_DIR, ext="*.png")
                                 delete_files(path=OUTPUT_DIR, ext="*.mp4")
-                                repo = CutMindRepository()
                                 processor = VideoProcessor(segment=seg, logger=logger)
                                 new_seg = processor.process(Path(dst), logger=logger)
                                 repo.update_segment_postprocess(new_seg)
+                                logger.debug(f"new_seg {new_seg}")
+
                                 processed_count += 1
                         else:
                             logger.info(
@@ -112,11 +111,11 @@ class RouterWorker:
                                     {COLOR_RESET}"
                             )
                             video.status = "validated"
-                            self.repo.update_video(video)
+                            repo.update_video(video)
                             return processed_count
 
                     video.status = "enhanced"
-                    self.repo.update_video(video)
+                    repo.update_video(video)
 
                     logger.info("📬 Vidéo %s envoyée vers Router (%d segments).", video.uid, len(prepared))
 

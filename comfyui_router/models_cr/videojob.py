@@ -31,6 +31,7 @@ class VideoJob:
     duration_in: float = 0.0
     filesize_mb_in: float = 0.0
     has_audio: bool = False
+    prompt_id: int | None = None
     workflow_path: Path | None = None
     workflow_name: str | None = None
     output_file: Path | None = None

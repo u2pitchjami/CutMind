@@ -36,3 +36,4 @@ qwen-vl-utils
 qwen-vl-utils[decord]
 numpy
 pymediainfo
+websocket-client

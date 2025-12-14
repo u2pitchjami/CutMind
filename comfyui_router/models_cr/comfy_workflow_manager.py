@@ -48,13 +48,19 @@ class ComfyWorkflowManager:
                 ctx=get_step_ctx({"video_path": video_job.path}),
             ) from exc
 
-    def run(self, workflow: dict[str, Any]) -> bool:
+    def run(self, workflow: dict[str, Any]) -> str:
         """
         Envoie le workflow à ComfyUI.
         """
         try:
-            run_comfy(workflow)
-            return True
+            wf_id = run_comfy(workflow)
+            if not wf_id:
+                raise CutMindError(
+                    "❌ Erreur inatendue durant le lancement du workflow.",
+                    code=ErrCode.UNEXPECTED,
+                    ctx=get_step_ctx(),
+                )
+            return wf_id
         except CutMindError as err:
             raise err.with_context(get_step_ctx()) from err
         except Exception as exc:

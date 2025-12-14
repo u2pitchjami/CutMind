@@ -66,10 +66,16 @@ def load_segments_from_directory(video: Video, directory_path: Path, logger: Log
             description="",
             status="raw",
             fps=prepared.fps,
+            nb_frames=prepared.nb_frames,
             resolution=prepared.resolution,
             codec=prepared.codec,
             bitrate=prepared.bitrate,
             filesize_mb=prepared.filesize_mb,
+            has_audio=prepared.has_audio,
+            audio_codec=prepared.audio_codec,
+            sample_rate=prepared.sample_rate,
+            channels=prepared.channels,
+            audio_duration=prepared.audio_duration,
             output_path=str(prepared.path),
         )
         seg.filename_predicted = Path(prepared.path).name

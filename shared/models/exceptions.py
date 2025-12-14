@@ -19,6 +19,8 @@ class ErrCode(str, Enum):
     IAERROR = "IAERROR"
     DB = "DB"
     NOT_FOUND = "NOT_FOUND"
+    TIMEOUT = "TIMEOUT"
+    NETWORK = "NETWORK"
 
 
 class CutMindError(RuntimeError):

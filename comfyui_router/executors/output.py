@@ -8,32 +8,35 @@ import time
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 
 
-def _is_stable(path: Path, stable_time: int, check_interval: int) -> bool:
+def _is_stable(path: Path, stable_time: int, interval: int) -> bool:
     """
-    Vérifie que la taille d'un fichier reste stable pendant un certain temps.
+    Vrai si la taille du fichier reste stable pendant stable_time secondes.
     """
-    last_size = -1
-    stable_duration = 0
     try:
-        while stable_duration < stable_time:
+        last_size = -1
+        stable_elapsed = 0
+
+        while stable_elapsed < stable_time:
             if not path.exists():
                 return False
 
-            current_size = path.stat().st_size
-            if current_size == last_size:
-                stable_duration += check_interval
-            else:
-                stable_duration = 0
-                last_size = current_size
+            size = path.stat().st_size
 
-            time.sleep(check_interval)
+            if size == last_size:
+                stable_elapsed += interval
+            else:
+                stable_elapsed = 0
+                last_size = size
+
+            time.sleep(interval)
 
         return True
+
     except Exception as exc:
         raise CutMindError(
-            "❌ Erreur inattendue lors du is_stable.",
+            "❌ Erreur inattendue dans is_stable().",
             code=ErrCode.UNEXPECTED,
-            ctx=get_step_ctx({"path": path}),
+            ctx=get_step_ctx({"path": str(path)}),
         ) from exc
 
 

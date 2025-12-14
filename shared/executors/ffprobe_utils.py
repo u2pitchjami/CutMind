@@ -6,7 +6,7 @@ import subprocess
 
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.ffprobe import FFprobeData, FFprobeStream
-from shared.services.video_preparation import VideoPrepared
+from shared.models.videoprep import VideoPrepared
 
 # ============================================================
 # 🧰 Helper interne

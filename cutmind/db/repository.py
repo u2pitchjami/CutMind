@@ -45,16 +45,34 @@ class CutMindRepository:
         Exécute une requête SQL (INSERT/UPDATE/DELETE) sans retourner de lignes.
         Gère automatiquement la connexion lorsque conn est None.
         """
-        sql_params: tuple[Any, ...] = tuple(params) if params else ()
+        try:
+            sql_params: tuple[Any, ...] = tuple(params) if params else ()
 
-        if conn is None:
-            with db_conn() as _conn:
-                with get_dict_cursor(_conn) as cur:
+            if conn is None:
+                with db_conn() as _conn:
+                    with get_dict_cursor(_conn) as cur:
+                        safe_execute_dict(cur, sql, sql_params)
+                        _conn.commit()
+            else:
+                with get_dict_cursor(conn) as cur:
                     safe_execute_dict(cur, sql, sql_params)
-                    _conn.commit()
-        else:
-            with get_dict_cursor(conn) as cur:
-                safe_execute_dict(cur, sql, sql_params)
+        except Exception as exc:  # pylint: disable=broad-except
+            err_type = type(exc).__name__
+            err_msg = str(exc)
+            sql_preview = sql[:500] if isinstance(sql, str) else sql
+
+            raise CutMindError(
+                "❌ Erreur SQL",
+                code=ErrCode.DB,
+                ctx=get_step_ctx(
+                    {
+                        "sql_error_type": err_type,
+                        "sql_error": err_msg,
+                        "sql": sql_preview,
+                        "params": params,
+                    }
+                ),
+            ) from exc
 
     def _fetch_one(
         self,
@@ -138,9 +156,10 @@ class CutMindRepository:
                         cur,
                         """
                         INSERT INTO videos (
-                            uid, name, video_path, duration, fps, resolution, codec,
-                            bitrate, filesize_mb, status, origin
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            uid, name, video_path, duration, fps, nb_frames, resolution, codec,
+                            bitrate, filesize_mb, has_audio, audio_codec, sample_rate, channels,
+                            audio_duration, status, origin
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         (
                             video.uid,
@@ -148,10 +167,16 @@ class CutMindRepository:
                             video.video_path,
                             video.duration,
                             video.fps,
+                            video.nb_frames,
                             video.resolution,
                             video.codec,
                             video.bitrate,
                             video.filesize_mb,
+                            video.has_audio,
+                            video.audio_codec,
+                            video.sample_rate,
+                            video.channels,
+                            video.audio_duration,
                             video.status,
                             video.origin,
                         ),
@@ -207,11 +232,12 @@ class CutMindRepository:
                 """
                 INSERT INTO segments (
                     uid, video_id, start, end, duration, status,
-                    confidence, description, fps, resolution, codec,
-                    bitrate, filesize_mb, filename_predicted, output_path,
+                    confidence, description, fps, nb_frames, resolution, codec,
+                    bitrate, filesize_mb, has_audio, audio_codec, sample_rate,
+                    channels, audio_duration, filename_predicted, output_path,
                     source_flow, processed_by, ai_model
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     seg.uid,
@@ -223,10 +249,16 @@ class CutMindRepository:
                     seg.confidence,
                     seg.description,
                     seg.fps,
+                    seg.nb_frames,
                     seg.resolution,
                     seg.codec,
                     seg.bitrate,
                     seg.filesize_mb,
+                    seg.has_audio,
+                    seg.audio_codec,
+                    seg.sample_rate,
+                    seg.channels,
+                    seg.audio_duration,
                     seg.filename_predicted,
                     seg.output_path,
                     seg.source_flow,
@@ -657,7 +689,7 @@ class CutMindRepository:
                 ctx=get_step_ctx({"seg.id": seg.id}),
             ) from exc
 
-    def update_segment_postprocess(self, seg: ProcessedSegment) -> None:
+    def update_segment_postprocess(self, seg: ProcessedSegment, conn: Connection | None = None) -> None:
         """Mise à jour après traitement ComfyUI."""
         try:
             self._exec_sql(
@@ -691,6 +723,7 @@ class CutMindRepository:
                     seg.nb_frames,
                     seg.id,
                 ),
+                conn=conn,
             )
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"seg.id": seg.id})) from err
@@ -723,9 +756,9 @@ class CutMindRepository:
             "nb_frames": "nb_frames",
             "has_audio": "has_audio",
             "audio_codec": "audio_codec",
-            "audio_bitrate": "audio_bitrate",
-            "audio_channels": "audio_channels",
-            "audio_sample_rate": "audio_sample_rate",
+            "sample_rate": "sample_rate",
+            "channels": "channels",
+            "audio_duration": "audio_duration",
         }
 
         try:

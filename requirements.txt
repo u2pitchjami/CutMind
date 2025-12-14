@@ -22,3 +22,4 @@ pymediainfo
 pymysql
 pydantic
 strenum>=0.4.15
+websocket-client

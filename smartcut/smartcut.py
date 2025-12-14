@@ -103,10 +103,16 @@ def multi_stage_cut(
                 video_path=str(prep.path),
                 duration=prep.duration,
                 fps=prep.fps,
+                nb_frames=prep.nb_frames,
                 resolution=prep.resolution,
                 codec=prep.codec,
                 bitrate=prep.bitrate,
                 filesize_mb=prep.filesize_mb,
+                has_audio=prep.has_audio,
+                audio_codec=prep.audio_codec,
+                sample_rate=prep.sample_rate,
+                channels=prep.channels,
+                audio_duration=prep.audio_duration,
                 status="init",
                 origin="smartcut",
             )
@@ -158,6 +164,7 @@ def multi_stage_cut(
             vid.finalize_segments(OUTPUT_DIR_SC)
 
             for seg in vid.segments:
+                logger.debug(f"seg : {seg}")
                 repo._insert_segment(seg)
 
             vid.status = "scenes_done"

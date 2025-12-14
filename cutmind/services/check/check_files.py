@@ -47,6 +47,7 @@ def check_enhanced_segments(max_videos: int = 10, logger: LoggerProtocol | None 
                     log_metadata_diff(seg, metadata, logger)
                     seg.status = "enhanced"
                     seg.category = match_category(seg.keywords, logger=logger)
+                    logger.debug(f"seg : {seg}")
                     repo.update_segment_from_metadata(segment_id=seg.id, metadata=metadata)
                     repo.update_segment_validation(seg)
                     logger.info("✅ Segment mis à jour : %s", seg.uid)

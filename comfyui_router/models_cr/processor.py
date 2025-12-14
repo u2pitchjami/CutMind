@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import shutil
 
+from comfyui_router.executors.comfyui.comfyclient import ComfyClientREST
 from comfyui_router.executors.comfyui.comfyui_command import comfyui_path
 from comfyui_router.executors.output import cleanup_outputs
 from comfyui_router.ffmpeg.ffmpeg_command import convert_to_60fps
@@ -112,27 +113,39 @@ class VideoProcessor:
                     ctx=get_step_ctx({"video_path": str(video_path)}),
                 )
 
-            if not self.workflow_mgr.run(workflow):
+            # --- Lancement ComfyUI via REST
+            client = ComfyClientREST()
+
+            client.set_on_start(lambda pid: logger.info(f"🚀 ComfyUI job démarré : {pid}"))
+            client.set_on_progress(lambda pid, status: logger.info(f"⏳ ComfyUI [{pid}] statut REST = {status}"))
+            client.set_on_error(lambda pid, err: logger.error(f"❌ ComfyUI erreur [{pid}] : {err}"))
+            client.set_on_complete(lambda pid, files: logger.info(f"🎉 ComfyUI terminé REST [{pid}] : {files}"))
+
+            # 🟦 Étape 1 : envoi du workflow
+            prompt_id = client.submit_prompt(workflow)
+
+            # 🟧 Étape 2 : Attente REST LIGHT (ne bloque pas le Processor longtemps)
+            client.wait_for_completion(
+                prompt_id,
+                timeout=20,  # Très court → juste vérifier que le workflow part bien
+                poll_interval=1.0,
+            )
+
+            logger.info("📡 ComfyUI REST OK → surveillance réelle par OutputManager...")
+
+            # 🟥 Étape 3 : attente basée sur le vrai fichier généré
+            output_path = self.output_mgr.wait_for_output(job)
+
+            if output_path is None:
                 raise CutMindError(
-                    "❌ Échec traitement ComfyUI.",
+                    "❌ Workflow ComfyUI terminé mais aucun fichier de sortie détecté.",
                     code=ErrCode.VIDEO,
                     ctx=get_step_ctx({"video_path": str(video_path)}),
                 )
 
-            logger.info("==== WORKFLOW ENVOYÉ À COMFYUI ====")
-            if not self.output_mgr.wait_for_output(job):
-                raise CutMindError(
-                    "❌ Échec traitement ComfyUI : fichier de sortie introuvable.",
-                    code=ErrCode.VIDEO,
-                    ctx=get_step_ctx({"video_path": str(video_path)}),
-                )
-
-            if not job.output_file:
-                raise CutMindError(
-                    "❌ Échec traitement ComfyUI : fichier de sortie introuvable.",
-                    code=ErrCode.VIDEO,
-                    ctx=get_step_ctx({"video_path": str(video_path)}),
-                )
+            # 🔧 Définition officielle du fichier final
+            job.output_file = output_path
+            logger.info(f"📦 Fichier final détecté : {job.output_file}")
 
             meta = prepare_video(job.output_file)
             job.fps_out = meta.fps
@@ -156,7 +169,7 @@ class VideoProcessor:
                             delta,
                             ratio * 100,
                         )
-                        if not self.segment.tags or "duration_warning" not in self.segment.tags:
+                        if self.segment.tags == "" or "duration_warning" not in self.segment.tags:
                             self.segment.add_tag("duration_warning")
                 elif not meta.duration:
                     logger.warning("⏱️ Impossible de lire la durée de sortie pour %s", final_output)
@@ -185,7 +198,7 @@ class VideoProcessor:
             logger.info(f"✅ Terminé : {final_output.name}")
             logger.debug(f"for _notif -> final_output : {final_output}")
             self._notify_cutmind(job, final_output, logger=logger)
-
+            logger.debug("sortie notify")
             # --- Mise à jour DB
 
             new_seg = ProcessedSegment(
@@ -198,12 +211,14 @@ class VideoProcessor:
                 codec=meta.codec,
                 bitrate=meta.bitrate,
                 filesize_mb=meta.filesize_mb,
-                tags=self.segment.tags or [],
+                tags=self.segment.tags,
                 duration=meta.duration,
                 processed_by="comfyui_router",
                 output_path=Path(self.segment.output_path),
             )
-            self.log_summary(job, meta, logger)
+            logger.debug(f"new_seg : {new_seg}")
+            self.log_summary(job=job, meta=meta, logger=logger)
+            logger.debug("sortie summary")
             return new_seg
 
         except CutMindError as err:
@@ -286,70 +301,81 @@ class VideoProcessor:
             ) from exc
 
     @with_child_logger
-    def log_summary(self, job: VideoJob, meta: VideoPrepared, logger: LoggerProtocol) -> None:
+    def log_summary(self, job: VideoJob, meta: VideoPrepared, logger: LoggerProtocol | None = None) -> None:
         """
-        Log un résumé coloré du traitement ComfyUI :
-        Avant → Après pour FPS, résolution, codec, bitrate, filesize,
-        nb frames, audio et duration.
+        Log un résumé coloré du traitement ComfyUI avec gestion robuste des valeurs None.
         """
+        logger = ensure_logger(logger, __name__)
+        logger.debug("entrée summary")
 
-        def fmt_float(v: float | None) -> str:
-            return f"{v:.2f}" if isinstance(v, float) else "N/A"
+        # Helpers sûrs
+        def fmt_float(v: float | int | None) -> str:
+            if v is None:
+                return "N/A"
+            try:
+                return f"{float(v):.2f}"
+            except Exception:
+                return "N/A"
+
+        logger.debug("fin fmt_float")
 
         def fmt_tuple(t: tuple[int, int] | None) -> str:
-            return f"{t[0]}x{t[1]}" if t and t != (0, 0) else "N/A"
+            if isinstance(t, tuple) and len(t) == 2:
+                return f"{t[0]}x{t[1]}"
+            return "N/A"
 
-        logger = ensure_logger(logger, __name__)
+        logger.debug("fin fmt_str")
+
+        def fmt_str(v: str | None) -> str:
+            return v if isinstance(v, str) else "N/A"
 
         logger.info(f"{COLOR_PURPLE}🧾 Résumé traitement ComfyUI pour : {COLOR_CYAN}{job.path.name}{COLOR_RESET}")
 
-        # FPS
+        # 📌 FPS
         logger.info(
             f"{COLOR_BLUE}📌 FPS        : {COLOR_YELLOW}{fmt_float(job.fps_in)}"
             f"{COLOR_RESET} → {COLOR_GREEN}{fmt_float(meta.fps)}{COLOR_RESET}"
         )
 
-        # Résolution
+        # 📌 Résolution
         logger.info(
             f"{COLOR_BLUE}📌 Résolution : {COLOR_YELLOW}{fmt_tuple(job.resolution)}"
-            f"{COLOR_RESET} → {COLOR_GREEN}{meta.resolution or 'N/A'}{COLOR_RESET}"
+            f"{COLOR_RESET} → {COLOR_GREEN}{fmt_tuple(job.resolution_out)}{COLOR_RESET}"
         )
 
-        # Codec
+        # 📌 Codec
         logger.info(
-            f"{COLOR_BLUE}📌 Codec      : {COLOR_YELLOW}{getattr(job, 'codec_in', 'N/A')}"
-            f"{COLOR_RESET} → {COLOR_GREEN}{meta.codec or 'N/A'}{COLOR_RESET}"
+            f"{COLOR_BLUE}📌 Codec      : {COLOR_YELLOW}{fmt_str(job.codec_in)}"
+            f"{COLOR_RESET} → {COLOR_GREEN}{fmt_str(meta.codec)}{COLOR_RESET}"
         )
 
-        # Bitrate
+        # 📌 Bitrate
         logger.info(
-            f"{COLOR_BLUE}📌 Bitrate    : {COLOR_YELLOW}{getattr(job, 'bitrate_in', 'N/A')}"
-            f"{COLOR_RESET} → {COLOR_GREEN}{meta.bitrate if meta.bitrate else 'N/A'} kbps{COLOR_RESET}"
+            f"{COLOR_BLUE}📌 Bitrate    : {COLOR_YELLOW}{fmt_float(job.bitrate_in)} kbps"
+            f"{COLOR_RESET} → {COLOR_GREEN}{fmt_float(meta.bitrate)} kbps{COLOR_RESET}"
         )
 
-        # Taille
+        # 📌 Taille
         logger.info(
-            f"{COLOR_BLUE}📌 Taille     : {COLOR_YELLOW}{getattr(job, 'filesize_mb_in', 'N/A')} MB"
+            f"{COLOR_BLUE}📌 Taille     : {COLOR_YELLOW}{fmt_float(job.filesize_mb_in)} MB"
             f"{COLOR_RESET} → {COLOR_GREEN}{fmt_float(meta.filesize_mb)} MB{COLOR_RESET}"
         )
 
-        # Nb Frames
-        nb_frames_out = getattr(meta, "nb_frames", None)
+        # 📌 Frames
         logger.info(
             f"{COLOR_BLUE}📌 Frames     : {COLOR_YELLOW}{job.nb_frames}"
-            f"{COLOR_RESET} → {COLOR_GREEN}{nb_frames_out if nb_frames_out else 'N/A'}{COLOR_RESET}"
+            f"{COLOR_RESET} → {COLOR_GREEN}{meta.nb_frames if meta.nb_frames else 'N/A'}{COLOR_RESET}"
         )
 
-        # Duration
-        duration_in = getattr(job, "duration_in", None)
-        duration_out = getattr(meta, "duration", None)
+        # 📌 Duration
         logger.info(
-            f"{COLOR_BLUE}📌 Durée      : {COLOR_YELLOW}{fmt_float(duration_in)} s"
-            f"{COLOR_RESET} → {COLOR_GREEN}{fmt_float(duration_out)} s{COLOR_RESET}"
+            f"{COLOR_BLUE}📌 Durée      : {COLOR_YELLOW}{fmt_float(job.duration_in)} s"
+            f"{COLOR_RESET} → {COLOR_GREEN}{fmt_float(meta.duration)} s{COLOR_RESET}"
         )
 
-        # Audio
+        # 📌 Audio
         logger.info(
-            f"{COLOR_BLUE}📌 Audio      : {COLOR_GREEN if job.has_audio else COLOR_RED}"
+            f"{COLOR_BLUE}📌 Audio      : "
+            f"{COLOR_GREEN if job.has_audio else COLOR_RED}"
             f"{'Oui' if job.has_audio else 'Non'}{COLOR_RESET}"
         )

@@ -24,7 +24,7 @@ def comfyui_path(full_path: Path) -> Path:
         ) from exc
 
 
-def run_comfy(workflow: dict[str, Any]) -> bool:
+def run_comfy(workflow: dict[str, Any]) -> str:
     """
     Envoie un workflow complet à ComfyUI.
     """
@@ -39,7 +39,15 @@ def run_comfy(workflow: dict[str, Any]) -> bool:
     try:
         response = requests.post("http://192.168.50.12:8188/prompt", json=payload, timeout=60)
         response.raise_for_status()
-        return True
+        data = response.json()
+        prompt_id = data.get("prompt_id")
+        if not isinstance(prompt_id, str) or not prompt_id:
+            raise CutMindError(
+                "❌ ComfyUI n'a pas retourné de prompt_id valide.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"response": data}),
+            )
+        return prompt_id
     except requests.HTTPError as err:
         raise CutMindError(
             "❌ Erreur inattendue lors de l'envoie du worflow à Comfyui.",

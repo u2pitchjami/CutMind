@@ -116,9 +116,15 @@ class Video:
     video_path: str | None = None
     duration: float | None = None
     fps: float | None = None
+    nb_frames: int | None = None
     resolution: str | None = None
     codec: str | None = None
     bitrate: int | None = None
+    has_audio: bool | None = None
+    audio_codec: str | None = None
+    sample_rate: int | None = None
+    channels: int | None = None
+    audio_duration: float | None = None
     filesize_mb: float | None = None
     status: str = "init"
     origin: str | None = "smartcut"
@@ -145,6 +151,10 @@ class Video:
             seg.resolution = self.resolution
             seg.codec = self.codec
             seg.bitrate = self.bitrate
+            seg.has_audio = self.has_audio
+            seg.audio_codec = self.audio_codec
+            seg.sample_rate = self.sample_rate
+            seg.channels = self.channels
         self.last_updated = datetime.now().isoformat()
 
     def get_pending_segments(self) -> list[Segment]:
