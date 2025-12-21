@@ -85,6 +85,7 @@ class RouterWorker:
                 try:
                     video.status = "processing_router"
                     repo.update_video(video)
+                    delete_files(path=INPUT_DIR, ext="*.mp4")
 
                     for seg, src, dst in prepared:
                         self.file_mover.safe_copy(src, dst)

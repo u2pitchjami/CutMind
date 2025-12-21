@@ -20,6 +20,7 @@ from shared.executors.ffmpeg_utils import detect_nvenc_available
 from shared.executors.ffprobe_utils import get_fps, get_resolution, get_total_frames, has_audio
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.services.ensure_deinterlaced import ensure_deinterlaced
+from shared.services.ensure_resolution import ensure_resolution
 from shared.services.video_preparation import VideoPrepared, prepare_video
 from shared.utils.config import (
     COLOR_BLUE,
@@ -151,6 +152,10 @@ class VideoProcessor:
             job.fps_out = meta.fps
             job.resolution_out = resolution_str_to_tuple(meta.resolution)
             final_output = OK_DIR / job.output_file.name
+            res_out = job.resolution_out
+            job.output_file, job.resolution_out = ensure_resolution(job.path, job.resolution_out, logger=logger)
+            if job.resolution_out != res_out:
+                self.segment.add_tag("resolution_fixed")
             logger.debug(f"✅ OK_DIR : {OK_DIR}, TRASH_DIR : {TRASH_DIR}")
             logger.debug(f"✅ Fichier de sortie trouvé : {final_output}")
 

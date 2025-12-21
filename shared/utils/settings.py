@@ -156,6 +156,25 @@ class ValidationSettings:
     manual: str
 
 
+@dataclass
+class AuditSettings:
+    start: str
+    end: str
+
+
+@dataclass
+class StatusConsistencyRules:
+    scenes_done: list[str]
+    ia_done: list[str]
+    confidence_done: list[str]
+    merged: list[str]
+    smartcut_done: list[str]
+    manual_review: list[str]
+    validated: list[str]
+    processing_router: list[str]
+    enhanced: list[str]
+
+
 # ==========================================================
 #                 SETTINGS ROOT OBJECT
 # ==========================================================
@@ -177,6 +196,8 @@ class Settings:
     router_wait_output: WaitOutputSettings
 
     cutmind_validation: ValidationSettings
+    cutmind_audit: AuditSettings
+    cutmind_status_consistency: StatusConsistencyRules
 
     # IMPORTANT :
     # adaptive_batch reste un dict car le code actuel utilise .get() et accès dynamiques
@@ -249,6 +270,11 @@ def init_settings(config: Any) -> None:
             normal=cm["validation"]["normal"],
             manual=cm["validation"]["manual"],
         ),
+        cutmind_audit=AuditSettings(
+            start=cm["audit_window"]["start"],
+            end=cm["audit_window"]["end"],
+        ),
+        cutmind_status_consistency=StatusConsistencyRules(**cm["status_consistency_rules"]),
         adaptive_batch=rt["adaptive_batch"],  # ← laissé en dict volontairement
     )
 

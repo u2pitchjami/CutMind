@@ -11,6 +11,7 @@ Utilitaires sécurisés pour exécution SQL :
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from cutmind.models_cm.cursor_protocol import DictCursorProtocol, TupleCursorProtocol
@@ -65,3 +66,7 @@ def flush_dict_cursor(cursor: DictCursorProtocol) -> None:
             pass
     except Exception as exc:
         raise CutMindError("❌ Flush dict ignoré", code=ErrCode.DB, ctx=get_step_ctx()) from exc
+
+
+def to_db_json(value: Any) -> str | None:
+    return json.dumps(value) if value is not None else None

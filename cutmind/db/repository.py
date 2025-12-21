@@ -19,7 +19,7 @@ from pymysql.connections import Connection
 
 from comfyui_router.models_cr.processed_segment import ProcessedSegment
 from cutmind.db.db_connection import db_conn, get_dict_cursor
-from cutmind.db.db_utils import safe_execute_dict
+from cutmind.db.db_utils import safe_execute_dict, to_db_json
 from cutmind.models_cm.cursor_protocol import DictCursorProtocol
 from cutmind.models_cm.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
@@ -375,7 +375,7 @@ class CutMindRepository:
                     if not video_row:
                         return None
 
-                    video = Video(**{k: video_row[k] for k in video_row if k in Video.__annotations__})
+                    video = Video.from_row(video_row)
                     video.id = video_row["id"]
 
                     # --- Segments ---
@@ -383,7 +383,7 @@ class CutMindRepository:
                     seg_rows = cur.fetchall()
 
                     for seg_row in seg_rows:
-                        seg = Segment(**{k: seg_row[k] for k in seg_row if k in Segment.__annotations__})
+                        seg = Segment.from_row(seg_row)
                         seg.id = seg_row["id"]
 
                         if seg.id:
@@ -414,14 +414,14 @@ class CutMindRepository:
                     video_rows = cur.fetchall()
 
                     for video_row in video_rows:
-                        video = Video(**{k: video_row[k] for k in video_row if k in Video.__annotations__})
+                        video = Video.from_row(video_row)
                         video.id = video_row["id"]
 
                         # --- Segments associés ---
                         safe_execute_dict(cur, "SELECT * FROM segments WHERE video_id=%s", (video.id,))
                         seg_rows = cur.fetchall()
                         for seg_row in seg_rows:
-                            seg = Segment(**{k: seg_row[k] for k in seg_row if k in Segment.__annotations__})
+                            seg = Segment.from_row(seg_row)
                             seg.id = seg_row["id"]
                             if not seg.id:
                                 continue
@@ -466,7 +466,7 @@ class CutMindRepository:
                 "SELECT * FROM segments WHERE status=%s",
                 (status,),
             )
-            return [Segment(**{k: row[k] for k in row if k in Segment.__annotations__}) for row in rows]
+            return [Segment.from_row(row) for row in rows]
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"status": status})) from err
         except Exception as exc:
@@ -483,7 +483,7 @@ class CutMindRepository:
             placeholders = ",".join(["%s"] * len(statuses))
             query = f"SELECT * FROM segments WHERE status IN ({placeholders})"
             rows = self._fetch_all(query, statuses)
-            return [Segment(**{k: row[k] for k in row if k in Segment.__annotations__}) for row in rows]
+            return [Segment.from_row(row) for row in rows]
         except CutMindError as err:
             raise err.with_context(get_step_ctx()) from err
         except Exception as exc:
@@ -518,7 +518,7 @@ class CutMindRepository:
             )
             if not row:
                 return None
-            return Segment(**{k: row[k] for k in row if k in Segment.__annotations__})
+            return Segment.from_row(row)
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"uid": uid})) from err
         except Exception as exc:
@@ -528,27 +528,39 @@ class CutMindRepository:
                 ctx=get_step_ctx({"uid": uid}),
             ) from exc
 
-    def get_segments_by_category(self, category: str) -> list[Segment]:
+    def get_segments_by_category(self, category: str | None, expected_segment_statuses: list[str]) -> list[Segment]:
         """
-        Récupère tous les segments 'enhanced' d'une catégorie donnée.
+        Récupère tous les segments 'enhanced' d'une catégorie donnée (ou NULL si category=None).
         """
         try:
-            rows = self._fetch_all(
+            params: tuple[Any, ...]
+            if category is None:
+                query = """
+                    SELECT s.*
+                    FROM segments s
+                    WHERE s.status IN %s
+                    AND s.category IS NULL
+                    ORDER BY s.created_at DESC
                 """
-                SELECT s.*
-                FROM segments s
-                WHERE s.status = 'enhanced'
-                AND s.category = %s
-                ORDER BY s.created_at DESC
-                """,
-                (category,),
-            )
+                params = (tuple(expected_segment_statuses),)
+            else:
+                query = """
+                    SELECT s.*
+                    FROM segments s
+                    WHERE s.status IN %s
+                    AND s.category = %s
+                    ORDER BY s.created_at DESC
+                """
+                params = (tuple(expected_segment_statuses), category)
+
+            rows = self._fetch_all(query, params if params else None)
             return [Segment.from_row(row) for row in rows]
+
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"category": category})) from err
         except Exception as exc:
             raise CutMindError(
-                "❌ Erreur Repo gget_segments_by_category.",
+                "❌ Erreur Repo get_segments_by_category.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"category": category}),
             ) from exc
@@ -647,6 +659,32 @@ class CutMindRepository:
                 ctx=get_step_ctx(),
             ) from exc
 
+    def get_segments_status_mismatch(
+        self, video_status: str, expected_segment_statuses: list[str]
+    ) -> list[dict[str, Any]]:
+        """
+        Retourne les segments dont le statut est incohérent avec celui de leur vidéo.
+        Ex: vidéo.status = 'validated' mais segment.status = 'pending_check'
+        """
+        try:
+            query = """
+                SELECT v.id AS video_id, v.filename, s.id AS segment_id, s.status AS segment_status
+                FROM videos v
+                JOIN segments s ON s.video_id = v.id
+                WHERE v.status = %s
+                AND s.status NOT IN %s
+            """
+            rows = self._fetch_all(query, (video_status, tuple(expected_segment_statuses)))
+            return rows
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx({"video_status": video_status})) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur Repo get_segments_status_mismatch.",
+                code=ErrCode.DB,
+                ctx=get_step_ctx({"video_status": video_status}),
+            ) from exc
+
     # -------------------------------------------------------------
     # 🔄 Mise à jour d’un segment
     # -------------------------------------------------------------
@@ -675,7 +713,7 @@ class CutMindRepository:
                     seg.output_path,
                     seg.category,
                     seg.ai_model,
-                    seg.tags,
+                    to_db_json(seg.tags),
                     seg.uid,
                 ),
                 conn=conn,
@@ -719,7 +757,7 @@ class CutMindRepository:
                     seg.status,
                     seg.source_flow,
                     seg.processed_by,
-                    seg.tags,
+                    to_db_json(seg.tags),
                     seg.nb_frames,
                     seg.id,
                 ),
@@ -808,12 +846,14 @@ class CutMindRepository:
                 UPDATE videos
                 SET status=%s,
                     video_path=%s,
+                    tags=%s,
                     last_updated=NOW()
                 WHERE uid=%s
                 """,
                 (
                     video.status,
                     video.video_path,
+                    to_db_json(video.tags),
                     video.uid,
                 ),
                 conn=conn,

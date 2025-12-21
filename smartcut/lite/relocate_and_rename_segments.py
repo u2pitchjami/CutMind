@@ -36,6 +36,7 @@ def relocate_and_rename_segments(
             # Nouveau nom prédictif
             seg.filename_predicted = f"seg_{seg.id:04d}_{seg.uid}.mp4"
             seg.output_path = str(output_dir / seg.filename_predicted)
+            seg.status = "cut"
             dest = Path(seg.output_path)
 
             # Déplacement

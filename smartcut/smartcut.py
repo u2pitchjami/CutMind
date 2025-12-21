@@ -155,9 +155,18 @@ def multi_stage_cut(
                     logger.error("❌ Scene split error: %s", e)
                     if not Path(vid.video_path).exists():
                         logger.warning(f"⚠️ Vidéo introuvable : {vid.video_path}")
-                    error_path = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
-                    logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
-                    raise
+                    if vid.tags == "" or "pyscene_error" not in vid.tags:
+                        vid.add_tag_vid("pyscene_error")
+                    else:
+                        error_path = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
+                        vid.video_path = str(error_path)
+                        vid.status = "error"
+                        logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
+                    repo.update_video(vid)
+                    raise CutMindError(
+                        f"❌ Erreur lors de Découpage pyscenedetect {vid.name}",
+                        code=ErrCode.UNEXPECTED,
+                    ) from e
 
             # Création des segments SmartCut
             vid.segments = [Segment(id=i + 1, start=s, end=e) for i, (s, e) in enumerate(cuts)]
@@ -211,6 +220,14 @@ def multi_stage_cut(
                     repo.update_video(vid)
 
                 except Exception as exc:  # pylint: disable=broad-except
+                    if vid.tags == "" or "ia_error" not in vid.tags:
+                        vid.add_tag_vid("ia_error")
+                    else:
+                        error_path = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
+                        vid.video_path = str(error_path)
+                        vid.status = "error"
+                        logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
+                    repo.update_video(vid)
                     raise CutMindError(
                         f"❌ Erreur lors de l'analyse IA {vid.name}",
                         code=ErrCode.UNEXPECTED,
@@ -319,8 +336,19 @@ def multi_stage_cut(
             try:
                 service_cut.cut_segments(str(video_path), cut_requests)
             except CutMindError as err:
+                if vid.tags == "" or "cut_error" not in vid.tags:
+                    vid.add_tag_vid("cut_error")
+                else:
+                    error_path = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
+                    vid.video_path = str(error_path)
+                    vid.status = "error"
+                    logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
+                repo.update_video(vid)
                 logger.error(f"Erreur durant le cut : {err}")
-                raise
+                raise CutMindError(
+                    f"❌ Erreur lors cut Smartcut {vid.name}",
+                    code=ErrCode.UNEXPECTED,
+                ) from err
 
             # mise à jour de la session
             for seg in vid.segments:

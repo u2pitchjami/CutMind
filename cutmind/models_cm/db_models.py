@@ -3,9 +3,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+import json
 from pathlib import Path
 from typing import Any
 import uuid
+
+from shared.models.exceptions import CutMindError, ErrCode
 
 
 # -------------------------------------------------------------
@@ -53,25 +56,43 @@ class Segment:
     # --- Factory : construit à partir d’une ligne SQL
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> Segment:
-        allowed = cls.__annotations__.keys()
-        data = {k: row[k] for k in row if k in allowed}
+        try:
+            allowed = cls.__annotations__.keys()
+            data = {k: row[k] for k in row if k in allowed}
 
-        # Sécurise les listes pour éviter les None
-        data["tags"] = data.get("tags") or []
-        data["keywords"] = data.get("keywords") or []
-        data["merged_from"] = data.get("merged_from") or []
-        if "sample_rate" in data and data["sample_rate"] is not None:
-            data["sample_rate"] = int(data["sample_rate"])
+            def parse_list(field: str) -> list[str]:
+                value = data.get(field)
+                if isinstance(value, list):
+                    return value
+                if isinstance(value, str):
+                    try:
+                        return json.loads(value) if value else []
+                    except json.JSONDecodeError:
+                        return []
+                return []
 
-        if "channels" in data and data["channels"] is not None:
-            data["channels"] = int(data["channels"])
+            for field in ("tags", "keywords", "merged_from"):
+                data[field] = parse_list(field)
 
-        if "audio_duration" in data and data["audio_duration"] is not None:
-            data["audio_duration"] = float(data["audio_duration"])
+            cast_map: dict[str, type] = {
+                "sample_rate": int,
+                "channels": int,
+                "nb_frames": int,
+                "audio_duration": float,
+            }
 
-        if "nb_frames" in data and data["nb_frames"] is not None:
-            data["nb_frames"] = int(data["nb_frames"])
-        return cls(**data)
+            for field, caster in cast_map.items():
+                if field in data and data[field] is not None:
+                    data[field] = caster(data[field])
+
+            return cls(**data)
+
+        except Exception as exc:
+            raise CutMindError(
+                f"Erreur from_row pour {cls.__name__}",
+                code=ErrCode.MODEL,
+                ctx={"row_keys": list(row.keys())},
+            ) from exc
 
     # --- Prépare les valeurs pour un INSERT/UPDATE
     def to_db_dict(self) -> dict[str, Any]:
@@ -80,11 +101,22 @@ class Segment:
         return data
 
     def add_tag(self, tag: str) -> None:
-        """Ajoute un tag sans doublon."""
+        if not isinstance(self.tags, list):
+            try:
+                self.tags = json.loads(self.tags or "[]")
+            except json.JSONDecodeError:
+                self.tags = []
+
         if tag not in self.tags:
             self.tags.append(tag)
 
     def has_tag(self, tag: str) -> bool:
+        if not isinstance(self.tags, list):
+            try:
+                self.tags = json.loads(self.tags or "[]")
+            except json.JSONDecodeError:
+                return False
+
         return tag in self.tags
 
     def compute_duration(self) -> None:
@@ -127,6 +159,7 @@ class Video:
     audio_duration: float | None = None
     filesize_mb: float | None = None
     status: str = "init"
+    tags: list[str] = field(default_factory=list)
     origin: str | None = "smartcut"
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     last_updated: str = field(default_factory=lambda: datetime.now().isoformat())
@@ -134,9 +167,32 @@ class Video:
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> Video:
-        allowed = cls.__annotations__.keys()
-        data = {k: row[k] for k in row if k in allowed}
-        return cls(**data)
+        try:
+            allowed = cls.__annotations__.keys()
+            data = {k: row[k] for k in row if k in allowed}
+
+            def parse_list(field: str) -> list[str]:
+                value = data.get(field)
+                if isinstance(value, list):
+                    return value
+                if isinstance(value, str):
+                    try:
+                        return json.loads(value) if value else []
+                    except json.JSONDecodeError:
+                        return []
+                return []
+
+            if "tags" in data:
+                data["tags"] = parse_list("tags")
+
+            return cls(**data)
+
+        except Exception as exc:
+            raise CutMindError(
+                f"Erreur from_row pour {cls.__name__}",
+                code=ErrCode.MODEL,
+                ctx={"row_keys": list(row.keys())},
+            ) from exc
 
     def finalize_segments(self, output_dir: str | Path = "./outputs") -> None:
         """
@@ -160,6 +216,25 @@ class Video:
     def get_pending_segments(self) -> list[Segment]:
         """Retourne les segments non traités par l'IA."""
         return [s for s in self.segments if s.status != "ai_done"]
+
+    def add_tag_vid(self, tag: str) -> None:
+        if not isinstance(self.tags, list):
+            try:
+                self.tags = json.loads(self.tags or "[]")
+            except json.JSONDecodeError:
+                self.tags = []
+
+        if tag not in self.tags:
+            self.tags.append(tag)
+
+    def has_tag_vid(self, tag: str) -> bool:
+        if not isinstance(self.tags, list):
+            try:
+                self.tags = json.loads(self.tags or "[]")
+            except json.JSONDecodeError:
+                return False
+
+        return tag in self.tags
 
 
 # -------------------------------------------------------------

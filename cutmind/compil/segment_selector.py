@@ -13,7 +13,7 @@ def select_segments_for_block(
     block: CompilationBlock, repo: CutMindRepository, logger: LoggerProtocol | None = None
 ) -> list[Segment]:
     logger = ensure_logger(logger, __name__)
-    segments = repo.get_segments_by_category(block.category)
+    segments = repo.get_segments_by_category(block.category, ["enhanced"])
     with db_conn() as conn:
         with get_dict_cursor(conn) as cur:
             for seg in segments:

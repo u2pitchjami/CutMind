@@ -10,7 +10,10 @@ from shared.executors.ffmpeg_utils import detect_nvenc_available
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
 from shared.services.ensure_deinterlaced import ensure_deinterlaced
+from shared.services.ensure_resolution import ensure_resolution
+from shared.services.video_preparation import prepare_video
 from shared.utils.config import WORKDIR_CM
+from shared.utils.datas import format_resolution, resolution_str_to_tuple
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.safe_segments import safe_segments
 from shared.utils.settings import get_settings
@@ -43,7 +46,7 @@ def process_standard_videos(limit: int = 10, logger: LoggerProtocol | None = Non
 
             with Timer(f"Traitement vidéo enhanced : {video.name}", logger):
                 for seg in video.segments:
-                    if not seg.filename_predicted or not seg.output_path:
+                    if not seg.filename_predicted or not seg.output_path or not seg.resolution or not seg.id:
                         logger.warning("⏩ Segment ignoré (données manquantes) : %s", seg.uid)
                         continue
                     seg_path = Path(str(seg.output_path))
@@ -70,6 +73,12 @@ def process_standard_videos(limit: int = 10, logger: LoggerProtocol | None = Non
                     # Étape 2 : recut intelligent
                     processed_path = smart_recut_hybrid(processed_path, use_cuda=cuda, cleanup=CLEANUP)
 
+                    # Étape 3 : resize intelligent
+                    processed_path, resolution_out = ensure_resolution(
+                        processed_path, resolution_str_to_tuple(seg.resolution), logger=logger
+                    )
+                    if seg.resolution != format_resolution(resolution_out):
+                        seg.add_tag("resolution_fixed")
                     # Vérifie si le chemin a changé (fichier modifié)
                     # if processed_path.name != seg_path.name:
                     #     final_path = seg_path.parent / seg.filename_predicted
@@ -91,6 +100,9 @@ def process_standard_videos(limit: int = 10, logger: LoggerProtocol | None = Non
                     seg.status = "enhanced"
                     seg.source_flow = "pre_enhanced_bypass"
                     repo.update_segment_validation(seg)
+                    if seg.resolution != format_resolution(resolution_out):
+                        prep = prepare_video(Path(seg.output_path))
+                        repo.update_segment_from_metadata(seg.id, prep)
                     logger.info("✅ Segment %s mis à jour", seg.uid)
 
             if all_done:

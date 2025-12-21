@@ -15,9 +15,11 @@ import uuid
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.utils.config import ERROR_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.safe_runner import safe_main
 from shared.utils.settings import get_settings
+from smartcut.executors.analyze.split_utils import move_to_error
 from smartcut.lite.load_segments import load_segments_from_directory
 from smartcut.lite.relocate_and_rename_segments import relocate_and_rename_segments
 from smartcut.services.analyze.apply_confidence import apply_confidence_to_session
@@ -108,7 +110,18 @@ def lite_cut(directory_path: Path, logger: LoggerProtocol | None = None) -> None
 
                 except Exception as exc:
                     logger.error("💥 Erreur durant l’analyse IA : %s", exc)
-                    raise
+                    if vid.tags == "" or "ia_error" not in vid.tags:
+                        vid.add_tag_vid("ia_error")
+                    else:
+                        error_path = move_to_error(file_path=Path(str(vid.video_path)), error_root=ERROR_DIR_SC)
+                        vid.video_path = str(error_path)
+                        vid.status = "error"
+                        logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
+                    repo.update_video(vid)
+                    raise CutMindError(
+                        f"❌ Erreur lors de l'analyse IA {vid.name}",
+                        code=ErrCode.UNEXPECTED,
+                    ) from exc
             else:
                 logger.info("⏩ Étape IA déjà effectuée — skip.")
 

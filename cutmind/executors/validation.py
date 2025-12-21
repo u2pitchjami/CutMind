@@ -58,11 +58,15 @@ def analyze_session_validation_db(video: Video, min_confidence: float = 0.45) ->
             if desc_ok and conf_ok and kw_ok:
                 seg.status = "validated"
                 seg.category = match_category(seg.keywords)
-                if seg.source_flow == "manual_review":
-                    seg.source_flow = "manual_validation"
+                if seg.category and seg.category.strip().lower() not in ("none", ""):
+                    if seg.source_flow == "manual_review":
+                        seg.source_flow = "manual_validation"
+                    else:
+                        seg.source_flow = "auto_validation"
+                    valid_segments.append(seg)
                 else:
-                    seg.source_flow = "auto_validation"
-                valid_segments.append(seg)
+                    seg.status = "pending_check"
+                    seg.source_flow = "manual_review"
             else:
                 seg.status = "pending_check"
                 seg.source_flow = "manual_review"

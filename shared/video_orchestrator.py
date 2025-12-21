@@ -16,10 +16,9 @@ import time
 
 import torch
 
+from cutmind.check_script import main_check_script
 from cutmind.db.repository import CutMindRepository
 from cutmind.process.router_worker import RouterWorker
-from cutmind.services.check.already_enhanced import process_standard_videos
-from cutmind.services.check.check_files import check_enhanced_segments
 from cutmind.services.check.secure_in_router import check_secure_in_router
 from cutmind.services.main_validation import validation
 from cutmind.services.manual.update_from_csv import update_segments_csv
@@ -49,6 +48,8 @@ SCAN_INTERVAL = settings.smartcut.scan_interval
 USE_CUDA = settings.smartcut.use_cuda
 ratio_smartcut = settings.router_orchestrator.ratio_smartcut
 forbidden_hours = settings.router_orchestrator.forbidden_hours
+start_audit = settings.cutmind_audit.start
+end_audit = settings.cutmind_audit.end
 
 
 # ============================================================
@@ -165,6 +166,19 @@ def process_smartcut_batch(
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx(),
         ) from exc
+
+
+def is_in_audit_window(start_str: str, end_str: str) -> bool:
+    now = datetime.now().time()
+    start = datetime.strptime(start_str, "%H:%M").time()
+    end = datetime.strptime(end_str, "%H:%M").time()
+
+    if start <= end:
+        # Ex : 00:00 à 00:15, ou 08:00 à 12:00
+        return start <= now <= end
+    else:
+        # Ex : 23:00 à 01:00 → traverse minuit
+        return now >= start or now <= end
 
 
 # ============================================================
@@ -298,11 +312,9 @@ def orchestrate(priority: str = "smartcut", logger: LoggerProtocol | None = None
             except CutMindError as exc:
                 logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
             try:
-                check_enhanced_segments(max_videos=1, logger=logger)
-            except CutMindError as exc:
-                logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
-            try:
-                process_standard_videos(limit=1, logger=logger)
+                if is_in_audit_window(start_audit, end_audit):
+                    logger.info(f"{COLOR_BLUE}🚀 Lancement du l'Audit Check){COLOR_RESET}")
+                    main_check_script()
             except CutMindError as exc:
                 logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
 

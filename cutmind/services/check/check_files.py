@@ -8,7 +8,9 @@ from cutmind.executors.check.enhanced import check_segments
 from cutmind.executors.check.log_metadata_diff import log_metadata_diff
 from cutmind.services.categ.categ_serv import match_category
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.services.ensure_resolution import ensure_resolution
 from shared.services.video_preparation import get_metadata_all
+from shared.utils.datas import format_resolution, resolution_str_to_tuple
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
@@ -28,7 +30,7 @@ def check_enhanced_segments(max_videos: int = 10, logger: LoggerProtocol | None 
     for video in selected:
         logger.info("▶️ check_enhanced : %s", video.name)
         for seg in video.segments:
-            if not seg or not seg.id:
+            if not seg or not seg.id or not seg.resolution:
                 continue
             if seg.status != "enhanced":
                 logger.debug("🛑 segment non enrichi  :  %s", seg.status)
@@ -40,6 +42,11 @@ def check_enhanced_segments(max_videos: int = 10, logger: LoggerProtocol | None 
                 continue
 
             try:
+                _processed_path, resolution_out = ensure_resolution(
+                    path, resolution_str_to_tuple(seg.resolution), logger=logger
+                )
+                if seg.resolution != format_resolution(resolution_out):
+                    seg.add_tag("resolution_fixed")
                 metadata = get_metadata_all(video_path=path)
                 updated = check_segments(seg, metadata, path)
 

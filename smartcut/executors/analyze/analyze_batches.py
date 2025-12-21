@@ -6,6 +6,7 @@ from typing import Any, cast
 
 from transformers import PreTrainedModel, ProcessorMixin
 
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from smartcut.models_sc.ai_result import AIResult
 from smartcut.services.main_gen_keywords import generate_keywords_for_segment
 
@@ -31,18 +32,18 @@ def process_batches(
     """
     Traite un segment vidéo par lots et récupère les descriptions + mots-clés IA.
     """
-    batch_result_raw = generate_keywords_for_segment(
-        segment_id=f"{video_name}_seg_{int(start * 10)}_{int(end * 10)}",
-        frame_dir=batch_dir,
-        processor=processor,
-        model=model,
-        num_frames=len(batch_paths),
-    )
-
-    parsed_result: AIResult = {"description": "", "keywords": []}
-    print(f"Batch result: {type(batch_result_raw)}")
-
     try:
+        batch_result_raw = generate_keywords_for_segment(
+            segment_id=f"{video_name}_seg_{int(start * 10)}_{int(end * 10)}",
+            frame_dir=batch_dir,
+            processor=processor,
+            model=model,
+            num_frames=len(batch_paths),
+        )
+
+        parsed_result: AIResult = {"description": "", "keywords": []}
+        print(f"Batch result: {type(batch_result_raw)}")
+
         if isinstance(batch_result_raw, str):
             parsed = json.loads(batch_result_raw)
             if isinstance(parsed, dict):
@@ -64,10 +65,16 @@ def process_batches(
                 parsed_result["keywords"] = [kw.strip() for kw in raw_keywords.split(",") if kw.strip()]
             else:
                 parsed_result["keywords"] = []
-
+    except CutMindError as err:
+        raise err.with_context(get_step_ctx({"video name": video_name})) from err
     except json.JSONDecodeError:
         # ✅ Ici on force le type en str pour mypy
         raw_text = cast(str, batch_result_raw)
         parsed_result["keywords"] = [kw.strip() for kw in raw_text.split(",") if kw.strip()]
-
+    except Exception as exc:
+        raise CutMindError(
+            "❌ Erreur lors du traitement IA.",
+            code=ErrCode.UNEXPECTED,
+            ctx=get_step_ctx({"video name": video_name}),
+        ) from exc
     return parsed_result
