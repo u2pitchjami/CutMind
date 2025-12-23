@@ -89,7 +89,7 @@ def process_standard_videos(limit: int = 10, logger: LoggerProtocol | None = Non
 
                     # --- 🛠️ Remplacement
                     try:
-                        FileMover.safe_replace(processed_path, seg_path)
+                        FileMover.safe_replace(processed_path, seg_path, logger)
                         logger.info("📦 Fichier remplacé (via safe_copy) : %s → %s", processed_path.name, seg_path)
 
                     except Exception as move_err:

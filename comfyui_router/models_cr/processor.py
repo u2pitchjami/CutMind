@@ -37,7 +37,7 @@ from shared.utils.config import (
 from shared.utils.datas import resolution_str_to_tuple
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
-from shared.utils.trash import move_to_trash, purge_old_trash
+from shared.utils.trash import purge_old_trash
 
 settings = get_settings()
 
@@ -103,10 +103,9 @@ class VideoProcessor:
 
             # 🧩 Étape 2 : détection / désentrelacement
             video_path = ensure_deinterlaced(video_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
-            video_path = smart_recut_hybrid(video_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
             job.path = Path(video_path)
             job.comfyui_path = comfyui_path(full_path=video_path)
-            workflow = self.workflow_mgr.prepare_workflow(job)
+            workflow = self.workflow_mgr.prepare_workflow(job, logger=logger)
             if not workflow:
                 raise CutMindError(
                     "❌ Ignorée (résolution trop basse).",
@@ -135,7 +134,7 @@ class VideoProcessor:
             logger.info("📡 ComfyUI REST OK → surveillance réelle par OutputManager...")
 
             # 🟥 Étape 3 : attente basée sur le vrai fichier généré
-            output_path = self.output_mgr.wait_for_output(job)
+            output_path = self.output_mgr.wait_for_output(video_job=job, logger=logger)
 
             if output_path is None:
                 raise CutMindError(
@@ -143,9 +142,9 @@ class VideoProcessor:
                     code=ErrCode.VIDEO,
                     ctx=get_step_ctx({"video_path": str(video_path)}),
                 )
-
+            output_path_srh = smart_recut_hybrid(output_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
             # 🔧 Définition officielle du fichier final
-            job.output_file = output_path
+            job.output_file = output_path_srh
             logger.info(f"📦 Fichier final détecté : {job.output_file}")
 
             meta = prepare_video(job.output_file)
@@ -195,7 +194,7 @@ class VideoProcessor:
             else:
                 shutil.move(job.output_file, final_output)
 
-            move_to_trash(file_path=job.path, trash_root=TRASH_DIR)
+            # move_to_trash(file_path=job.path, trash_root=TRASH_DIR)
             cleanup_outputs(video_path.stem, final_output, OUTPUT_DIR)
             logger.debug(f"🧹 Supprimé : {video_path.stem}")
             purge_old_trash(trash_root=TRASH_DIR, days=PURGE_DAYS, logger=logger)
@@ -266,7 +265,7 @@ class VideoProcessor:
 
             # --- 🛠️ Remplacement
             try:
-                FileMover.safe_replace(final_output, target_path)
+                FileMover.safe_replace(final_output, target_path, logger)
                 logger.info("📦 Fichier remplacé (via safe_copy) : %s → %s", final_output.name, target_path)
 
             except Exception as move_err:

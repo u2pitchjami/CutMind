@@ -28,6 +28,7 @@ from cutmind.process.file_mover import CUTMIND_BASEDIR, FileMover, sanitize
 from cutmind.services.categ.categ_serv import match_category
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import OUTPUT_DIR_SC
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.remove_empty_dirs import remove_empty_dirs
 from shared.utils.safe_segments import safe_segments
 from smartcut.services.analyze.analyze_from_cutmind import analyze_from_cutmind
@@ -37,7 +38,11 @@ from smartcut.services.analyze.analyze_from_cutmind import analyze_from_cutmind
 # ⚙️ Validation automatique d'une vidéo
 # =====================================================================
 @safe_segments
-def analyze_session_validation_db(video: Video, min_confidence: float = 0.45) -> dict[str, Any]:
+@with_child_logger
+def analyze_session_validation_db(
+    video: Video, min_confidence: float = 0.45, logger: LoggerProtocol | None = None
+) -> dict[str, Any]:
+    logger = ensure_logger(logger, __name__)
     repo = CutMindRepository()
     if not video:
         raise CutMindError("❌ Erreur vidéo absente pour la validation.", code=ErrCode.NOFILE, ctx=get_step_ctx())
@@ -50,7 +55,7 @@ def analyze_session_validation_db(video: Video, min_confidence: float = 0.45) ->
     try:
         for seg in video.segments:
             if not seg.description and not seg.confidence and not seg.keywords:
-                seg.description, seg.keywords = analyze_from_cutmind(seg)
+                seg.description, seg.keywords = analyze_from_cutmind(seg, logger)
             desc_ok = bool(seg.description and seg.description.strip().lower() not in ("none", ""))
             conf_ok = (seg.confidence or 0.0) >= min_confidence
             kw_ok = bool(seg.keywords and len(seg.keywords) > 0)

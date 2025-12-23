@@ -42,7 +42,8 @@ def update_segments_csv(
     log_rows: list[dict[str, str]] = []
     try:
         if not manual_csv.exists():
-            raise CutMindError("❌ Erreur Fichier Manuel Absent.", code=ErrCode.NOFILE, ctx=get_step_ctx())
+            logger.warning("❌ Erreur Fichier Manuel Absent.")
+            return
         with db_conn() as conn:
             with get_dict_cursor(conn), open(manual_csv, newline="", encoding="utf-8") as f:
                 reader = csv.DictReader(f)

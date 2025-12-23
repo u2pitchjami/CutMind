@@ -51,6 +51,7 @@ class OutputManager:
             f"(batches attendus ≈ {expected_batches}, audio={expect_audio})"
         )
 
+        first_batch_detected = False
         start = time.time()
         video_file: Path | None = None
 
@@ -88,6 +89,14 @@ class OutputManager:
                 logger.info(f"📈 Croissance détectée : +{growth_mb:.2f} MB")
                 last_size = current_size
                 last_growth_time = time.time()
+                if first_batch_detected is False:
+                    batch1_time = last_growth_time - start
+                    FREEZE_TIME = min(max(int(batch1_time * 2), 120), 900)
+                    stable_time = min(max(int(batch1_time * 1.5), 30), 180)
+
+                    logger.info(f"⏱️ Premier batch détecté : {batch1_time:.2f}s")
+                    logger.info(f"⏳ Freeze time ajusté à {FREEZE_TIME}s, stable time à {stable_time}s")
+                    first_batch_detected = True
 
             # ------------------------------------------
             # 3) Vérification du fichier audio final

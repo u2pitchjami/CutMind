@@ -20,7 +20,7 @@ from cutmind.process.file_mover import FileMover
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
 from shared.utils.config import CM_NB_VID_ROUTER, COLOR_RED, COLOR_RESET, INPUT_DIR, OUTPUT_DIR
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, get_logger, with_child_logger
 from shared.utils.settings import get_settings
 from shared.utils.trash import delete_files
 
@@ -32,24 +32,21 @@ forbidden_hours = settings.router_orchestrator.forbidden_hours
 class RouterWorker:
     """Gère l'envoi automatique des segments non conformes vers ComfyUI Router."""
 
-    @with_child_logger
-    def __init__(self, limit_videos: int = CM_NB_VID_ROUTER, logger: LoggerProtocol | None = None):
-        logger = ensure_logger(logger, __name__)
+    def __init__(self, limit_videos: int = CM_NB_VID_ROUTER):
+        self.logger = get_logger("CutMind-Comfyui_Router")
         self.limit_videos = limit_videos
         self.file_mover = FileMover()
 
     # ---------------------------------------------------------
     # 🚀 Main Entry Point
     # ---------------------------------------------------------
-    @with_child_logger
-    def run(self, logger: LoggerProtocol | None = None) -> int:
+    def run(self) -> int:
         """
         Exécute un cycle complet d'envoi vers Router.
         Retourne le nombre total de segments envoyés pour traitement.
         """
-        logger = ensure_logger(logger, __name__)
 
-        logger.info("🚀 Démarrage RouterWorker (max %d vidéos)", self.limit_videos)
+        self.logger.info("🚀 Démarrage RouterWorker (max %d vidéos)", self.limit_videos)
 
         processed_count = 0
 
@@ -57,31 +54,31 @@ class RouterWorker:
         repo = CutMindRepository()
         video_uids = repo.get_nonstandard_videos(self.limit_videos)
         if not video_uids:
-            logger.info("📭 Aucun segment non standard trouvé — base à jour.")
+            self.logger.info("📭 Aucun segment non standard trouvé — base à jour.")
             return 0
 
-        logger.info("🎬 %d vidéos candidates détectées", len(video_uids))
+        self.logger.info("🎬 %d vidéos candidates détectées", len(video_uids))
 
         # 2️⃣ Parcourir les vidéos et segments
         for uid in video_uids:
             video = repo.get_video_with_segments(uid)
             if not video:
-                logger.warning("⚠️ Vidéo UID introuvable : %s", uid)
+                self.logger.warning("⚠️ Vidéo UID introuvable : %s", uid)
                 continue
 
-            logger.info("🎞️ Vidéo '%s' (%d segments)", video.name, len(video.segments))
+            self.logger.info("🎞️ Vidéo '%s' (%d segments)", video.name, len(video.segments))
 
             # Sélectionne les segments hors standard
-            prepared = self._prepare_segments(video, logger=logger)
+            prepared = self._prepare_segments(video, logger=self.logger)
 
             if not prepared:
-                logger.info("ℹ️ Tous les segments de %s sont conformes.", video.name)
+                self.logger.info("ℹ️ Tous les segments de %s sont conformes.", video.name)
                 video.status = "validated"
                 repo.update_video(video)
                 continue
 
             # 3️⃣ Transaction : copie + maj DB
-            with Timer(f"Traitement Comfyui pour la vidéo : {video.name}", logger):
+            with Timer(f"Traitement Comfyui pour la vidéo : {video.name}", self.logger):
                 try:
                     video.status = "processing_router"
                     repo.update_video(video)
@@ -97,17 +94,17 @@ class RouterWorker:
                         current_hour = datetime.now().hour
                         router_allowed = current_hour not in forbidden_hours
                         if router_allowed:
-                            with Timer(f"Traitement du segment : {seg.filename_predicted}", logger):
+                            with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
                                 delete_files(path=OUTPUT_DIR, ext="*.png")
                                 delete_files(path=OUTPUT_DIR, ext="*.mp4")
-                                processor = VideoProcessor(segment=seg, logger=logger)
-                                new_seg = processor.process(Path(dst), logger=logger)
+                                processor = VideoProcessor(segment=seg, logger=self.logger)
+                                new_seg = processor.process(Path(dst), logger=self.logger)
                                 repo.update_segment_postprocess(new_seg)
-                                logger.debug(f"new_seg {new_seg}")
+                                self.logger.debug(f"new_seg {new_seg}")
 
                                 processed_count += 1
                         else:
-                            logger.info(
+                            self.logger.info(
                                 f"{COLOR_RED}🌙 Plage horaire silencieuse — Router désactivé (SmartCut forcé)\
                                     {COLOR_RESET}"
                             )
@@ -118,7 +115,7 @@ class RouterWorker:
                     video.status = "enhanced"
                     repo.update_video(video)
 
-                    logger.info("📬 Vidéo %s envoyée vers Router (%d segments).", video.uid, len(prepared))
+                    self.logger.info("📬 Vidéo %s envoyée vers Router (%d segments).", video.uid, len(prepared))
 
                 except CutMindError as err:
                     raise err.with_context(
@@ -132,11 +129,11 @@ class RouterWorker:
                     ) from exc
 
         if processed_count == 0:
-            logger.info("📭 Aucun segment traité lors de ce cycle.")
+            self.logger.info("📭 Aucun segment traité lors de ce cycle.")
         else:
-            logger.info("✅ %d segments envoyés et traités via Router.", processed_count)
+            self.logger.info("✅ %d segments envoyés et traités via Router.", processed_count)
 
-        logger.info("🏁 Cycle RouterWorker terminé.")
+        self.logger.info("🏁 Cycle RouterWorker terminé.")
         return processed_count
 
     # ---------------------------------------------------------

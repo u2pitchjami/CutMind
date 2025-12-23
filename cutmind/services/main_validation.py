@@ -27,7 +27,7 @@ def validation(manual: bool = False, logger: LoggerProtocol | None = None) -> No
             # --- Validation automatique ---
             try:
                 with Timer(f"Traitement de Validation : {video.name}", logger):
-                    result = analyze_session_validation_db(video=video, min_confidence=MIN_CONFIDENCE)
+                    result = analyze_session_validation_db(video=video, min_confidence=MIN_CONFIDENCE, logger=logger)
                     auto_valid = result["auto_valid"]
                     valid = result["valid"]
                     total = result["total"]

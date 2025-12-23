@@ -12,6 +12,7 @@ from comfyui_router.executors.comfyui.comfyui_workflow import (
 )
 from comfyui_router.models_cr.videojob import VideoJob
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
 
 settings = get_settings()
@@ -19,16 +20,18 @@ MIN_SIZE = settings.router_optimal_batch_size.min_size
 
 
 class ComfyWorkflowManager:
-    def prepare_workflow(self, video_job: VideoJob) -> dict[str, Any] | None:
+    @with_child_logger
+    def prepare_workflow(self, video_job: VideoJob, logger: LoggerProtocol | None = None) -> dict[str, Any] | None:
         """
         Définit et charge le workflow adapté.
         """
+        logger = ensure_logger(logger, __name__)
         wf_path = route_workflow(video_job.path)
         if not wf_path:
             return None
         try:
             # 🧠 Calcul du batch adaptatif
-            video_job.apply_adaptive_batch(wf_path)
+            video_job.apply_adaptive_batch(wf_path, logger=logger)
             video_job.workflow_path = wf_path
             video_job.workflow_name = wf_path.stem
             # 🔢 Calcul concret des lots à partir du batch max déterminé

@@ -109,16 +109,17 @@ class FileMover:
                 ) from err
 
     @staticmethod
-    def safe_replace(src: Path, dst: Path) -> None:
+    @with_child_logger
+    def safe_replace(src: Path, dst: Path, logger: LoggerProtocol | None = None) -> None:
         """
         Remplace un fichier même entre FS différents.
         Copie → fsync → rename atomique.
         """
-
+        logger = ensure_logger(logger, __name__)
         # Vérification safe du fichier source
         from shared.utils.fs import safe_file_check
 
-        safe_file_check(src)
+        safe_file_check(src, logger=logger)
 
         try:
             dst.parent.mkdir(parents=True, exist_ok=True)

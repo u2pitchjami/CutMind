@@ -24,6 +24,7 @@ class KeywordNormalizer:
     Normalise les mots-clés via un mapping manuel, embeddings et fichiers JSON.
     """
 
+    @with_child_logger
     def __init__(
         self,
         model_name: str = MODEL_NAME,
@@ -31,16 +32,18 @@ class KeywordNormalizer:
         mode: str = MODE,  # "full", "strict" ou "mixed"
         mapping_path: Path = KW_MAPPING_FILE_SC,
         forbidden_path: Path = KW_FORBIDDEN_FILE_SC,
+        logger: LoggerProtocol | None = None,
     ) -> None:
+        logger = ensure_logger(logger, __name__)
         self.model = SentenceTransformer(model_name)
         self.threshold = threshold
-        self.mapping = self._load_mapping(mapping_path)
-        self.forbidden = self._load_forbidden(forbidden_path)
-        self.cache = self._load_cache()
+        self.mapping = self._load_mapping(mapping_path, logger)
+        self.forbidden = self._load_forbidden(forbidden_path, logger)
+        self.cache = self._load_cache(logger)
         self.mode = mode
         # Tri et sauvegarde automatique des fichiers au démarrage
-        self._save_mapping()
-        self._save_forbidden()
+        self._save_mapping(logger)
+        self._save_forbidden(logger)
 
         if self.mode not in {"full", "strict", "mixed"}:
             raise ValueError("Mode invalide : choisissez 'full', 'strict' ou 'mixed'.")
@@ -222,7 +225,7 @@ class KeywordNormalizer:
             return norm
 
         candidates = list(set(self.mapping.values()))
-        norm = self._normalize_with_embeddings(word, candidates)
+        norm = self._normalize_with_embeddings(word, candidates, logger)
         logger.debug(f"norm = {norm}")
         self.cache[word] = norm
         self._save_cache()

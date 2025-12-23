@@ -36,7 +36,7 @@ from shared.utils.config import (
     IMPORT_DIR_SC,
     OUTPUT_DIR_SC,
 )
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, get_logger, with_child_logger
 from shared.utils.settings import get_settings
 from smartcut.lite.smartcut_lite import lite_cut
 from smartcut.smartcut import multi_stage_cut
@@ -87,9 +87,8 @@ def auto_clean_gpu(max_wait_sec: int = 30, logger: LoggerProtocol | None = None)
 # ============================================================
 # 📦 Traitement SmartCut complet
 # ============================================================
-@with_child_logger
-def process_smartcut_video(video_path: Path, logger: LoggerProtocol | None = None) -> None:
-    logger = ensure_logger(logger, __name__)
+def process_smartcut_video(video_path: Path) -> None:
+    logger = get_logger("CutMind-SmartCut")
     try:
         logger.info(f"🚀 SmartCut (complet) : {video_path.name}")
 
@@ -107,13 +106,12 @@ def process_smartcut_video(video_path: Path, logger: LoggerProtocol | None = Non
         ) from exc
 
 
-@with_child_logger
-def process_smartcut_folder(folder_path: Path, logger: LoggerProtocol | None = None) -> None:
+def process_smartcut_folder(folder_path: Path) -> None:
     """Flow SmartCut Lite (segments déjà présents dans un dossier)."""
-    logger = ensure_logger(logger, __name__)
+    logger = get_logger("CutMind-SmartCutLite")
     try:
         logger.info(f"🚀 SmartCut Lite : dossier {folder_path.name}")
-        lite_cut(directory_path=folder_path, logger=logger)
+        lite_cut(directory_path=folder_path)
 
     except CutMindError as err:
         auto_clean_gpu(logger=logger)
@@ -146,12 +144,12 @@ def process_smartcut_batch(
     try:
         count = 0
         for video_path in videos:
-            process_smartcut_video(video_path, logger=logger)
+            process_smartcut_video(video_path)
             count += 1
             if count >= max_items:
                 return count
         for folder_path in dirs:
-            process_smartcut_folder(folder_path, logger=logger)
+            process_smartcut_folder(folder_path)
             count += 1
             if count >= max_items:
                 return count
@@ -265,8 +263,8 @@ def orchestrate(priority: str = "smartcut", logger: LoggerProtocol | None = None
                     f"{COLOR_BLUE}🚀 Lancement RouterWorker ({router_pending} vidéos non conformes){COLOR_RESET}"
                 )
                 try:
-                    worker = RouterWorker(limit_videos=CM_NB_VID_ROUTER, logger=logger)
-                    worker.run(logger=logger)
+                    worker = RouterWorker(limit_videos=CM_NB_VID_ROUTER)
+                    worker.run()
                     batch_router = router_pending
                     total_router += batch_router
                 except CutMindError as exc:

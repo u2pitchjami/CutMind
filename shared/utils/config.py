@@ -112,6 +112,7 @@ VISIBLE_ROOT: Path = Path(get_path_required("VISIBLE_ROOT"))
 
 WORKFLOW_MAP: dict[str, Path] = {
     "1080p": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 1080p.json",
+    "2160p": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 1080p.json",
     "720p": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 720p.json",
     "720p_nofps": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 720p-nofps.json",
     "Autres": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion Autres.json",
