@@ -19,10 +19,9 @@ from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode
 from shared.services.video_preparation import prepare_video
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
 
 
-@with_child_logger
 def load_segments_from_directory(video: Video, directory_path: Path, logger: LoggerProtocol | None = None) -> None:
     """
     Crée un Segment() pour chaque fichier vidéo du dossier,

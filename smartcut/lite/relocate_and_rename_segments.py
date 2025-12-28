@@ -9,12 +9,11 @@ import shutil
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Video
 from shared.utils.config import OUTPUT_DIR_SC
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.safe_segments import safe_segments
 
 
 @safe_segments
-@with_child_logger
 def relocate_and_rename_segments(
     session: Video, output_dir: Path = OUTPUT_DIR_SC, logger: LoggerProtocol | None = None
 ) -> None:

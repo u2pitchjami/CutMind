@@ -195,11 +195,6 @@ class VideoProcessor:
                 shutil.move(job.output_file, final_output)
 
             # move_to_trash(file_path=job.path, trash_root=TRASH_DIR)
-            cleanup_outputs(video_path.stem, final_output, OUTPUT_DIR)
-            logger.debug(f"🧹 Supprimé : {video_path.stem}")
-            purge_old_trash(trash_root=TRASH_DIR, days=PURGE_DAYS, logger=logger)
-            logger.info(f"🧹 Nettoyage des fichiers intermédiaires terminé pour {video_path.stem}")
-            logger.info(f"✅ Terminé : {final_output.name}")
             logger.debug(f"for _notif -> final_output : {final_output}")
             self._notify_cutmind(job, final_output, logger=logger)
             logger.debug("sortie notify")
@@ -223,6 +218,11 @@ class VideoProcessor:
             logger.debug(f"new_seg : {new_seg}")
             self.log_summary(job=job, meta=meta, logger=logger)
             logger.debug("sortie summary")
+            cleanup_outputs(video_path.stem, final_output, OUTPUT_DIR)
+            logger.debug(f"🧹 Supprimé : {video_path.stem}")
+            purge_old_trash(trash_root=TRASH_DIR, days=PURGE_DAYS, logger=logger)
+            logger.info(f"🧹 Nettoyage des fichiers intermédiaires terminé pour {video_path.stem}")
+            logger.info(f"✅ Terminé : {final_output.name}")
             return new_seg
 
         except CutMindError as err:
@@ -265,6 +265,7 @@ class VideoProcessor:
 
             # --- 🛠️ Remplacement
             try:
+                logger.debug("appel safe_replace : final_output=%s, target_path=%s", final_output, target_path)
                 FileMover.safe_replace(final_output, target_path, logger)
                 logger.info("📦 Fichier remplacé (via safe_copy) : %s → %s", final_output.name, target_path)
 

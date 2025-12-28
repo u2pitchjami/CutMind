@@ -20,7 +20,7 @@ from cutmind.process.file_mover import FileMover
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
 from shared.utils.config import CM_NB_VID_ROUTER, COLOR_RED, COLOR_RESET, INPUT_DIR, OUTPUT_DIR
-from shared.utils.logger import LoggerProtocol, ensure_logger, get_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, get_logger
 from shared.utils.settings import get_settings
 from shared.utils.trash import delete_files
 
@@ -156,7 +156,7 @@ class RouterWorker:
     # ---------------------------------------------------------
     # 🧩 Prépare les segments non conformes d'une vidéo
     # ---------------------------------------------------------
-    @with_child_logger
+
     def _prepare_segments(self, video: Video, logger: LoggerProtocol | None = None) -> list[tuple[Segment, Path, Path]]:
         """Construit la liste des segments à déplacer pour Router."""
         logger = ensure_logger(logger, __name__)

@@ -28,7 +28,7 @@ from cutmind.process.file_mover import CUTMIND_BASEDIR, FileMover, sanitize
 from cutmind.services.categ.categ_serv import match_category
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import OUTPUT_DIR_SC
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.remove_empty_dirs import remove_empty_dirs
 from shared.utils.safe_segments import safe_segments
 from smartcut.services.analyze.analyze_from_cutmind import analyze_from_cutmind
@@ -38,7 +38,6 @@ from smartcut.services.analyze.analyze_from_cutmind import analyze_from_cutmind
 # ⚙️ Validation automatique d'une vidéo
 # =====================================================================
 @safe_segments
-@with_child_logger
 def analyze_session_validation_db(
     video: Video, min_confidence: float = 0.45, logger: LoggerProtocol | None = None
 ) -> dict[str, Any]:

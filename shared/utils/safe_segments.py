@@ -29,7 +29,7 @@ def safe_segments(func: Callable[..., Any]) -> Callable[..., Any]:
             if isinstance(item, Segment):
                 if not item.output_path:
                     raise RuntimeError(f"Segment sans output_path : {item.uid}")
-                safe_file_check(Path(item.output_path), logger)
+                safe_file_check(Path(item.output_path))
             elif isinstance(item, Video):
                 for seg in item.segments:
                     validate_item(seg)

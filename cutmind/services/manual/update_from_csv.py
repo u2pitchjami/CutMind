@@ -24,7 +24,7 @@ from cutmind.executors.manual.manual_utils import (
     summarize_import,
     write_csv_log,
 )
-from cutmind.process.recut_segment import parse_recut_points, perform_recut
+from cutmind.executors.manual.recut_segment import parse_recut_points, perform_recut
 from cutmind.services.main_validation import validation
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import CSV_LOG_PATH, MANUAL_CSV_PATH, TRASH_DIR_SC

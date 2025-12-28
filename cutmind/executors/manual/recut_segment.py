@@ -10,7 +10,7 @@ from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Segment
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import TRASH_DIR_SC
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
 from shared.utils.trash import move_to_trash
 from smartcut.executors.ffmpeg_cut_executor import FfmpegCutExecutor
@@ -23,7 +23,6 @@ VCODEC = settings.smartcut.vcodec_gpu if USE_CUDA else settings.smartcut.vcodec_
 CRF = settings.smartcut.crf
 
 
-@with_child_logger
 def perform_recut(
     segment: Segment,
     recut_points: list[float],

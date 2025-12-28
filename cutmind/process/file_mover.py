@@ -9,7 +9,7 @@ from cutmind.models_cm.db_models import Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import CUTMIND_BASEDIR
 from shared.utils.fs import safe_file_check
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
 
 
 def sanitize(name: str) -> str:
@@ -30,7 +30,6 @@ class FileMover:
     def __init__(self) -> None:
         pass
 
-    @with_child_logger
     def move_video_files(
         self, video: Video, planned_targets: dict[str, Path], logger: LoggerProtocol | None = None
     ) -> bool:
@@ -109,15 +108,24 @@ class FileMover:
                 ) from err
 
     @staticmethod
-    @with_child_logger
     def safe_replace(src: Path, dst: Path, logger: LoggerProtocol | None = None) -> None:
         """
         Remplace un fichier même entre FS différents.
         Copie → fsync → rename atomique.
         """
         logger = ensure_logger(logger, __name__)
+        import uuid
+
+        move_id = uuid.uuid4().hex[:8]
+        logger.debug(
+            "MOVE[%s] start | src=%s | dst=%s",
+            move_id,
+            src,
+            dst,
+        )
+        print(f"entrée sage_replace : src={src}, dst={dst}")
+        logger.debug("⏳ Déplacement sécurisé %s -> %s", src, dst)
         # Vérification safe du fichier source
-        from shared.utils.fs import safe_file_check
 
         safe_file_check(src, logger=logger)
 
@@ -134,7 +142,7 @@ class FileMover:
             # Suppression du fichier source
             if src.exists():
                 os.remove(src)
-
+            logger.debug("MOVE[%s] done", move_id)
         except Exception:
             try:
                 if tmp_path.exists():

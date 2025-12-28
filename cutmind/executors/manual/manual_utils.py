@@ -18,7 +18,7 @@ from typing import Any
 
 from cutmind.models_cm.db_models import Segment
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
 
 NULL_EQUIVALENTS = {"", "null", "none", "nan", "n/a"}
 
@@ -143,7 +143,6 @@ def write_csv_log(path: Path, rows: list[dict[str, str]]) -> None:
             writer.writerow({"timestamp": now, **r})
 
 
-@with_child_logger
 def summarize_import(stats: dict[str, int], csv_log: Path, logger: LoggerProtocol | None = None) -> None:
     """Affiche le résumé du traitement."""
     logger = ensure_logger(logger, __name__)
