@@ -5,25 +5,39 @@ from __future__ import annotations
 from pathlib import Path
 import shutil
 
-from pymediainfo import MediaInfo
-
-from comfyui_router.comfyui.comfyui_command import comfyui_path
-from comfyui_router.ffmpeg.deinterlace import ensure_deinterlaced
+from comfyui_router.executors.comfyui.comfyclient import ComfyClientREST
+from comfyui_router.executors.comfyui.comfyui_command import comfyui_path
+from comfyui_router.executors.output import cleanup_outputs
 from comfyui_router.ffmpeg.ffmpeg_command import convert_to_60fps
-from comfyui_router.ffmpeg.smart_recut_hybrid import smart_recut_hybrid
 from comfyui_router.models_cr.comfy_workflow_manager import ComfyWorkflowManager
 from comfyui_router.models_cr.output_manager import OutputManager
+from comfyui_router.models_cr.processed_segment import ProcessedSegment
 from comfyui_router.models_cr.videojob import VideoJob
-from comfyui_router.output.output import cleanup_outputs
-from cutmind.db.data_utils import format_resolution
-from cutmind.db.repository import CutMindRepository
-from cutmind.models_cm.db_models import Video
+from comfyui_router.services.smart_recut_hybrid import smart_recut_hybrid
+from cutmind.models_cm.db_models import Segment
 from cutmind.process.file_mover import FileMover
-from shared.ffmpeg.ffmpeg_utils import detect_nvenc_available, get_fps, get_resolution
-from shared.utils.config import OK_DIR, OUTPUT_DIR, TRASH_DIR
+from shared.executors.ffmpeg_utils import detect_nvenc_available
+from shared.executors.ffprobe_utils import get_fps, get_resolution, get_total_frames, has_audio
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.services.ensure_deinterlaced import ensure_deinterlaced
+from shared.services.ensure_resolution import ensure_resolution
+from shared.services.video_preparation import VideoPrepared, prepare_video
+from shared.utils.config import (
+    COLOR_BLUE,
+    COLOR_CYAN,
+    COLOR_GREEN,
+    COLOR_PURPLE,
+    COLOR_RED,
+    COLOR_RESET,
+    COLOR_YELLOW,
+    OK_DIR,
+    OUTPUT_DIR,
+    TRASH_DIR,
+)
+from shared.utils.datas import resolution_str_to_tuple
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
-from shared.utils.trash import move_to_trash, purge_old_trash
+from shared.utils.trash import purge_old_trash
 
 settings = get_settings()
 
@@ -38,180 +52,335 @@ class VideoProcessor:
     @with_child_logger
     def __init__(
         self,
-        cutmind_repo: CutMindRepository | None = None,
-        video: Video | None = None,
+        segment: Segment | None = None,
         logger: LoggerProtocol | None = None,
     ) -> None:
         logger = ensure_logger(logger, __name__)
         self.workflow_mgr = ComfyWorkflowManager()
         self.output_mgr = OutputManager()
-        self.repo = cutmind_repo
-        self.video = video
+        self.segment = segment
 
     @with_child_logger
     def process(
         self, video_path: Path, force_deinterlace: bool = FORCE_DEINTERLACE, logger: LoggerProtocol | None = None
-    ) -> None:
+    ) -> ProcessedSegment:
         logger = ensure_logger(logger, __name__)
-        if not self.video or not self.video.name:
-            logger.warning("🚨 Vidéo inconnue")
-            return
+        if not self.segment or not self.segment.output_path or not self.segment.id or not self.segment.uid:
+            raise CutMindError(
+                "❌ Erreur inattendue : Vidéo inconnue.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"video_path": str(video_path)}),
+            )
 
-        logger.info(f"🎞️ Traitement de {self.video.name} : {self.video.resolution} - {self.video.fps} fps")
-        logger.info(f"🚀 Début traitement ComfyUI : {video_path.name} sur {len(self.video.segments)}")
+        logger.info(
+            f"🎞️ Traitement de {self.segment.filename_predicted} : {self.segment.resolution} - {self.segment.fps} fps"
+        )
 
-        job = VideoJob(video_path)
-        job.analyze(logger=logger)
+        try:
+            job = VideoJob(video_path)
+            job.fps_in = self.segment.fps or get_fps(video_path)
+            job.resolution = (
+                resolution_str_to_tuple(self.segment.resolution)
+                if self.segment.resolution
+                else resolution_str_to_tuple(get_resolution(video_path))
+            )
+            job.has_audio = self.segment.has_audio or has_audio(video_path)
+            job.nb_frames = self.segment.nb_frames or get_total_frames(video_path)
+            job.codec_in = self.segment.codec
+            job.bitrate_in = self.segment.bitrate
+            job.filesize_mb_in = (
+                self.segment.filesize_mb
+                if self.segment.filesize_mb
+                else round(video_path.stat().st_size / (1024 * 1024), 2)
+            )
+            job.duration_in = self.segment.duration if self.segment.duration else prepare_video(video_path).duration
 
-        use_nvenc = detect_nvenc_available(logger=logger)
-        if use_nvenc:
-            cuda = True
-        else:
-            cuda = False
+            use_nvenc = detect_nvenc_available()
+            if use_nvenc:
+                cuda = True
+            else:
+                cuda = False
 
-        # 🧩 Étape 2 : détection / désentrelacement
-        video_path = ensure_deinterlaced(video_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
-        video_path = smart_recut_hybrid(video_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
-        job.path = Path(video_path)
-        job.comfyui_path = comfyui_path(full_path=video_path)
-        workflow = self.workflow_mgr.prepare_workflow(job, logger=logger)
-        if not workflow:
-            return
+            # 🧩 Étape 2 : détection / désentrelacement
+            video_path = ensure_deinterlaced(video_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
+            job.path = Path(video_path)
+            job.comfyui_path = comfyui_path(full_path=video_path)
+            workflow = self.workflow_mgr.prepare_workflow(job, logger=logger)
+            if not workflow:
+                raise CutMindError(
+                    "❌ Ignorée (résolution trop basse).",
+                    code=ErrCode.VIDEO,
+                    ctx=get_step_ctx({"video_path": str(video_path)}),
+                )
 
-        if not self.workflow_mgr.run(workflow, logger=logger):
-            logger.warning(f"❌ Échec traitement ComfyUI : {job.path.name}")
-            return
+            # --- Lancement ComfyUI via REST
+            client = ComfyClientREST()
 
-        if not self.output_mgr.wait_for_output(job, logger=logger):
-            logger.warning(f"❌ Fichier de sortie introuvable : {job.path.name}")
-            return
+            client.set_on_start(lambda pid: logger.info(f"🚀 ComfyUI job démarré : {pid}"))
+            client.set_on_progress(lambda pid, status: logger.info(f"⏳ ComfyUI [{pid}] statut REST = {status}"))
+            client.set_on_error(lambda pid, err: logger.error(f"❌ ComfyUI erreur [{pid}] : {err}"))
+            client.set_on_complete(lambda pid, files: logger.info(f"🎉 ComfyUI terminé REST [{pid}] : {files}"))
 
-        if not job.output_file:
-            return
-        job.fps_out = get_fps(job.output_file)
-        job.resolution_out = get_resolution(job.output_file)
-        final_output = OK_DIR / job.output_file.name
-        logger.debug(f"✅ OK_DIR : {OK_DIR}, TRASH_DIR : {TRASH_DIR}")
-        logger.debug(f"✅ Fichier de sortie trouvé : {final_output}")
+            # 🟦 Étape 1 : envoi du workflow
+            prompt_id = client.submit_prompt(workflow)
 
-        if job.fps_out > 60:
-            temp_output = final_output.with_name(f"{job.path.stem}_60fps.mp4")
-            logger.debug(f"fps_out > 60 -> temp_output : {temp_output}")
-            if convert_to_60fps(job.output_file, temp_output, logger=logger):
-                job.output_file.unlink()
-                final_output = temp_output
-                logger.debug(f"fps_out > 60 -> final_output : {final_output}")
-        elif job.fps_out < 59:
-            retry_path = job.path.parent / f"{job.path.name}"
-            logger.debug(f"fps_out < 60 -> retry_path : {retry_path}")
-            self._notify_cutmind(job, retry_path, status="rejected", logger=logger)
-            # shutil.move(job.output_file, retry_path)
-            logger.info(f"↩️ Rejet : {job.path.name} (FPS {job.fps_out:.2f})")
+            # 🟧 Étape 2 : Attente REST LIGHT (ne bloque pas le Processor longtemps)
+            client.wait_for_completion(
+                prompt_id,
+                timeout=20,  # Très court → juste vérifier que le workflow part bien
+                poll_interval=1.0,
+            )
 
-            return
-        else:
-            shutil.move(job.output_file, final_output)
+            logger.info("📡 ComfyUI REST OK → surveillance réelle par OutputManager...")
 
-        move_to_trash(file_path=job.path, trash_root=TRASH_DIR, logger=logger)
-        cleanup_outputs(video_path.stem, final_output, OUTPUT_DIR, logger=logger)
-        purge_old_trash(trash_root=TRASH_DIR, days=PURGE_DAYS, logger=logger)
-        logger.info(f"🧹 Nettoyage des fichiers intermédiaires terminé pour {video_path.stem}")
-        logger.info(f"✅ Terminé : {final_output.name}")
-        logger.debug(f"for _notif -> final_output : {final_output}")
-        self._notify_cutmind(job, final_output, status="enhanced", logger=logger)
+            # 🟥 Étape 3 : attente basée sur le vrai fichier généré
+            output_path = self.output_mgr.wait_for_output(video_job=job, logger=logger)
+
+            if output_path is None:
+                raise CutMindError(
+                    "❌ Workflow ComfyUI terminé mais aucun fichier de sortie détecté.",
+                    code=ErrCode.VIDEO,
+                    ctx=get_step_ctx({"video_path": str(video_path)}),
+                )
+            output_path_srh = smart_recut_hybrid(output_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
+            # 🔧 Définition officielle du fichier final
+            job.output_file = output_path_srh
+            logger.info(f"📦 Fichier final détecté : {job.output_file}")
+
+            meta = prepare_video(job.output_file)
+            job.fps_out = meta.fps
+            job.resolution_out = resolution_str_to_tuple(meta.resolution)
+            final_output = OK_DIR / job.output_file.name
+            res_out = job.resolution_out
+            job.output_file, job.resolution_out = ensure_resolution(job.path, job.resolution_out, logger=logger)
+            if job.resolution_out != res_out:
+                self.segment.add_tag("resolution_fixed")
+            logger.debug(f"✅ OK_DIR : {OK_DIR}, TRASH_DIR : {TRASH_DIR}")
+            logger.debug(f"✅ Fichier de sortie trouvé : {final_output}")
+
+            try:
+                if meta.duration and self.segment.duration:
+                    expected = round(self.segment.duration, 3)
+                    delta = abs(meta.duration - expected)
+                    ratio = delta / expected if expected else 0
+
+                    if delta > DELTA_DURATION or ratio > RATIO_DURATION:
+                        logger.warning(
+                            "⏱️ ⚠️ Écart de durée segment %s : attendu=%.2fs / réel=%.2fs (∆ %.2fs, %.1f%%)",
+                            self.segment.id,
+                            expected,
+                            meta.duration,
+                            delta,
+                            ratio * 100,
+                        )
+                        if self.segment.tags == "" or "duration_warning" not in self.segment.tags:
+                            self.segment.add_tag("duration_warning")
+                elif not meta.duration:
+                    logger.warning("⏱️ Impossible de lire la durée de sortie pour %s", final_output)
+
+            except Exception as dur_err:
+                logger.error("❌ Erreur analyse durée finale : %s", final_output)
+                logger.exception(str(dur_err))
+
+            if job.fps_out > 60:
+                temp_output = final_output.with_name(f"{job.path.stem}_60fps.mp4")
+                logger.debug(f"fps_out > 60 -> temp_output : {temp_output}")
+                if convert_to_60fps(job.output_file, temp_output):
+                    logger.info(f"✅ Conversion 60 FPS terminée : {job.path.stem}")
+                    job.output_file.unlink()
+                    final_output = temp_output
+                    logger.debug(f"fps_out > 60 -> final_output : {final_output}")
+                    job.fps_out = get_fps(final_output)
+            else:
+                shutil.move(job.output_file, final_output)
+
+            # move_to_trash(file_path=job.path, trash_root=TRASH_DIR)
+            logger.debug(f"for _notif -> final_output : {final_output}")
+            self._notify_cutmind(job, final_output, logger=logger)
+            logger.debug("sortie notify")
+            # --- Mise à jour DB
+
+            new_seg = ProcessedSegment(
+                id=self.segment.id,
+                status="enhanced",
+                source_flow="comfyui_router",
+                fps=job.fps_out,
+                resolution=meta.resolution,
+                nb_frames=meta.nb_frames,
+                codec=meta.codec,
+                bitrate=meta.bitrate,
+                filesize_mb=meta.filesize_mb,
+                tags=self.segment.tags,
+                duration=meta.duration,
+                processed_by="comfyui_router",
+                output_path=Path(self.segment.output_path),
+            )
+            logger.debug(f"new_seg : {new_seg}")
+            self.log_summary(job=job, meta=meta, logger=logger)
+            logger.debug("sortie summary")
+            cleanup_outputs(video_path.stem, final_output, OUTPUT_DIR)
+            logger.debug(f"🧹 Supprimé : {video_path.stem}")
+            purge_old_trash(trash_root=TRASH_DIR, days=PURGE_DAYS, logger=logger)
+            logger.info(f"🧹 Nettoyage des fichiers intermédiaires terminé pour {video_path.stem}")
+            logger.info(f"✅ Terminé : {final_output.name}")
+            return new_seg
+
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx({"segment": self.segment.filename_predicted})) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur innatendue Processor Comfyui.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"job.path.name": job.path.name, "segment": self.segment.filename_predicted}),
+            ) from exc
 
     @with_child_logger
     def _notify_cutmind(
         self,
         job: VideoJob,
         final_output: Path,
-        status: str,
-        replace_original: bool = True,
         logger: LoggerProtocol | None = None,
     ) -> None:
         logger = ensure_logger(logger, __name__)
 
-        if not self.repo:
-            return
-
+        if not self.segment or not self.segment.id:
+            raise CutMindError(
+                "❌ Erreur inattendue : Vidéo inconnue.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"video_path": str(job.path)}),
+            )
         try:
-            seg_uid = job.path.stem.split("_")[2]
-            seg = self.repo.get_segment_by_uid(seg_uid, logger=logger)
-            logger.debug(f"_notify_cutmind seg_uid : {seg_uid}")
+            if not self.segment.output_path:
+                raise CutMindError(
+                    "❌ Segment sans chemin de sortie défini.",
+                    code=ErrCode.NOFILE,
+                    ctx=get_step_ctx({"seg_id": self.segment.id, "job.path": str(job.path)}),
+                )
 
-            if not seg:
-                logger.warning("⚠️ Segment UID introuvable : %s", seg_uid)
-                return
+            target_path = Path(self.segment.output_path)
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            logger.debug(f"🔄 Remplacement direct par copie transactionnelle : {final_output} → {target_path}")
 
-            if replace_original:
-                if not seg.output_path:
-                    logger.error("❌ Segment sans chemin de sortie défini : %s", seg.uid)
-                    return
+            # --- ⚠️ Vérification durée avant remplacement ---
 
-                target_path = Path(seg.output_path)
-                target_path.parent.mkdir(parents=True, exist_ok=True)
-                logger.debug(f"🔄 Remplacement direct par copie transactionnelle : {final_output} → {target_path}")
+            # --- 🛠️ Remplacement
+            try:
+                logger.debug("appel safe_replace : final_output=%s, target_path=%s", final_output, target_path)
+                FileMover.safe_replace(final_output, target_path, logger)
+                logger.info("📦 Fichier remplacé (via safe_copy) : %s → %s", final_output.name, target_path)
 
-                # --- ⚠️ Vérification durée avant remplacement ---
-                try:
-                    media_info = MediaInfo.parse(final_output)
-                    duration_real = None
-                    for track in media_info.tracks:
-                        if track.track_type == "Video" and track.duration:
-                            duration_real = round(track.duration / 1000, 3)
-                            break
+            except Exception as move_err:
+                raise CutMindError(
+                    "❌ Impossible de déplacer le fichier.",
+                    code=ErrCode.NOFILE,
+                    ctx=get_step_ctx(
+                        {
+                            "final_output": final_output,
+                            "target_path": target_path,
+                            "seg_id": self.segment.id,
+                            "job.path": str(job.path),
+                        }
+                    ),
+                ) from move_err
 
-                    if duration_real and seg.duration:
-                        expected = round(seg.duration, 3)
-                        delta = abs(duration_real - expected)
-                        ratio = delta / expected if expected else 0
+            if not target_path.exists():
+                raise CutMindError(
+                    "❌ Fichier manquant après remplacement.",
+                    code=ErrCode.NOFILE,
+                    ctx=get_step_ctx(
+                        {
+                            "final_output": final_output,
+                            "target_path": target_path,
+                            "seg_id": self.segment.id,
+                            "job.path": str(job.path),
+                        }
+                    ),
+                )
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx({"seg_id": self.segment.id})) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur innatendue notification CutMind.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"job.path.name": job.path.name, "seg_uid": self.segment.uid}),
+            ) from exc
 
-                        if delta > DELTA_DURATION or ratio > RATIO_DURATION:
-                            logger.warning(
-                                "⏱️ ⚠️ Écart de durée segment %s : attendu=%.2fs / réel=%.2fs (∆ %.2fs, %.1f%%)",
-                                seg.uid,
-                                expected,
-                                duration_real,
-                                delta,
-                                ratio * 100,
-                            )
-                            if "duration_warning" not in seg.tags:
-                                seg.add_tag("duration_warning")
-                    elif not duration_real:
-                        logger.warning("⏱️ Impossible de lire la durée de sortie pour %s", final_output)
+    @with_child_logger
+    def log_summary(self, job: VideoJob, meta: VideoPrepared, logger: LoggerProtocol | None = None) -> None:
+        """
+        Log un résumé coloré du traitement ComfyUI avec gestion robuste des valeurs None.
+        """
+        logger = ensure_logger(logger, __name__)
+        logger.debug("entrée summary")
 
-                except Exception as dur_err:
-                    logger.error("❌ Erreur analyse durée finale : %s", final_output)
-                    logger.exception(str(dur_err))
+        # Helpers sûrs
+        def fmt_float(v: float | int | None) -> str:
+            if v is None:
+                return "N/A"
+            try:
+                return f"{float(v):.2f}"
+            except Exception:
+                return "N/A"
 
-                # --- 🛠️ Remplacement
-                try:
-                    FileMover.safe_replace(final_output, target_path, logger=logger)
-                    logger.info("📦 Fichier remplacé (via safe_copy) : %s → %s", final_output.name, target_path)
+        logger.debug("fin fmt_float")
 
-                except Exception as move_err:
-                    logger.error("❌ Impossible de déplacer le fichier : %s → %s", final_output, target_path)
-                    logger.exception(str(move_err))
-                    return
+        def fmt_tuple(t: tuple[int, int] | None) -> str:
+            if isinstance(t, tuple) and len(t) == 2:
+                return f"{t[0]}x{t[1]}"
+            return "N/A"
 
-                if not target_path.exists():
-                    logger.error("❌ Fichier manquant après remplacement : %s", target_path)
-                    return
+        logger.debug("fin fmt_str")
 
-            else:
-                logger.info("ℹ️ Remplacement original désactivé — fichier conservé dans OK_DIR")
+        def fmt_str(v: str | None) -> str:
+            return v if isinstance(v, str) else "N/A"
 
-            # --- Mise à jour DB
-            seg.status = status
-            seg.source_flow = "comfyui_router"
-            seg.fps = getattr(job, "fps_out", None)
-            seg.resolution = format_resolution(job.resolution_out, logger=logger)
-            seg.processed_by = job.workflow_name or "comfyui_router"
-            if not replace_original:
-                seg.output_path = str(final_output)
+        logger.info(f"{COLOR_PURPLE}🧾 Résumé traitement ComfyUI pour : {COLOR_CYAN}{job.path.name}{COLOR_RESET}")
 
-            self.repo.update_segment_postprocess(seg, logger=logger)
-            logger.info("🧠 CutMind synchronisé pour segment %s (%s)", seg.uid, status)
+        # 📌 FPS
+        logger.info(
+            f"{COLOR_BLUE}📌 FPS        : {COLOR_YELLOW}{fmt_float(job.fps_in)}"
+            f"{COLOR_RESET} → {COLOR_GREEN}{fmt_float(meta.fps)}{COLOR_RESET}"
+        )
 
-        except Exception as err:
-            logger.exception("❌ Erreur notification CutMind pour %s : %s", job.path.name, err)
+        # 📌 Résolution
+        logger.info(
+            f"{COLOR_BLUE}📌 Résolution : {COLOR_YELLOW}{fmt_tuple(job.resolution)}"
+            f"{COLOR_RESET} → {COLOR_GREEN}{fmt_tuple(job.resolution_out)}{COLOR_RESET}"
+        )
+
+        # 📌 Codec
+        logger.info(
+            f"{COLOR_BLUE}📌 Codec      : {COLOR_YELLOW}{fmt_str(job.codec_in)}"
+            f"{COLOR_RESET} → {COLOR_GREEN}{fmt_str(meta.codec)}{COLOR_RESET}"
+        )
+
+        # 📌 Bitrate
+        logger.info(
+            f"{COLOR_BLUE}📌 Bitrate    : {COLOR_YELLOW}{fmt_float(job.bitrate_in)} kbps"
+            f"{COLOR_RESET} → {COLOR_GREEN}{fmt_float(meta.bitrate)} kbps{COLOR_RESET}"
+        )
+
+        # 📌 Taille
+        logger.info(
+            f"{COLOR_BLUE}📌 Taille     : {COLOR_YELLOW}{fmt_float(job.filesize_mb_in)} MB"
+            f"{COLOR_RESET} → {COLOR_GREEN}{fmt_float(meta.filesize_mb)} MB{COLOR_RESET}"
+        )
+
+        # 📌 Frames
+        logger.info(
+            f"{COLOR_BLUE}📌 Frames     : {COLOR_YELLOW}{job.nb_frames}"
+            f"{COLOR_RESET} → {COLOR_GREEN}{meta.nb_frames if meta.nb_frames else 'N/A'}{COLOR_RESET}"
+        )
+
+        # 📌 Duration
+        logger.info(
+            f"{COLOR_BLUE}📌 Durée      : {COLOR_YELLOW}{fmt_float(job.duration_in)} s"
+            f"{COLOR_RESET} → {COLOR_GREEN}{fmt_float(meta.duration)} s{COLOR_RESET}"
+        )
+
+        # 📌 Audio
+        logger.info(
+            f"{COLOR_BLUE}📌 Audio      : "
+            f"{COLOR_GREEN if job.has_audio else COLOR_RED}"
+            f"{'Oui' if job.has_audio else 'Non'}{COLOR_RESET}"
+        )

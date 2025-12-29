@@ -11,10 +11,11 @@ Utilitaires sécurisés pour exécution SQL :
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from cutmind.models_cm.cursor_protocol import DictCursorProtocol, TupleCursorProtocol
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 
 ParamsType = tuple[Any, ...] | dict[str, Any]
 
@@ -22,34 +23,26 @@ ParamsType = tuple[Any, ...] | dict[str, Any]
 # -------------------------------------------------------------------
 # ⚙️ Exécution sécurisée
 # -------------------------------------------------------------------
-@with_child_logger
-def safe_execute_dict(
-    cursor: DictCursorProtocol, query: str, params: ParamsType | None = None, logger: LoggerProtocol | None = None
-) -> DictCursorProtocol:
+def safe_execute_dict(cursor: DictCursorProtocol, query: str, params: ParamsType | None = None) -> DictCursorProtocol:
     """Exécute une requête SQL sur un curseur dict avec gestion des erreurs."""
-    logger = ensure_logger(logger, __name__)
     try:
-        flush_dict_cursor(cursor, logger=logger)
+        flush_dict_cursor(cursor)
         cursor.execute(query, params or ())
         return cursor
     except Exception as exc:
-        logger.error("❌ Erreur SQL : %s", exc)
-        raise exc
+        raise CutMindError("❌ Erreur SQL", code=ErrCode.DB, ctx=get_step_ctx()) from exc
 
 
-@with_child_logger
 def safe_execute_tuple(
-    cursor: TupleCursorProtocol, query: str, params: ParamsType | None = None, logger: LoggerProtocol | None = None
+    cursor: TupleCursorProtocol, query: str, params: ParamsType | None = None
 ) -> TupleCursorProtocol:
     """Exécute une requête SQL sur un curseur tuple avec gestion des erreurs."""
-    logger = ensure_logger(logger, __name__)
     try:
-        flush_tuple_cursor(cursor, logger=logger)
+        flush_tuple_cursor(cursor)
         cursor.execute(query, params or ())
         return cursor
     except Exception as exc:
-        logger.error("❌ Erreur SQL : %s", exc)
-        raise exc
+        raise CutMindError("❌ Erreur SQL", code=ErrCode.DB, ctx=get_step_ctx()) from exc
 
 
 # -------------------------------------------------------------------
@@ -57,23 +50,23 @@ def safe_execute_tuple(
 # -------------------------------------------------------------------
 
 
-@with_child_logger
-def flush_tuple_cursor(cursor: TupleCursorProtocol, logger: LoggerProtocol | None = None) -> None:
+def flush_tuple_cursor(cursor: TupleCursorProtocol) -> None:
     """Vide proprement un curseur tuple (pour éviter 'Unread result found')."""
-    logger = ensure_logger(logger, __name__)
     try:
         while cursor.nextset():
             pass
     except Exception as exc:
-        logger.debug("Flush tuple ignoré (%s)", exc)
+        raise CutMindError("❌ Flush tuple ignoré", code=ErrCode.DB, ctx=get_step_ctx()) from exc
 
 
-@with_child_logger
-def flush_dict_cursor(cursor: DictCursorProtocol, logger: LoggerProtocol | None = None) -> None:
+def flush_dict_cursor(cursor: DictCursorProtocol) -> None:
     """Vide proprement un curseur dict (pour éviter 'Unread result found')."""
-    logger = ensure_logger(logger, __name__)
     try:
         while cursor.nextset():
             pass
     except Exception as exc:
-        logger.debug("Flush dict ignoré (%s)", exc)
+        raise CutMindError("❌ Flush dict ignoré", code=ErrCode.DB, ctx=get_step_ctx()) from exc
+
+
+def to_db_json(value: Any) -> str | None:
+    return json.dumps(value) if value is not None else None

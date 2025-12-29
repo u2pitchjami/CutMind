@@ -6,20 +6,22 @@ import re
 import shutil
 
 from cutmind.models_cm.db_models import Video
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import CUTMIND_BASEDIR
 from shared.utils.fs import safe_file_check
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
 
 
-@with_child_logger
-def sanitize(name: str, logger: LoggerProtocol | None = None) -> str:
-    logger = ensure_logger(logger, __name__)
+def sanitize(name: str) -> str:
     try:
         sanitized = re.sub(r'[<>:"/\\|?*]', " ", name)
         return sanitized
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.error("[sanitize_filename] erreur: %s", exc)
-        return "file"
+    except Exception as exc:
+        raise CutMindError(
+            "❌ Erreur inattendue lors du sanitize.",
+            code=ErrCode.UNEXPECTED,
+            ctx=get_step_ctx({"name": name}),
+        ) from exc
 
 
 class FileMover:
@@ -28,12 +30,11 @@ class FileMover:
     def __init__(self) -> None:
         pass
 
-    @with_child_logger
     def move_video_files(
         self, video: Video, planned_targets: dict[str, Path], logger: LoggerProtocol | None = None
     ) -> bool:
         logger = ensure_logger(logger, __name__)
-        safe_name = sanitize(video.name, logger=logger)
+        safe_name = sanitize(video.name)
         prepared = []
 
         try:
@@ -71,56 +72,69 @@ class FileMover:
 
             logger.info("✅ Déplacement réussi : %s (%d fichiers)", video.name, len(prepared))
             return True
-
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx({"video.name": video.name})) from err
         except Exception as err:
-            logger.exception("❌ Échec déplacement vidéo %s : %s", video.name, err)
-            self._cleanup(prepared, logger=logger)
-            return False
+            self._cleanup(prepared)
+            raise CutMindError(
+                "❌ Échec déplacement vidéo.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"video.name": video.name}),
+            ) from err
 
     @staticmethod
-    @with_child_logger
-    def safe_copy(src: Path, dst: Path, logger: LoggerProtocol | None = None) -> None:
-        logger = ensure_logger(logger, __name__)
+    def safe_copy(src: Path, dst: Path) -> None:
         try:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
-            logger.debug("📦 Copie réussie : %s → %s", src, dst)
-        except Exception as err:  # pylint: disable=broad-except
-            logger.error("❌ Erreur copie %s → %s : %s", src, dst, err)
-            raise
+        except Exception as err:
+            raise CutMindError(
+                "❌ Échec déplacement vidéo.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"src": src, "dst": dst}),
+            ) from err
 
     @staticmethod
-    @with_child_logger
-    def _cleanup(prepared: list[tuple[Path, Path, Path]], logger: LoggerProtocol | None = None) -> None:
-        logger = ensure_logger(logger, __name__)
+    def _cleanup(prepared: list[tuple[Path, Path, Path]]) -> None:
         for _, dst_temp, _ in prepared:
             try:
                 if dst_temp.exists():
                     dst_temp.unlink()
-                    logger.debug("🧹 Fichier temporaire supprimé : %s", dst_temp)
-            except Exception as cleanup_err:
-                logger.warning("⚠️ Échec nettoyage %s : %s", dst_temp, cleanup_err)
+            except Exception as err:
+                raise CutMindError(
+                    "❌ Échec nettoyage après échec déplacement.",
+                    code=ErrCode.UNEXPECTED,
+                    ctx=get_step_ctx({"dst_temp": dst_temp}),
+                ) from err
 
     @staticmethod
-    @with_child_logger
     def safe_replace(src: Path, dst: Path, logger: LoggerProtocol | None = None) -> None:
         """
         Remplace un fichier même entre FS différents.
         Copie → fsync → rename atomique.
         """
         logger = ensure_logger(logger, __name__)
+        import uuid
 
+        move_id = uuid.uuid4().hex[:8]
+        logger.debug(
+            "MOVE[%s] start | src=%s | dst=%s",
+            move_id,
+            src,
+            dst,
+        )
+        print(f"entrée sage_replace : src={src}, dst={dst}")
+        logger.debug("⏳ Déplacement sécurisé %s -> %s", src, dst)
         # Vérification safe du fichier source
-        from shared.utils.fs import safe_file_check
 
-        safe_file_check(src, logger)
+        safe_file_check(src, logger=logger)
 
         try:
             dst.parent.mkdir(parents=True, exist_ok=True)
             tmp_path = dst.with_suffix(dst.suffix + ".__moving__")
 
             # Copie sécurisée dans le temporaire
-            FileMover.safe_copy(src, tmp_path, logger=logger)
+            FileMover.safe_copy(src, tmp_path)
 
             # Remplacement atomique
             os.replace(tmp_path, dst)
@@ -128,15 +142,14 @@ class FileMover:
             # Suppression du fichier source
             if src.exists():
                 os.remove(src)
-
-            logger.info("✅ safe_replace: %s → %s", src, dst)
-
-        except Exception as err:
-            logger.error("❌ Erreur safe_replace %s → %s : %s", src, dst, err)
+            logger.debug("MOVE[%s] done", move_id)
+        except Exception:
             try:
                 if tmp_path.exists():
                     tmp_path.unlink()
-                    logger.debug("🧹 Temp supprimé : %s", tmp_path)
-            except Exception as cleanup_err:
-                logger.warning("⚠️ Échec cleanup %s : %s", tmp_path, cleanup_err)
-            raise
+            except Exception as err:
+                raise CutMindError(
+                    "❌ Échec cleanup.",
+                    code=ErrCode.UNEXPECTED,
+                    ctx=get_step_ctx({"tmp_path": tmp_path}),
+                ) from err

@@ -25,25 +25,24 @@ from pymysql.cursors import DictCursor
 
 from cutmind.models_cm.cursor_protocol import DictCursorProtocol, TupleCursorProtocol
 from cutmind.models_cm.db_config import DB_CONFIG
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 # -------------------------------------------------------------------
 # 🔌 Connexion principale
 # -------------------------------------------------------------------
-@with_child_logger
-def get_db_connection(logger: LoggerProtocol | None = None) -> Connection:
+def get_db_connection() -> Connection:
     """
     Ouvre une connexion MySQL/MariaDB avec gestion d’erreurs et logs.
     """
-    logger = ensure_logger(logger, __name__)
     try:
         conn = pymysql.connect(**DB_CONFIG)
-        logger.debug("✅ Connexion DB ouverte : %s@%s:%s", DB_CONFIG["user"], DB_CONFIG["host"], DB_CONFIG["port"])
         return conn
     except pymysql.MySQLError as exc:
-        logger.error("❌ Échec connexion DB : %s", exc)
-        raise exc
+        raise CutMindError("❌ Échec connexion DB", code=ErrCode.DB, ctx=get_step_ctx()) from exc
 
 
 # -------------------------------------------------------------------
@@ -66,37 +65,47 @@ def get_tuple_cursor(conn: Connection) -> TupleCursorProtocol:
 # -------------------------------------------------------------------
 # ⚙️ Context manager complet
 # -------------------------------------------------------------------
-@contextmanager
-@with_child_logger
-def db_conn(*, autocommit: bool = False, logger: LoggerProtocol | None = None) -> Iterator[Connection]:
-    """
-    Ouvre une connexion, gère commit/rollback/close automatiquement.
 
-    Exemple :
-        with db_conn() as conn:
-            with get_dict_cursor(conn) as cur:
-                cur.execute("SELECT * FROM videos LIMIT 5")
-                rows = cur.fetchall()
-    """
-    logger = ensure_logger(logger, __name__)
-    conn = get_db_connection(logger=logger)
+
+@contextmanager
+def db_conn(*, autocommit: bool = False) -> Iterator[Connection]:
+    conn = get_db_connection()
     conn.autocommit(autocommit)
+
     try:
         yield conn
         if not autocommit:
             conn.commit()
+
     except Exception as exc:
+        # 🔥 LOG COMPLET AVANT DE WRAPPER
+        logger.exception(
+            "DB error occurred",
+            extra={
+                "exc_type": type(exc).__name__,
+                "exc_args": getattr(exc, "args", None),
+            },
+        )
+
         if not autocommit:
             try:
                 conn.rollback()
-                logger.warning("↩️ Transaction annulée : %s", exc)
-            except Exception as rb_exc:  # pylint: disable=broad-except
-                logger.error("⚠️ Rollback impossible : %s", rb_exc)
-        raise
+            except Exception:
+                logger.exception("Rollback failed")
+
+        raise CutMindError(
+            "DB: SQL execution failed",
+            code=ErrCode.DB,
+            ctx=get_step_ctx(
+                {
+                    "db_error_type": type(exc).__name__,
+                }
+            ),
+        ) from exc
+
     finally:
         try:
             conn.close()
-            logger.debug("🔒 Connexion DB fermée")
         except pymysql.err.Error as close_exc:
             if "Already closed" not in str(close_exc):
-                logger.warning("⚠️ Erreur fermeture connexion : %s", close_exc)
+                logger.exception("Error closing DB connection")

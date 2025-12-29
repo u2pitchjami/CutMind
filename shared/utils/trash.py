@@ -6,43 +6,50 @@ from datetime import datetime
 from pathlib import Path
 import shutil
 
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
-@with_child_logger
-def delete_files(path: Path, ext: str = "*.jpg", logger: LoggerProtocol | None = None) -> None:
-    logger = ensure_logger(logger, __name__)
+def delete_files(path: Path, ext: str = "*.jpg") -> None:
     for file in Path(path).glob(ext):
         # logger.debug(f"🧹 Vérifié : {file.name}")
         try:
             file.unlink()
             # logger.debug(f"🧹 Supprimé : {file.name}")
-        except Exception as e:
-            logger.warning(f"⚠️ Impossible de supprimer {file.name} : {e}")
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur inatendue lors de la suppression.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"path": path, "file": file.name}),
+            ) from exc
 
 
-@with_child_logger
-def move_to_trash(file_path: Path, trash_root: Path, logger: LoggerProtocol | None = None) -> Path:
+def move_to_trash(file_path: Path, trash_root: Path) -> Path:
     """
     Déplace un fichier vers la corbeille (trash/YYYY-MM-DD/).
-    """
-    logger = ensure_logger(logger, __name__)
-    try:
-        if not file_path.exists():
-            logger.warning(f"⚠️ Fichier introuvable : {file_path}")
-            return file_path
 
+    Renvoie le chemin final.
+    Lève CutMindError en cas d'échec.
+    """
+    if not file_path.exists():
+        raise CutMindError(
+            "Fichier introuvable lors du move_to_trash.", code=ErrCode.FILE_ERROR, ctx={"file_path": str(file_path)}
+        )
+
+    try:
         date_dir = trash_root / datetime.now().strftime("%Y-%m-%d")
         date_dir.mkdir(parents=True, exist_ok=True)
 
         dest_path = date_dir / file_path.name
         shutil.move(str(file_path), dest_path)
-        logger.info(f"🗑️ Fichier déplacé vers corbeille : {dest_path}")
         return dest_path
 
-    except Exception as e:
-        logger.error(f"❌ Impossible de déplacer {file_path} vers la corbeille : {e}")
-        return file_path
+    except Exception as exc:  # pylint: disable=broad-except
+        raise CutMindError(
+            "Impossible de déplacer le fichier vers la corbeille.",
+            code=ErrCode.FILE_ERROR,
+            ctx=get_step_ctx({"file_path": str(file_path), "trash_root": str(trash_root)}),
+        ) from exc
 
 
 @with_child_logger

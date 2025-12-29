@@ -16,14 +16,14 @@ import time
 
 import torch
 
-from cutmind.check.enhanced import check_enhanced_segments
-from cutmind.check.secure_in_router import check_secure_in_router
+from cutmind.check_script import main_check_script
 from cutmind.db.repository import CutMindRepository
-from cutmind.imports.importer import import_all_smartcut_jsons
-from cutmind.manual.update_from_csv import update_segments_csv
-from cutmind.process.already_enhanced import process_standard_videos
 from cutmind.process.router_worker import RouterWorker
+from cutmind.services.check.secure_in_router import check_secure_in_router
+from cutmind.services.main_validation import validation
+from cutmind.services.manual.update_from_csv import update_segments_csv
 from shared.models.config_manager import reload_and_apply
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import (
     CM_NB_VID_ROUTER,
     COLOR_BLUE,
@@ -34,13 +34,11 @@ from shared.utils.config import (
     COLOR_RESET,
     COLOR_YELLOW,
     IMPORT_DIR_SC,
-    JSON_STATES_DIR_SC,
-    OUPUT_DIR_SC,
+    OUTPUT_DIR_SC,
 )
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, get_logger, with_child_logger
 from shared.utils.settings import get_settings
 from smartcut.lite.smartcut_lite import lite_cut
-from smartcut.models_sc.smartcut_model import SmartCutSession
 from smartcut.smartcut import multi_stage_cut
 
 settings = get_settings()
@@ -50,6 +48,8 @@ SCAN_INTERVAL = settings.smartcut.scan_interval
 USE_CUDA = settings.smartcut.use_cuda
 ratio_smartcut = settings.router_orchestrator.ratio_smartcut
 forbidden_hours = settings.router_orchestrator.forbidden_hours
+start_audit = settings.cutmind_audit.start
+end_audit = settings.cutmind_audit.end
 
 
 # ============================================================
@@ -74,48 +74,55 @@ def auto_clean_gpu(max_wait_sec: int = 30, logger: LoggerProtocol | None = None)
         gc.collect()
         free, total = torch.cuda.mem_get_info()
         logger.info(f"🧹 GPU nettoyé : {free / 1e9:.2f} Go libres / {total / 1e9:.2f} Go totaux")
-    except Exception as e:
-        logger.warning(f"⚠️ Nettoyage VRAM échoué : {e}")
+    except CutMindError as err:
+        raise err.with_context(get_step_ctx()) from err
+    except Exception as exc:
+        raise CutMindError(
+            "❌ Erreur lors du Nettoyage VRAM.",
+            code=ErrCode.UNEXPECTED,
+            ctx=get_step_ctx(),
+        ) from exc
 
 
 # ============================================================
 # 📦 Traitement SmartCut complet
 # ============================================================
-@with_child_logger
-def process_smartcut_video(video_path: Path, logger: LoggerProtocol | None = None) -> None:
-    """Flow SmartCut complet (vidéo non découpée)."""
-    logger = ensure_logger(logger, __name__)
+def process_smartcut_video(video_path: Path) -> None:
+    logger = get_logger("CutMind-SmartCut")
     try:
-        state_path = JSON_STATES_DIR_SC / f"{video_path.stem}.smartcut_state.json"
-        session = SmartCutSession.load(str(state_path), logger=logger)
-
-        if session and session.status == "cut":
-            logger.info(f"✅ {video_path.name} déjà traitée par SmartCut.")
-            return
-
-        if not session:
-            session = SmartCutSession(video=str(video_path), duration=0.0, fps=0.0)
-            session.save(str(state_path), logger=logger)
-
         logger.info(f"🚀 SmartCut (complet) : {video_path.name}")
-        multi_stage_cut(video_path=video_path, out_dir=OUPUT_DIR_SC, use_cuda=USE_CUDA, logger=logger)
 
-    except Exception as exc:
-        logger.error(f"💥 Erreur SmartCut {video_path.name} : {exc}")
+        multi_stage_cut(video_path=video_path, out_dir=OUTPUT_DIR_SC, use_cuda=USE_CUDA, logger=logger)
+
+    except CutMindError as err:
         auto_clean_gpu(logger=logger)
+        raise err.with_context(get_step_ctx({"video_path.name": video_path.name})) from err
+    except Exception as exc:
+        auto_clean_gpu(logger=logger)
+        raise CutMindError(
+            "❌ Erreur lors du process Smartcut.",
+            code=ErrCode.UNEXPECTED,
+            ctx=get_step_ctx({"video_path.name": video_path.name}),
+        ) from exc
 
 
-@with_child_logger
-def process_smartcut_folder(folder_path: Path, logger: LoggerProtocol | None = None) -> None:
+def process_smartcut_folder(folder_path: Path) -> None:
     """Flow SmartCut Lite (segments déjà présents dans un dossier)."""
-    logger = ensure_logger(logger, __name__)
+    logger = get_logger("CutMind-SmartCutLite")
     try:
         logger.info(f"🚀 SmartCut Lite : dossier {folder_path.name}")
-        lite_cut(directory_path=folder_path, logger=logger)
+        lite_cut(directory_path=folder_path)
 
-    except Exception as exc:
-        logger.error(f"💥 Erreur SmartCut Lite {folder_path.name} : {exc}")
+    except CutMindError as err:
         auto_clean_gpu(logger=logger)
+        raise err.with_context(get_step_ctx({"folder_path.name": folder_path.name})) from err
+    except Exception as exc:
+        auto_clean_gpu(logger=logger)
+        raise CutMindError(
+            "❌ Erreur lors du process Smartcut Lite.",
+            code=ErrCode.UNEXPECTED,
+            ctx=get_step_ctx({"folder_path.name": folder_path.name}),
+        ) from exc
 
 
 # ============================================================
@@ -134,18 +141,42 @@ def process_smartcut_batch(
 ) -> int:
     """Traite un lot limité de vidéos/dossiers SmartCut. Retourne le nombre total traités."""
     logger = ensure_logger(logger, __name__)
-    count = 0
-    for video_path in videos:
-        process_smartcut_video(video_path, logger=logger)
-        count += 1
-        if count >= max_items:
-            return count
-    for folder_path in dirs:
-        process_smartcut_folder(folder_path, logger=logger)
-        count += 1
-        if count >= max_items:
-            return count
-    return count
+    try:
+        count = 0
+        for video_path in videos:
+            process_smartcut_video(video_path)
+            count += 1
+            if count >= max_items:
+                return count
+        for folder_path in dirs:
+            process_smartcut_folder(folder_path)
+            count += 1
+            if count >= max_items:
+                return count
+        return count
+    except CutMindError as err:
+        auto_clean_gpu(logger=logger)
+        raise err.with_context(get_step_ctx()) from err
+    except Exception as exc:
+        auto_clean_gpu(logger=logger)
+        raise CutMindError(
+            "❌ Erreur lors du process Smartcut batch.",
+            code=ErrCode.UNEXPECTED,
+            ctx=get_step_ctx(),
+        ) from exc
+
+
+def is_in_audit_window(start_str: str, end_str: str) -> bool:
+    now = datetime.now().time()
+    start = datetime.strptime(start_str, "%H:%M").time()
+    end = datetime.strptime(end_str, "%H:%M").time()
+
+    if start <= end:
+        # Ex : 00:00 à 00:15, ou 08:00 à 12:00
+        return start <= now <= end
+    else:
+        # Ex : 23:00 à 01:00 → traverse minuit
+        return now >= start or now <= end
 
 
 # ============================================================
@@ -176,7 +207,10 @@ def orchestrate(priority: str = "smartcut", logger: LoggerProtocol | None = None
         mode_label = f"{COLOR_CYAN}⚙️ Mode auto: ratio_smartcut={ratio_smartcut:.2f}{COLOR_RESET}"
 
     logger.info(mode_label)
-    check_secure_in_router(logger=logger)
+    try:
+        check_secure_in_router(logger=logger)
+    except CutMindError as exc:
+        logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
     while True:
         try:
             cycle += 1
@@ -186,7 +220,10 @@ def orchestrate(priority: str = "smartcut", logger: LoggerProtocol | None = None
             smartcut_pending = len(smartcut_videos) + len(smartcut_dirs)
 
             repo = CutMindRepository()
-            router_pending = len(repo.get_nonstandard_videos(limit_videos=CM_NB_VID_ROUTER, logger=logger))
+            try:
+                router_pending = len(repo.get_nonstandard_videos(limit_videos=CM_NB_VID_ROUTER))
+            except CutMindError as exc:
+                logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
 
             logger.info(f"📦 SmartCut: {smartcut_pending} | Router: {router_pending}")
 
@@ -209,7 +246,12 @@ def orchestrate(priority: str = "smartcut", logger: LoggerProtocol | None = None
                     f"{COLOR_BLUE}🚀 Lancement SmartCut sur {min(smartcut_pending, SMARTCUT_BATCH)} \
                         éléments{COLOR_RESET}"
                 )
-                batch_smartcut = process_smartcut_batch(smartcut_videos, smartcut_dirs, SMARTCUT_BATCH, logger=logger)
+                try:
+                    batch_smartcut = process_smartcut_batch(
+                        smartcut_videos, smartcut_dirs, SMARTCUT_BATCH, logger=logger
+                    )
+                except CutMindError as exc:
+                    logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
                 total_smartcut += batch_smartcut
 
             # --- ROUTER ---
@@ -220,18 +262,24 @@ def orchestrate(priority: str = "smartcut", logger: LoggerProtocol | None = None
                 logger.info(
                     f"{COLOR_BLUE}🚀 Lancement RouterWorker ({router_pending} vidéos non conformes){COLOR_RESET}"
                 )
-                worker = RouterWorker(limit_videos=CM_NB_VID_ROUTER, logger=logger)
-                worker.run(logger=logger)
-                batch_router = router_pending
-                total_router += batch_router
+                try:
+                    worker = RouterWorker(limit_videos=CM_NB_VID_ROUTER)
+                    worker.run()
+                    batch_router = router_pending
+                    total_router += batch_router
+                except CutMindError as exc:
+                    logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
 
             # --- ROUTER BLOQUÉ (NUIT) ---
             elif not router_allowed:
                 logger.info(f"{COLOR_RED}🌙 Plage horaire silencieuse — Router désactivé (SmartCut forcé){COLOR_RESET}")
                 if smartcut_pending > 0:
-                    batch_smartcut = process_smartcut_batch(
-                        smartcut_videos, smartcut_dirs, SMARTCUT_BATCH, logger=logger
-                    )
+                    try:
+                        batch_smartcut = process_smartcut_batch(
+                            smartcut_videos, smartcut_dirs, SMARTCUT_BATCH, logger=logger
+                        )
+                    except CutMindError as exc:
+                        logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
                     total_smartcut += batch_smartcut
 
             # --- AUCUNE TÂCHE ---
@@ -245,17 +293,28 @@ def orchestrate(priority: str = "smartcut", logger: LoggerProtocol | None = None
                 f"(Total SmartCut:{total_smartcut} | Total Router:{total_router})"
             )
             logger.info(f"⏳ Pause {SCAN_INTERVAL}s avant le prochain scan.")
-            reload_and_apply(logger=logger)
+            try:
+                reload_and_apply(logger=logger)
+            except CutMindError as exc:
+                logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
             time.sleep(SCAN_INTERVAL)
-            # 🔹 Import automatique dans CutMind
-            logger.info("📥 Import SmartCut JSONs vers CutMind...")
-            import_all_smartcut_jsons(logger=logger)
+            try:
+                validation(logger=logger)
+            except CutMindError as exc:
+                logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
 
             # 🔹 Import CSV automatique dans CutMind
             logger.info("📥 Import SmartCut CSVs vers CutMind...")
-            update_segments_csv(logger=logger)
-            check_enhanced_segments(max_videos=1, logger=logger)
-            process_standard_videos(limit=1, logger=logger)
+            try:
+                update_segments_csv(logger=logger)
+            except CutMindError as exc:
+                logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
+            try:
+                if is_in_audit_window(start_audit, end_audit):
+                    logger.info(f"{COLOR_BLUE}🚀 Lancement du l'Audit Check){COLOR_RESET}")
+                    main_check_script()
+            except CutMindError as exc:
+                logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
 
         except Exception as err:
             logger.exception(f"{COLOR_RED}💥 Erreur inattendue orchestrateur : {err}{COLOR_RESET}")

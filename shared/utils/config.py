@@ -112,6 +112,7 @@ VISIBLE_ROOT: Path = Path(get_path_required("VISIBLE_ROOT"))
 
 WORKFLOW_MAP: dict[str, Path] = {
     "1080p": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 1080p.json",
+    "2160p": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 1080p.json",
     "720p": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 720p.json",
     "720p_nofps": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 720p-nofps.json",
     "Autres": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion Autres.json",
@@ -158,7 +159,7 @@ CM_NB_VID_ROUTER = get_int("CM_NB_VID_ROUTER", 1)
 IMPORT_DIR_SC: Path = Path(get_path_required("IMPORT_DIR_SC"))
 TRASH_DIR_SC: Path = Path(get_str("TRASH_DIR_SC", ".trash"))
 ERROR_DIR_SC: Path = Path(get_str("ERROR_DIR_SC", ".error"))
-OUPUT_DIR_SC: Path = Path(get_path_required("OUPUT_DIR_SC"))
+OUTPUT_DIR_SC: Path = Path(get_path_required("OUTPUT_DIR_SC"))
 JSON_STATES_DIR_SC: Path = Path(get_path_required("JSON_STATES_DIR_SC"))
 TMP_FRAMES_DIR_SC: Path = Path(get_str("TMP_FRAMES_DIR_SC", ".tmp_frames"))
 BATCH_FRAMES_DIR_SC: Path = Path(get_str("BATCH_FRAMES_DIR_SC", ".batches"))

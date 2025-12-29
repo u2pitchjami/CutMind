@@ -17,20 +17,21 @@ from datetime import datetime
 from pathlib import Path
 import uuid
 
-from shared.ffmpeg.ffmpeg_utils import get_duration
+from cutmind.db.repository import CutMindRepository
+from cutmind.models_cm.db_models import Segment, Video
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
-from shared.utils.config import JSON_STATES_DIR_SC, TRASH_DIR_SC
+from shared.services.video_preparation import prepare_video
+from shared.utils.config import ERROR_DIR_SC, OUTPUT_DIR_SC, TRASH_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
-from shared.utils.safe_runner import safe_main
 from shared.utils.settings import get_settings
 from shared.utils.trash import move_to_trash, purge_old_trash
-from smartcut.analyze.analyze_confidence import compute_confidence
-from smartcut.analyze.analyze_utils import extract_keywords_from_filename
-from smartcut.analyze.main_analyze import analyze_video_segments
-from smartcut.ffsmartcut.ffsmartcut import cut_video, ensure_safe_video_format
-from smartcut.merge.merge_main import process_result
-from smartcut.models_sc.smartcut_model import Segment, SmartCutSession
-from smartcut.scene_split.main_scene_split import adaptive_scene_split
+from smartcut.executors.analyze.split_utils import get_downscale_factor, move_to_error
+from smartcut.services.analyze.apply_confidence import apply_confidence_to_session
+from smartcut.services.analyze.ia_pipeline_service import run_ia_pipeline
+from smartcut.services.cut_service import CutRequest, CutService
+from smartcut.services.merge.merge_service import MergeService
+from smartcut.services.scene_split.pipeline_service import adaptive_scene_split
 
 settings = get_settings()
 
@@ -49,9 +50,11 @@ VCODEC_GPU = settings.smartcut.vcodec_gpu
 CRF = settings.smartcut.crf
 PRESET_CPU = settings.smartcut.preset_cpu
 PRESET_GPU = settings.smartcut.preset_gpu
+FPS_EXTRACT = settings.analyse_segment.fps_extract
+BASE_RATE = settings.analyse_segment.base_rate
+MODEL_CONFIDENCE = settings.analyse_confidence.model_confidence
 
 
-@safe_main
 @with_child_logger
 def multi_stage_cut(
     video_path: Path,
@@ -74,280 +77,302 @@ def multi_stage_cut(
     """
     logger = ensure_logger(logger, __name__)
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    # 🧩 Normalisation du format vidéo dès le départ
-    safe_path = ensure_safe_video_format(str(video_path))
-    if safe_path != str(video_path):
-        logger.info(f"🎞️ Conversion automatique : {video_path.name} → {Path(safe_path).name}")
-        move_to_trash(video_path, TRASH_DIR_SC, logger=logger)
-        video_path = Path(safe_path)
-
-    duration = get_duration(video_path)
-    if duration <= 0:
-        logger.error("Durée inconnue pour %s", video_path)
-        return
-
     # ======================
     # 🧠 Étape 0 : Init session
     # ======================
-    duration = get_duration(video_path)
-    if duration <= 0:
-        logger.error("Durée inconnue pour %s", video_path)
-        return
 
-    state_path = JSON_STATES_DIR_SC / f"{video_path.stem}.smartcut_state.json"
-    session = SmartCutSession.load(str(state_path), logger=logger)
+    repo = CutMindRepository()
 
-    if not session:
-        session = SmartCutSession.bootstrap_session(video_path, out_dir, logger=logger)
-        logger.info("✅ Session prête : %s (%.2fs @ %.2f FPS)", session.status, session.duration, session.fps)
-    else:
-        logger.info("♻️ Reprise de session existante : %s", session.status)
-        # Optionnel : enrichir à nouveau si des infos manquent
-        if not session.resolution or session.fps == 0:
-            session.enrich_metadata()
-            session.save(str(state_path))
-            logger.info("🔁 Métadonnées complétées pour la session existante.")
+    try:
+        session = repo.video_exists_by_video_path(str(video_path))
 
-    # ======================
-    # 🎬 Étape 1 : Découpage pyscenedetect
-    # ======================
-    if session.status in ("init",):
-        logger.info("🔍 Découpage vidéo avec pyscenedetect...")
-        with Timer(f"Traitement Split : {session.video_name}", logger):
-            cuts = adaptive_scene_split(
-                str(video_path),
-                session=session,
-                initial_threshold=INITIAL_THRESHOLD,
-                min_threshold=MIN_THRESHOLD,
-                threshold_step=THRESHOLD_STEP,
-                min_duration=MIN_DURATION,
-                max_duration=MAX_DURATION,
-                logger=logger,
+        if not session:
+            # 1. Prépare la vidéo (format, durée, fps, etc.)
+            prep = prepare_video(video_path)
+            orig = Path(video_path).resolve()
+            safe = Path(prep.path).resolve()
+
+            if orig != safe:
+                logger.info(f"🎞️ Conversion automatique : {orig.name} → {safe.name}")
+                move_to_trash(orig, TRASH_DIR_SC)
+
+            # 2. Crée une nouvelle session à partir des métadonnées préparées
+            new_vid = Video(
+                uid=str(uuid.uuid4()),
+                name=prep.path.stem,
+                video_path=str(prep.path),
+                duration=prep.duration,
+                fps=prep.fps,
+                nb_frames=prep.nb_frames,
+                resolution=prep.resolution,
+                codec=prep.codec,
+                bitrate=prep.bitrate,
+                filesize_mb=prep.filesize_mb,
+                has_audio=prep.has_audio,
+                audio_codec=prep.audio_codec,
+                sample_rate=prep.sample_rate,
+                channels=prep.channels,
+                audio_duration=prep.audio_duration,
+                status="init",
+                origin="smartcut",
             )
-        logger.info("🎞️ %d coupures détectées.", len(cuts))
-
-        # Création des segments
-        session.segments = [Segment(id=i + 1, start=s, end=e) for i, (s, e) in enumerate(cuts)]
-        for seg in session.segments:
-            seg.compute_duration()
-
-        session.status = "scenes_done"
-        session.save(str(state_path), logger=logger)
-    else:
-        logger.info("⏩ Étape pyscenedetect déjà effectuée — skip.")
-
-    # ======================
-    # 🧠 Étape 2 : Analyse IA (avec SmartCutSession)
-    # ======================
-    if session.status in ("scenes_done",):
-        logger.info("🧠 Analyse IA segment par segment avec suivi de session...")
-
-        # On ne traite que les segments dont le statut n’est pas "done"
-        pending_segments = session.get_pending_segments(logger=logger)
-        logger.debug(f"Segments en attente : {[s.id for s in pending_segments]}")
-        if not pending_segments:
-            logger.info("✅ Tous les segments ont déjà été traités par l’IA.")
-            session.status = "ia_done"
-            session.save(str(state_path), logger=logger)
+            repo.insert_video_with_segments(new_vid)
+            vid = repo.get_video_with_segments(video_uid=new_vid.uid)
+            logger.info("✅ Nouvelle vidéo créée %s : %.2fs @ %.2f FPS", new_vid.name, new_vid.duration, new_vid.fps)
         else:
-            logger.info(f"📊 {len(pending_segments)} segments à traiter par l’IA...")
-            cuts = [(seg.start, seg.end) for seg in pending_segments]
-
-            try:
-                # Appel à ta fonction d’analyse — le suivi JSON se fait à l’intérieur
-                analyze_video_segments(
-                    video_path=str(video_path),
-                    frames_per_segment=FRAME_PER_SEGMENT,
-                    auto_frames=AUTO_FRAMES,
-                    session=session,
-                    logger=logger,
+            vid = repo.get_video_with_segments(video_id=session)
+            if not vid or not vid.status:
+                raise CutMindError(
+                    f"Vidéo introuvable en base de données pour l'ID {session}",
+                    code=ErrCode.NOT_FOUND,
                 )
+            logger.info("♻️ Reprise de session existante %s : %s", vid.name, vid.status)
 
-                # Par sécurité, on s’assure que le statut soit mis à jour
-                if all(s.ai_status == "done" for s in session.segments):
-                    session.status = "ia_done"
-                else:
-                    logger.warning("🚧 Certains segments IA n’ont pas été traités complètement.")
-                session.save(str(state_path), logger=logger)
-
-            except Exception as exc:  # pylint: disable=broad-except
-                logger.error("💥 Erreur pendant l’analyse IA : %s", exc)
-                session.errors.append(str(exc))
-                session.save(str(state_path), logger=logger)
-                raise
-    else:
-        logger.info("⏩ Étape IA déjà effectuée — skip.")
-    # ======================
-    # 🪄 Étape 2.5 : confidence
-    # ======================
-    if session.status in ("ia_done",):
-        logger.info("🧠 Calcul d'un indice de confiance :")
-        try:
-            auto_keywords = extract_keywords_from_filename(video_path.name)
-            for seg in session.segments:
-                if seg.ai_status == "done":
-                    seg.confidence = compute_confidence(seg.description, seg.keywords, logger=logger)
-                    seg.last_updated = datetime.now().isoformat()
-                    seg.status = "confidence_done"
-                    logger.info(f"  - Segment {seg.id}: confidence = {seg.confidence:.3f}")
-                    if seg.keywords:
-                        merged = set(seg.keywords + auto_keywords)
-                        seg.keywords = list(merged)
-                    else:
-                        seg.keywords = auto_keywords.copy()
-
-                    logger.debug(f"🏷️ Seg {seg.uid}: keywords enrichis → {seg.keywords}")
-                    session.save(str(state_path), logger=logger)
-
-            if all(s.confidence != "null" for s in session.segments):
-                session.status = "confidence_done"
-            else:
-                logger.warning("🚧 Certains segments confidence n’ont pas été traités complètement.")
-            session.save(str(state_path), logger=logger)
-
-        except Exception as exc:  # pylint: disable=broad-except
-            logger.error("💥 Erreur pendant le calcul de l'indice de confiance : %s", exc)
-            session.errors.append(str(exc))
-            session.save(str(state_path), logger=logger)
-            raise
-    else:
-        logger.info("⏩ Étape confidence déjà effectuée — skip.")
-
-    # ======================
-    # 🪄 Étape 3 : Harmonisation / Merge des segments
-    # ======================
-    if session.status in ("confidence_done",):
-        logger.info("🔗 Harmonisation et fusion des segments...")
-        wrong_segments = [s for s in session.segments if isinstance(s.keywords, str)]
-        if wrong_segments:
-            logger.warning(f"⚠️ {len(wrong_segments)} segments ont des keywords mal typés (str au lieu de list[str]) !")
-
-        try:
-            # Préparation du format attendu par process_result
-            result_session = SmartCutSession(
-                video=str(video_path),
-                segments=session.segments,
+        # ======================
+        # 🎬 Étape 1 : Découpage pyscenedetect
+        # ======================
+        if not vid or not vid.status or not vid.duration or not vid.id or not vid.video_path:
+            raise CutMindError(
+                "Vidéo sans statut valide en base de données.",
+                code=ErrCode.CONTEXT,
+                ctx={"video": video_path},
             )
-            logger.debug(f"📦 Segments à envoyer dans process_result ({len(session.segments)} segments):")
-            for i, seg in enumerate(session.segments):
-                logger.debug(
-                    f"  [{i}] ID: {seg.id}, "
-                    f"start: {seg.start:.2f}, end: {seg.end:.2f}, "
-                    f"type(keywords): {type(seg.keywords)}, "
-                    f"keywords: {seg.keywords}"
-                )
-
-            merged_result: SmartCutSession = process_result(
-                result_session, min_duration=MIN_DURATION, max_duration=MAX_DURATION, logger=logger
-            )
-
-            # 🔁 Mise à jour des segments fusionnés (si applicable)
-            if merged_result.segments:
-                session.segments = []
-                for i, seg in enumerate(merged_result.segments, start=1):
-                    new_seg = Segment(
-                        id=i,
-                        start=seg.start,
-                        end=seg.end,
-                        description=seg.description,
-                        keywords=list(seg.keywords),
-                        ai_status="done",
-                        status="merged",
-                        duration=seg.duration if seg.duration else round(seg.end - seg.start, 3),
-                        confidence=seg.confidence,
-                        merged_from=getattr(seg, "merged_from", []),
+        if vid.status in ("init",):
+            logger.info("🔍 Découpage vidéo avec pyscenedetect...")
+            with Timer(f"Traitement Split : {vid.name}", logger):
+                try:
+                    cuts = adaptive_scene_split(
+                        str(video_path),
+                        duration=vid.duration,
+                        initial_threshold=INITIAL_THRESHOLD,
+                        min_threshold=MIN_THRESHOLD,
+                        threshold_step=THRESHOLD_STEP,
+                        min_duration=MIN_DURATION,
+                        max_duration=MAX_DURATION,
+                        downscale_factor=get_downscale_factor(str(video_path)),
                     )
+                except CutMindError as e:
+                    logger.error("❌ Scene split error: %s", e)
+                    if not Path(vid.video_path).exists():
+                        logger.warning(f"⚠️ Vidéo introuvable : {vid.video_path}")
+                    if vid.tags == "" or "pyscene_error" not in vid.tags:
+                        vid.add_tag_vid("pyscene_error")
+                    else:
+                        error_path = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
+                        vid.video_path = str(error_path)
+                        vid.status = "error"
+                        logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
+                    repo.update_video(vid)
+                    raise CutMindError(
+                        f"❌ Erreur lors de Découpage pyscenedetect {vid.name}",
+                        code=ErrCode.UNEXPECTED,
+                    ) from e
 
-                    # 🧠 Conserve l’UID du segment fusionné si déjà défini, sinon nouveau
-                    new_seg.uid = getattr(seg, "uid", str(uuid.uuid4()))
+            # Création des segments SmartCut
+            vid.segments = [Segment(id=i + 1, start=s, end=e) for i, (s, e) in enumerate(cuts)]
+            vid.finalize_segments(OUTPUT_DIR_SC)
 
-                    # 🧾 Recalcule un nom de fichier prédictif propre
-                    new_seg.predict_filename(Path("/basedir/smart_cut/outputs/"))
+            for seg in vid.segments:
+                logger.debug(f"seg : {seg}")
+                repo._insert_segment(seg)
 
-                    session.segments.append(new_seg)
+            vid.status = "scenes_done"
+            repo.update_video(vid)
+        else:
+            logger.info("⏩ Étape pyscenedetect déjà effectuée — skip.")
 
-                session.status = "merged"
-                session.last_updated = datetime.now().isoformat()
-                session.save(str(state_path), logger=logger)
-                logger.info("💾 Segments fusionnés mis à jour et sauvegardés dans le JSON.")
+        vid = repo.get_video_with_segments(video_id=vid.id)
+        if not vid or not vid.status:
+            raise CutMindError(
+                f"Vidéo introuvable en base de données pour l'ID {session}",
+                code=ErrCode.NOT_FOUND,
+            )
 
-                logger.info(f"✅ Merge effectué : {len(session.segments)} segments après harmonisation.")
+        # ======================
+        # 🧠 Étape 2 : Analyse IA
+        # ======================
+        if vid.status in ("scenes_done",):
+            logger.info("🧠 Analyse IA segment par segment avec suivi de session...")
+
+            pending_segments = vid.get_pending_segments()
+            logger.debug("Segments en attente : %s", [s.id for s in pending_segments])
+
+            if not pending_segments:
+                logger.info("✅ Tous les segments ont déjà été traités par l’IA.")
+                vid.status = "ia_done"
+                repo.update_video(vid)
             else:
-                logger.warning("⚠️ Aucun segment résultant du merge. Structure inchangée.")
-
-            session.status = "harmonized"
-            session.save(str(state_path), logger=logger)
-
-        except Exception as exc:  # pylint: disable=broad-except
-            logger.error("💥 Erreur pendant le merge/harmonisation : %s", exc)
-            session.errors.append(str(exc))
-            session.save(str(state_path), logger=logger)
-            raise
-    else:
-        logger.info("⏩ Étape merge déjà effectuée — skip.")
-
-    # ======================
-    # ✂️ Étape 4 : Découpage final des segments
-    # ======================
-    if session.status in ("harmonized",):
-        logger.info("✂️ Export final des segments vidéo...")
-        # logger.debug(f"Session ({session}):")
-        outputs: list[Path] = []
-        try:
-            for i, seg in enumerate(session.segments, 1):
-                start, end = seg.start, seg.end
-                keywords = ", ".join(seg.keywords) if isinstance(seg.keywords, list) else str(seg.keywords)
+                logger.info("📊 %d segments à traiter par l’IA...", len(pending_segments))
 
                 try:
-                    res = cut_video(
-                        video_path=video_path,
-                        start=start,
-                        end=end,
-                        out_dir=out_dir,
-                        index=i,
-                        keywords=keywords,
-                        use_cuda=use_cuda,
-                        vcodec_cpu=VCODEC_CPU,
-                        vcodec_gpu=VCODEC_GPU,
-                        crf=CRF,
-                        preset_cpu=PRESET_CPU,
-                        preset_gpu=PRESET_GPU,
-                        session=session,
-                        state_path=state_path,
+                    run_ia_pipeline(
+                        video_path=str(video_path),
+                        segments=pending_segments,
+                        frames_per_segment=FRAME_PER_SEGMENT,
+                        auto_frames=AUTO_FRAMES,
+                        base_rate=BASE_RATE,
+                        fps_extract=FPS_EXTRACT,
+                        lite=False,  # ou True dans le flow LITE
                         logger=logger,
                     )
 
-                    if res:
-                        outputs.append(res)
-                        logger.info(f"{i:02d}. [{start:6.1f}s → {end:6.1f}s] → {keywords}")
+                    vid.status = "ia_done"
+                    repo.update_video(vid)
+
+                except Exception as exc:  # pylint: disable=broad-except
+                    if vid.tags == "" or "ia_error" not in vid.tags:
+                        vid.add_tag_vid("ia_error")
                     else:
-                        raise RuntimeError("cut_video() n’a rien renvoyé.")
+                        error_path = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
+                        vid.video_path = str(error_path)
+                        vid.status = "error"
+                        logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
+                    repo.update_video(vid)
+                    raise CutMindError(
+                        f"❌ Erreur lors de l'analyse IA {vid.name}",
+                        code=ErrCode.UNEXPECTED,
+                    ) from exc
+        else:
+            logger.info("⏩ Étape IA déjà effectuée — skip.")
+        # ======================
+        # Étape 2.5 : confidence
+        # ======================
+        if vid.status == "ia_done":
+            logger.info("🧠 Calcul d'un indice de confiance...")
+            apply_confidence_to_session(
+                session=vid,
+                video_or_dir_name=video_path.name,
+                model_name=settings.analyse_confidence.model_confidence,
+                logger=logger,
+            )
 
-                except Exception as seg_exc:  # pylint: disable=broad-except
-                    seg.error = str(seg_exc)
-                    seg.ai_status = "failed"
-                    session.errors.append(str(seg_exc))
-                    logger.warning(f"⚠️ Erreur sur le segment {i}: {seg_exc}")
-                    session.save(str(state_path), logger=logger)
-                    raise
+        vid = repo.get_video_with_segments(video_id=vid.id)
+        if not vid or not vid.status or not vid.name:
+            raise CutMindError(
+                "Vidéo introuvable en base de données pour l'ID",
+                code=ErrCode.NOT_FOUND,
+            )
 
-            # Marquer la fin du traitement global
-            session.status = "smartcut_done"
-            session.save(str(state_path), logger=logger)
-            logger.info("✅ %d segments exportés → %s", len(outputs), out_dir)
+        # ======================
+        # Étape 3 : merge
+        # ======================
+        if vid.status == "confidence_done":
+            logger.info("🔗 Merge / harmonisation...")
 
-        except Exception as exc:  # pylint: disable=broad-except
-            logger.error("💥 Erreur générale pendant le découpage final : %s", exc)
-            session.errors.append(str(exc))
-            session.save(str(state_path), logger=logger)
-            raise
-    else:
-        logger.info("⏩ Étape cut déjà effectuée — skip.")
+            service_merge = MergeService(
+                min_duration=MIN_DURATION,
+                max_duration=MAX_DURATION,
+            )
+            print(f"service_merge : {service_merge}")
+            merged_results = service_merge.merge(vid.segments)
+            print(f"merged_results : {merged_results}")
 
-    logger.info("───────────────────────────────")
-    logger.info("🏁 Traitement terminé pour %s", video_path)
-    move_to_trash(video_path, TRASH_DIR_SC, logger=logger)
-    purge_old_trash(TRASH_DIR_SC, days=PURGE_DAYS, logger=logger)
-    return
+            # vid.segments = []
+            for res_merged in merged_results:
+                seg = Segment(
+                    id=res_merged.segment_id,
+                    video_id=vid.id if vid.id else 0,
+                    start=res_merged.start,
+                    end=res_merged.end,
+                    description=res_merged.description,
+                    keywords=res_merged.keywords,
+                    status="merged",
+                    duration=round(res_merged.end - res_merged.start, 3),
+                    confidence=res_merged.confidence,
+                    merged_from=res_merged.merged_from,
+                    fps=vid.fps,
+                    resolution=vid.resolution,
+                    codec=vid.codec,
+                    bitrate=vid.bitrate,
+                )
+                print(f"seg : {seg}")
+                seg.predict_filename(Path(OUTPUT_DIR_SC), vid.name)
+                print(f"seg.predict_filename : {seg.predict_filename}")
+                new_id = repo._insert_segment(seg)
+                repo.insert_keywords_standalone(new_id, seg.keywords)
+                for uid in seg.merged_from:
+                    merged_seg = repo.get_segment_by_uid(uid)
+                    if not merged_seg or not merged_seg.id:
+                        raise CutMindError(
+                            "Segment introuvable en base de données pour l'ID",
+                            code=ErrCode.NOT_FOUND,
+                        )
+                    repo.delete_segment(merged_seg.id)
+
+            vid.status = "merged"
+            repo.update_video(vid)
+            vid = repo.get_video_with_segments(video_id=vid.id)
+            if not vid or not vid.status:
+                raise CutMindError(
+                    "Vidéo introuvable en base de données pour l'ID",
+                    code=ErrCode.NOT_FOUND,
+                )
+
+        # ======================
+        # ✂️ Étape 4 : Découpage final des segments
+        # ======================
+        if vid.status == "merged":
+            logger.info("✂️ Cut final des segments...")
+
+            service_cut = CutService()
+
+            cut_requests = []
+            for seg in vid.segments:
+                if not seg.output_path:
+                    raise CutMindError(
+                        "Capteur vidéo non initialisé avant extraction des frames.",
+                        code=ErrCode.CONTEXT,
+                        ctx={"segment_id": seg.id},
+                    )
+                cut_requests.append(
+                    CutRequest(
+                        uid=seg.uid,
+                        start=seg.start,
+                        end=seg.end,
+                        output_path=seg.output_path,
+                    )
+                )
+
+            try:
+                service_cut.cut_segments(str(video_path), cut_requests)
+            except CutMindError as err:
+                if vid.tags == "" or "cut_error" not in vid.tags:
+                    vid.add_tag_vid("cut_error")
+                else:
+                    error_path = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
+                    vid.video_path = str(error_path)
+                    vid.status = "error"
+                    logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
+                repo.update_video(vid)
+                logger.error(f"Erreur durant le cut : {err}")
+                raise CutMindError(
+                    f"❌ Erreur lors cut Smartcut {vid.name}",
+                    code=ErrCode.UNEXPECTED,
+                ) from err
+
+            # mise à jour de la session
+            for seg in vid.segments:
+                seg.status = "cut"
+                seg.last_updated = datetime.now().isoformat()
+                repo.update_segment_validation(seg)
+
+            vid.status = "smartcut_done"
+            repo.update_video(vid)
+            logger.info("🎉 Tous les segments ont été coupés.")
+
+        logger.info("───────────────────────────────")
+        logger.info("🏁 Traitement terminé pour %s", video_path)
+        video_trash = move_to_trash(video_path, TRASH_DIR_SC)
+        vid.video_path = str(video_trash)
+        repo.update_video(vid)
+        purge_old_trash(TRASH_DIR_SC, days=PURGE_DAYS, logger=logger)
+        return
+
+    except CutMindError as err:
+        raise err.with_context(get_step_ctx({"video_path": video_path})) from err
+    except Exception as exc:
+        raise CutMindError(
+            "❌ Erreur lors du traitement Smartcut.",
+            code=ErrCode.UNEXPECTED,
+            ctx=get_step_ctx({"video_path": video_path}),
+        ) from exc
