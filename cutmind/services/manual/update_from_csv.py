@@ -19,6 +19,7 @@ from cutmind.db.manual_db import (
 )
 from cutmind.db.repository import CutMindRepository
 from cutmind.executors.manual.manual_utils import (
+    archive_csv,
     build_new_data_from_csv_row,
     compare_segment,
     summarize_import,
@@ -27,14 +28,17 @@ from cutmind.executors.manual.manual_utils import (
 from cutmind.executors.manual.recut_segment import parse_recut_points, perform_recut
 from cutmind.services.main_validation import validation
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
-from shared.utils.config import CSV_LOG_PATH, MANUAL_CSV_PATH, TRASH_DIR_SC
+from shared.utils.config import CSV_ARCHIVE_PATH, CSV_LOG_PATH, MANUAL_CSV_PATH, TRASH_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
-from shared.utils.trash import move_to_trash
+from shared.utils.trash import move_to_trash, purge_old_trash
 
 
 @with_child_logger
 def update_segments_csv(
-    manual_csv: Path = Path(MANUAL_CSV_PATH), csv_log: Path = Path(CSV_LOG_PATH), logger: LoggerProtocol | None = None
+    status: str = "manual_review",
+    manual_csv: Path = Path(MANUAL_CSV_PATH),
+    csv_log: Path = Path(CSV_LOG_PATH),
+    logger: LoggerProtocol | None = None,
 ) -> None:
     """Import principal des segments CSV vers la base."""
     logger = ensure_logger(logger, __name__)
@@ -96,6 +100,9 @@ def update_segments_csv(
                         update_segment_from_csv(segment, new_data, diffs)
                         stats["updated"] += 1
                         log_rows.append({"segment_id": seg_id, "action": "updated", "differences": ", ".join(diffs)})
+                        archived_path = archive_csv(Path(MANUAL_CSV_PATH), CSV_ARCHIVE_PATH)
+                        logger.info("🗄️ Fichier CSV archivé vers %s", archived_path)
+                        purge_old_trash(CSV_ARCHIVE_PATH, days=60, logger=logger)
 
                     except Exception as exc:  # pylint: disable=broad-except
                         stats["errors"] += 1
@@ -106,7 +113,7 @@ def update_segments_csv(
 
         write_csv_log(csv_log, log_rows)
         summarize_import(stats, csv_log, logger=logger)
-        validation(manual=True, logger=logger)
+        validation(status=status, logger=logger)
     except CutMindError as err:
         raise err.with_context(get_step_ctx({"manual_csv": manual_csv})) from err
     except Exception as exc:

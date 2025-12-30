@@ -12,7 +12,7 @@ from transformers import (
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.logger import LoggerProtocol
 from smartcut.executors.ia.generate_keywords import generate_keywords_from_frames
-from smartcut.models_sc.ai_result import AIResult
+from smartcut.models_sc.ai_result import AIOutputType, AIResult
 
 
 def generate_keywords_for_segment(
@@ -21,6 +21,9 @@ def generate_keywords_for_segment(
     processor: ProcessorMixin,
     model: PreTrainedModel,
     num_frames: int,
+    prompt_name: str = "keywords",
+    system_prompt: str = "system_keywords",
+    output_type: AIOutputType = "full",
     logger: LoggerProtocol | None = None,
 ) -> AIResult:
     """
@@ -28,7 +31,14 @@ def generate_keywords_for_segment(
     """
     try:
         response: AIResult = generate_keywords_from_frames(
-            frame_dir, processor, model, segment_id, num_frames, prompt_name="keywords", system_prompt="system_keywords"
+            frame_dir,
+            processor,
+            model,
+            segment_id,
+            num_frames,
+            prompt_name=prompt_name,
+            system_prompt=system_prompt,
+            output_type=output_type,
         )
         return response
     except CutMindError as err:

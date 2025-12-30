@@ -18,7 +18,8 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import PROMPTS
 from shared.utils.settings import get_settings
 from smartcut.executors.ia.gen_frames import load_frames_as_tensor, temp_batch_image
-from smartcut.models_sc.ai_result import AIResult
+from smartcut.executors.ia.parse_output import parse_json_ai_output
+from smartcut.models_sc.ai_result import AIOutputType, AIResult
 
 settings = get_settings()
 
@@ -48,6 +49,7 @@ def generate_keywords_from_frames(
     num_frames: int,
     prompt_name: str = "keywords",
     system_prompt: str = "system_keywords",
+    output_type: AIOutputType = "full",
 ) -> AIResult:
     """
     Génération des mots-clés pour un batch de frames.
@@ -125,11 +127,13 @@ def generate_keywords_from_frames(
         # Retrait du prompt d'entrée (comme dans le node)
         trimmed_ids = [out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids, strict=False)]
 
-        output_text: AIResult = processor.batch_decode(
+        decoded_text: str = processor.batch_decode(
             trimmed_ids,
             skip_special_tokens=SKIP_SPECIAL_TOKENS,
             clean_up_tokenization_spaces=CLEAN_UP_TOKENIZATION_SPACES,
         )[0]
+
+        ai_result: AIResult = parse_json_ai_output(decoded_text)
 
         # Nettoyage du texte
         # if "</think>" in output_text:
@@ -137,7 +141,7 @@ def generate_keywords_from_frames(
 
         # output_text = re.sub(r"^[\s\u200b\xa0]+", "", output_text)
 
-        return output_text
+        return ai_result
     except Exception as exc:
         raise CutMindError(
             "❌ Erreur lors de la génération des mots clés par IA.",

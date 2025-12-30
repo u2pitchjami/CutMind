@@ -42,6 +42,8 @@ def analyze_from_cutmind(
     auto_frames: bool = True,
     base_rate: int = 5,
     fps_extract: float = 1.0,
+    prompt_name: str = "keywords",
+    system_prompt: str = "system_keywords",
     logger: LoggerProtocol | None = None,
 ) -> tuple[str, list[str]]:
     """
@@ -126,6 +128,8 @@ def analyze_from_cutmind(
                     batch_paths=batch_paths,
                     processor=processor,
                     model=model,
+                    prompt_name=prompt_name,
+                    system_prompt=system_prompt,
                 )
                 all_batches.append(batch_result)
                 release_gpu_memory(model, cache_only=True)

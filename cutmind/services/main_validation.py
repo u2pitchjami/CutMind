@@ -12,9 +12,9 @@ settings = get_settings()
 
 
 @with_child_logger
-def validation(manual: bool = False, logger: LoggerProtocol | None = None) -> None:
+def validation(status: str = "smartcut_done", logger: LoggerProtocol | None = None) -> None:
     logger = ensure_logger(logger, __name__)
-    STATUS = settings.cutmind_validation.manual if manual else settings.cutmind_validation.normal
+    STATUS = status
     repo = CutMindRepository()
     try:
         videos = repo.get_videos_by_status(STATUS)
@@ -56,10 +56,10 @@ def validation(manual: bool = False, logger: LoggerProtocol | None = None) -> No
                 à valider manuellement sur {len(videos)} vidéos"
         )
     except CutMindError as err:
-        raise err.with_context(get_step_ctx({"name": video.name, "manual": manual})) from err
+        raise err.with_context(get_step_ctx({"name": video.name, "status": status})) from err
     except Exception as exc:
         raise CutMindError(
             "❌ Erreur innatendue lors de la validation.",
             code=ErrCode.UNEXPECTED,
-            ctx=get_step_ctx({"name": video.name, "manual": manual}),
+            ctx=get_step_ctx({"name": video.name, "status": status}),
         ) from exc

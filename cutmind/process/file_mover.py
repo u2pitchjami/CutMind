@@ -123,7 +123,6 @@ class FileMover:
             src,
             dst,
         )
-        print(f"entrée sage_replace : src={src}, dst={dst}")
         logger.debug("⏳ Déplacement sécurisé %s -> %s", src, dst)
         # Vérification safe du fichier source
 

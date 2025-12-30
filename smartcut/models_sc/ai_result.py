@@ -1,6 +1,9 @@
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 
 class AIResult(TypedDict):
-    description: str
-    keywords: list[str]
+    description: str | None
+    keywords: list[str] | None
+
+
+AIOutputType = Literal["full", "keywords", "description"]

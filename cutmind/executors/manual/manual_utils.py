@@ -17,6 +17,7 @@ import re
 from typing import Any
 
 from cutmind.models_cm.db_models import Segment
+from cutmind.process.file_mover import FileMover
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.logger import LoggerProtocol, ensure_logger
 
@@ -155,3 +156,21 @@ def summarize_import(stats: dict[str, int], csv_log: Path, logger: LoggerProtoco
         stats["errors"],
     )
     logger.info("🧾 Log CSV → %s", csv_log)
+
+
+def archive_csv(csv_path: Path, archive_root: Path) -> Path:
+    """
+    Archive un CSV traité et retourne le chemin archivé.
+    """
+    date_dir = datetime.utcnow().strftime("%Y-%m-%d")
+    archive_dir = archive_root / date_dir
+
+    archived_name = f"{csv_path.stem}_{datetime.utcnow():%H%M%S}{csv_path.suffix}"
+    archived_path = archive_dir / archived_name
+
+    FileMover.safe_replace(
+        src=csv_path,
+        dst=archived_path,
+    )
+
+    return archived_path
