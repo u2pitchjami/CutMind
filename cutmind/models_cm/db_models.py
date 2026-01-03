@@ -9,6 +9,7 @@ from typing import Any
 import uuid
 
 from shared.models.exceptions import CutMindError, ErrCode
+from shared.status_orchestrator.statuses import OrchestratorStatus
 
 
 # -------------------------------------------------------------
@@ -22,7 +23,7 @@ class Segment:
     start: float = 0.0
     end: float = 0.0
     duration: float | None = None
-    status: str = "raw"
+    status: str = OrchestratorStatus.SEGMENT_INIT
     confidence: float | None = None
     description: str | None = None
     rating: int | None = None
@@ -158,7 +159,7 @@ class Video:
     channels: int | None = None
     audio_duration: float | None = None
     filesize_mb: float | None = None
-    status: str = "init"
+    status: str = OrchestratorStatus.VIDEO_INIT
     tags: list[str] = field(default_factory=list)
     origin: str | None = "smartcut"
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())

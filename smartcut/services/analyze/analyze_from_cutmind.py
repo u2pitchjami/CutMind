@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+from collections import Counter
 from math import ceil
 from pathlib import Path
 import shutil
+
+from transformers import PreTrainedModel, ProcessorMixin
 
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Segment
 from shared.executors.ffmpeg_utils import get_duration
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
+from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import BATCH_FRAMES_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.safe_segments import safe_segments
@@ -20,13 +24,12 @@ from smartcut.executors.analyze.analyze_torch_utils import (
 )
 from smartcut.executors.analyze.analyze_utils import (
     delete_frames,
-    merge_keywords_across_batches,
 )
 from smartcut.executors.analyze.extract_frames import extract_segment_frames
 from smartcut.executors.analyze.prep_analyze import cleanup_temp, open_vid, release_cap
 from smartcut.executors.ia.load_model import load_and_batches
-from smartcut.models_sc.ai_result import AIResult
-from smartcut.services.keyword_normalizer import KeywordNormalizer
+from smartcut.models_sc.ai_result import AIOutputType, AIResult
+from smartcut.models_sc.ia_models import AIContext
 
 KeywordsBatches = list[AIResult]
 
@@ -44,6 +47,7 @@ def analyze_from_cutmind(
     fps_extract: float = 1.0,
     prompt_name: str = "keywords",
     system_prompt: str = "system_keywords",
+    force: bool = False,
     logger: LoggerProtocol | None = None,
 ) -> tuple[str, list[str]]:
     """
@@ -56,6 +60,8 @@ def analyze_from_cutmind(
         # Nettoyage répertoires temporaires
         cleanup_temp()
 
+        if not seg.description:
+            seg.description = ""
         if not seg.output_path:
             raise CutMindError(
                 "❌ Erreur segment : Aucune output path défini.",
@@ -92,64 +98,48 @@ def analyze_from_cutmind(
                 ctx=get_step_ctx({"video_name": video_name, "seg.id": seg.id}),
             )
 
+        if force or is_empty(seg.description) or is_empty(seg.category):
+            output_type: AIOutputType = "full"
+        else:
+            output_type = "keywords"
+
         logger.info(f"🎬 Analyse segment {seg.id} ({start:.2f}s → {end:.2f}s) : {len(frame_paths)} frames extraites.")
         with Timer(f"Traitement Keywords : {seg.id}", logger):
-            all_batches: KeywordsBatches = []
-            num_batches = ceil(len(frame_paths) / batch_size)
-            for b in range(num_batches):
-                batch_paths = frame_paths[b * batch_size : (b + 1) * batch_size]
-                if not batch_paths:
-                    continue
-                batch_dir = BATCH_FRAMES_DIR_SC / f"{video_name}_seg_{int(start * 10)}_{int(end * 10)}_b{b + 1}"
-                batch_dir.mkdir(parents=True, exist_ok=True)
+            context = run_ai_pipeline_v25(
+                video_name=video_name,
+                start=start,
+                end=end,
+                frame_paths=frame_paths,
+                batch_size=batch_size,
+                processor=processor,
+                model=model,
+                output_type=output_type,
+                logger=logger,
+            )
 
-                for src_path in batch_paths:
-                    dst_path = batch_dir / Path(src_path).name
-                    try:
-                        shutil.copy(src_path, dst_path)
-                    except Exception as exc:
-                        raise CutMindError(
-                            "❌ Erreur de copie des frames.",
-                            code=ErrCode.UNEXPECTED,
-                            ctx=get_step_ctx({"video_name": video_name, "src_path": src_path, "dst_path": dst_path}),
-                        ) from exc
+        # --- DESCRIPTION ---
+        if force:
+            seg.description = context.description or ""
+        else:
+            if is_empty(seg.description) and context.description:
+                seg.description = context.description or ""
 
-                logger.info(f"📦 Batch {b + 1}/{num_batches} → {len(batch_paths)} frames.")
-                tokens, limit = estimate_visual_tokens(len(batch_paths))
-                logger.info(f"🧮 Contexte : {tokens:,} / {limit:,}")
-
-                batch_result = process_batches(
-                    video_name=video_name,
-                    start=start,
-                    end=end,
-                    frame_paths=frame_paths,
-                    batch_size=batch_size,
-                    batch_dir=batch_dir,
-                    batch_paths=batch_paths,
-                    processor=processor,
-                    model=model,
-                    prompt_name=prompt_name,
-                    system_prompt=system_prompt,
-                )
-                all_batches.append(batch_result)
-                release_gpu_memory(model, cache_only=True)
-                free, total = vram_gpu()
-                logger.info(
-                    f"🧹 VRAM nettoyée ('cache_only') → VRAM libre : {free / 1e9:.2f} Go / {total / 1e9:.2f} Go"
-                )
-        delete_frames(batch_dir)
-        # Fusion des résultats IA
-        normalizer = KeywordNormalizer()
-        merged_description, keywords_list = merge_keywords_across_batches(all_batches, normalizer=normalizer)
-        logger.debug(f"🧠 Segment {seg.id} description: {merged_description}")
-        logger.debug(f"🧠 Segment {seg.id} keywords: {keywords_list}")
+        # --- CATEGORY ---
+        if force:
+            seg.category = context.category
+        else:
+            if is_empty(seg.category) and context.category:
+                seg.category = context.category
+        if context.keywords:
+            seg.keywords = context.keywords or []
+            logger.debug(f"🧠 Segment {seg.id} keywords: {seg.keywords}")
+        logger.debug(f"🧠 Segment {seg.id} description: {seg.description}")
 
         # --- 💾 Mise à jour du segment
         logger.debug(f"🔍 seg.id={seg.id} mem_id={id(seg)}")
 
-        seg.description = merged_description
-        seg.keywords = keywords_list
         seg.ai_model = model_name
+        seg.status = OrchestratorStatus.IA_DONE
         repo.update_segment_validation(seg)
         if not seg.id:
             raise CutMindError(
@@ -157,7 +147,10 @@ def analyze_from_cutmind(
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"video_name": video_name}),
             )
-        repo.insert_keywords_standalone(segment_id=seg.id, keywords=seg.keywords)
+        if seg.keywords:
+            # normalizer = KeywordNormalizer()
+            # seg.keywords = normalizer.normalize_keywords(seg.keywords)
+            repo.insert_keywords_standalone(segment_id=seg.id, keywords=seg.keywords)
 
         logger.debug(f"💾 Session mise à jour (segment {seg.id})")
         # logger.debug(f"session : {session}")
@@ -176,3 +169,190 @@ def analyze_from_cutmind(
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"segment_id": seg.id}),
         ) from exc
+
+
+def run_prompt_on_batches(
+    *,
+    video_name: str,
+    start: float,
+    end: float,
+    frame_paths: list[str],
+    batch_size: int,
+    processor: ProcessorMixin,
+    model: PreTrainedModel,
+    prompt_name: str,
+    system_prompt: str,
+    logger: LoggerProtocol,
+) -> KeywordsBatches:
+    all_batches: KeywordsBatches = []
+
+    num_batches = ceil(len(frame_paths) / batch_size)
+
+    for b in range(num_batches):
+        batch_paths = frame_paths[b * batch_size : (b + 1) * batch_size]
+        if not batch_paths:
+            continue
+
+        batch_dir = (
+            BATCH_FRAMES_DIR_SC / f"{video_name}_seg_{int(start * 10)}_{int(end * 10)}" / prompt_name / f"b{b + 1}"
+        )
+        batch_dir.mkdir(parents=True, exist_ok=True)
+
+        for src_path in batch_paths:
+            dst_path = batch_dir / Path(src_path).name
+            try:
+                shutil.copy(src_path, dst_path)
+            except Exception as exc:
+                raise CutMindError(
+                    "❌ Erreur de copie des frames.",
+                    code=ErrCode.UNEXPECTED,
+                    ctx=get_step_ctx(
+                        {
+                            "video_name": video_name,
+                            "src_path": src_path,
+                            "dst_path": dst_path,
+                        }
+                    ),
+                ) from exc
+
+        tokens, limit = estimate_visual_tokens(len(batch_paths))
+        logger.info(
+            "📦 Batch %d/%d | Frames=%d | Tokens=%s/%s",
+            b + 1,
+            num_batches,
+            len(batch_paths),
+            f"{tokens:,}",
+            f"{limit:,}",
+        )
+
+        batch_result = process_batches(
+            video_name=video_name,
+            start=start,
+            end=end,
+            frame_paths=frame_paths,
+            batch_size=batch_size,
+            batch_dir=batch_dir,
+            batch_paths=batch_paths,
+            processor=processor,
+            model=model,
+            prompt_name=prompt_name,
+            system_prompt=system_prompt,
+        )
+
+        all_batches.append(batch_result)
+
+        release_gpu_memory(model, cache_only=True)
+        free, total = vram_gpu()
+        logger.debug(f"🧹 all_batches : {all_batches}")
+        logger.info(
+            "🧹 VRAM nettoyée ('cache_only') → VRAM libre : %.2f Go / %.2f Go",
+            free / 1e9,
+            total / 1e9,
+        )
+        delete_frames(batch_dir)
+
+    return all_batches
+
+
+def merge_description(batches: list[AIResult]) -> str | None:
+    descriptions = [batch["description"] for batch in batches if batch.get("description")]
+    return descriptions[-1] if descriptions else None
+
+
+def merge_category(batches: list[AIResult]) -> str | None:
+    categories: list[str] = []
+
+    for batch in batches:
+        keywords = batch.get("keywords")
+        if keywords:
+            categories.append(keywords[0])
+
+    if not categories:
+        return None
+
+    return Counter(categories).most_common(1)[0][0]
+
+
+def merge_keywords(batches: list[AIResult]) -> list[str]:
+    keywords: set[str] = set()
+
+    for batch in batches:
+        batch_keywords = batch.get("keywords")
+        if batch_keywords:
+            keywords.update(batch_keywords)
+
+    return sorted(keywords)
+
+
+def run_ai_pipeline_v25(
+    *,
+    video_name: str,
+    start: float,
+    end: float,
+    frame_paths: list[str],
+    batch_size: int,
+    processor: ProcessorMixin,
+    model: PreTrainedModel,
+    output_type: AIOutputType = "full",
+    logger: LoggerProtocol,
+) -> AIContext:
+    context = AIContext()
+
+    # ===== PASSAGE 1 : description + catégorie =====
+    logger.info("🧠 IA Pass 1 — Description + Catégorie")
+
+    pass1_batches = run_prompt_on_batches(
+        video_name=video_name,
+        start=start,
+        end=end,
+        frame_paths=frame_paths,
+        batch_size=batch_size,
+        processor=processor,
+        model=model,
+        prompt_name="keywords",
+        system_prompt="system_keywords",
+        logger=logger,
+    )
+
+    for i, batch in enumerate(pass1_batches):
+        logger.debug(
+            "🧪 Batch %d → description=%s | keywords=%s",
+            i,
+            batch.get("description"),
+            batch.get("keywords"),
+        )
+    context.description = merge_description(pass1_batches) or ""
+    context.category = merge_category(pass1_batches)
+
+    logger.info(
+        "🧠 Pass 1 result → category=%s",
+        context.category,
+    )
+
+    if not context.category:
+        logger.warning("⚠️ Aucune catégorie détectée, on arrête le pipeline IA ici.")
+
+    else:
+        # ===== PASSAGE 2 : keywords guidés =====
+        logger.info("🧠 IA Pass 2 — Keywords guidés")
+
+        pass2_batches = run_prompt_on_batches(
+            video_name=video_name,
+            start=start,
+            end=end,
+            frame_paths=frame_paths,
+            batch_size=batch_size,
+            processor=processor,
+            model=model,
+            prompt_name=context.category,
+            system_prompt="system_keywords",
+            logger=logger,
+        )
+
+        context.keywords = merge_keywords(pass2_batches)
+
+    return context
+
+
+def is_empty(value: str | None) -> bool:
+    return value is None or not value.strip()

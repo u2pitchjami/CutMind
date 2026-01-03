@@ -24,6 +24,7 @@ from cutmind.models_cm.cursor_protocol import DictCursorProtocol
 from cutmind.models_cm.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.services.video_preparation import VideoPrepared
+from shared.status_orchestrator.statuses import OrchestratorStatus
 
 
 # =====================================================================
@@ -493,6 +494,27 @@ class CutMindRepository:
                 ctx=get_step_ctx(),
             ) from exc
 
+    def get_segments_by_ids(self, segment_ids: list[int]) -> list[Segment]:
+        """Retourne les segments correspondant exactement aux IDs fournis."""
+        if not segment_ids:
+            return []
+
+        try:
+            placeholders = ",".join(["%s"] * len(segment_ids))
+            query = f"SELECT * FROM segments WHERE id IN ({placeholders})"
+
+            rows = self._fetch_all(query, tuple(segment_ids))
+            return [Segment.from_row(row) for row in rows]
+
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx({"segment_ids": segment_ids})) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur Repo get_segments_by_ids.",
+                code=ErrCode.DB,
+                ctx=get_step_ctx({"segment_ids": segment_ids}),
+            ) from exc
+
     def get_segment_by_id(self, segment_id: int) -> Segment | None:
         query = "SELECT * FROM segments WHERE id = %s LIMIT 1"
         try:
@@ -603,8 +625,8 @@ class CutMindRepository:
                 FROM videos v
                 JOIN segments s ON v.id = s.video_id
                 WHERE
-                    v.status = 'validated'
-                    AND s.status = 'validated'
+                    v.status = %s
+                    AND s.status = %s
                     AND (
                         CAST(SUBSTRING_INDEX(s.resolution, 'x', 1) AS UNSIGNED) < 1920
                         OR CAST(SUBSTRING_INDEX(s.resolution, 'x', -1) AS UNSIGNED) < 1080
@@ -614,7 +636,11 @@ class CutMindRepository:
                 ORDER BY RAND()
                 LIMIT %s
                 """,
-                (limit_videos,),
+                (
+                    OrchestratorStatus.VIDEO_READY_FOR_ENHANCEMENT,
+                    OrchestratorStatus.VIDEO_READY_FOR_ENHANCEMENT,
+                    limit_videos,
+                ),
             )
             return [row["uid"] for row in rows if "uid" in row]
         except CutMindError as err:

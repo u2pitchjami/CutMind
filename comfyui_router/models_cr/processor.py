@@ -22,6 +22,7 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.services.ensure_deinterlaced import ensure_deinterlaced
 from shared.services.ensure_resolution import ensure_resolution
 from shared.services.video_preparation import VideoPrepared, prepare_video
+from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import (
     COLOR_BLUE,
     COLOR_CYAN,
@@ -202,7 +203,7 @@ class VideoProcessor:
 
             new_seg = ProcessedSegment(
                 id=self.segment.id,
-                status="enhanced",
+                status=OrchestratorStatus.SEGMENT_ENHANCED,
                 source_flow="comfyui_router",
                 fps=job.fps_out,
                 resolution=meta.resolution,

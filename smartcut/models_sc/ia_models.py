@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from smartcut.models_sc.ai_result import AIOutputType
+
 
 @dataclass
 class IASegmentInput:
@@ -28,3 +30,17 @@ class IASegmentResult:
     keywords: list[str]
     model_name: str | None = None
     error: str | None = None
+
+
+@dataclass(slots=True)
+class AIPass:
+    name: str
+    system_prompt: str
+    output_type: AIOutputType
+
+
+@dataclass(slots=True)
+class AIContext:
+    description: str | None = None
+    category: str | None = None
+    keywords: list[str] | None = None

@@ -25,9 +25,11 @@ from cutmind.executors.manual.manual_utils import (
     summarize_import,
     write_csv_log,
 )
+from cutmind.executors.manual.merge_perform import parse_merge_ids, perform_merge
 from cutmind.executors.manual.recut_segment import parse_recut_points, perform_recut
 from cutmind.services.main_validation import validation
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import CSV_ARCHIVE_PATH, CSV_LOG_PATH, MANUAL_CSV_PATH, TRASH_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.trash import move_to_trash, purge_old_trash
@@ -35,7 +37,7 @@ from shared.utils.trash import move_to_trash, purge_old_trash
 
 @with_child_logger
 def update_segments_csv(
-    status: str = "manual_review",
+    status_csv: str = "manual_review",
     manual_csv: Path = Path(MANUAL_CSV_PATH),
     csv_log: Path = Path(CSV_LOG_PATH),
     logger: LoggerProtocol | None = None,
@@ -78,6 +80,14 @@ def update_segments_csv(
                             log_rows.append({"segment_id": seg_id, "action": "deleted", "differences": "ALL"})
                             continue
 
+                        if status in ("ok", "OK"):
+                            new_data["status"] = OrchestratorStatus.SEGMENT_CUT_VALIDATED
+                            stats["updated"] += 1
+                            log_rows.append(
+                                {"segment_id": seg_id, "action": "Cut Validation OK", "differences": "status"}
+                            )
+                            continue
+
                         recut_points = parse_recut_points(status)
                         if recut_points:
                             perform_recut(segment, recut_points, logger=logger)
@@ -87,6 +97,18 @@ def update_segments_csv(
                             )
                             continue
 
+                        merge_ids = parse_merge_ids(status)
+                        if merge_ids:
+                            perform_merge(segment, merge_ids, logger=logger)
+                            stats["updated"] += 1
+                            log_rows.append(
+                                {
+                                    "segment_id": seg_id,
+                                    "action": f"merge with {merge_ids}",
+                                    "differences": "merge",
+                                }
+                            )
+                            continue
                         if not segment:
                             logger.warning("⚠️ Segment %s non trouvé", seg_id)
                             continue
@@ -113,7 +135,7 @@ def update_segments_csv(
 
         write_csv_log(csv_log, log_rows)
         summarize_import(stats, csv_log, logger=logger)
-        validation(status=status, logger=logger)
+        validation(status=status_csv, logger=logger)
     except CutMindError as err:
         raise err.with_context(get_step_ctx({"manual_csv": manual_csv})) from err
     except Exception as exc:

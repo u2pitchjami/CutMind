@@ -19,6 +19,7 @@ from cutmind.models_cm.db_models import Segment, Video
 from cutmind.process.file_mover import FileMover
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
+from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import CM_NB_VID_ROUTER, COLOR_RED, COLOR_RESET, INPUT_DIR, OUTPUT_DIR
 from shared.utils.logger import LoggerProtocol, ensure_logger, get_logger
 from shared.utils.settings import get_settings
@@ -73,20 +74,20 @@ class RouterWorker:
 
             if not prepared:
                 self.logger.info("ℹ️ Tous les segments de %s sont conformes.", video.name)
-                video.status = "validated"
+                video.status = OrchestratorStatus.VIDEO_ENHANCED
                 repo.update_video(video)
                 continue
 
             # 3️⃣ Transaction : copie + maj DB
             with Timer(f"Traitement Comfyui pour la vidéo : {video.name}", self.logger):
                 try:
-                    video.status = "processing_router"
+                    video.status = OrchestratorStatus.VIDEO_IN_ROUTER
                     repo.update_video(video)
                     delete_files(path=INPUT_DIR, ext="*.mp4")
 
                     for seg, src, dst in prepared:
                         self.file_mover.safe_copy(src, dst)
-                        seg.status = "in_router"
+                        seg.status = OrchestratorStatus.SEGMENT_IN_ROUTER
                         seg.source_flow = "comfyui_router"
                         repo.update_segment_validation(seg)
 
@@ -108,11 +109,11 @@ class RouterWorker:
                                 f"{COLOR_RED}🌙 Plage horaire silencieuse — Router désactivé (SmartCut forcé)\
                                     {COLOR_RESET}"
                             )
-                            video.status = "validated"
+                            video.status = OrchestratorStatus.VIDEO_READY_FOR_ENHANCEMENT
                             repo.update_video(video)
                             return processed_count
 
-                    video.status = "enhanced"
+                    video.status = OrchestratorStatus.VIDEO_ENHANCED
                     repo.update_video(video)
 
                     self.logger.info("📬 Vidéo %s envoyée vers Router (%d segments).", video.uid, len(prepared))

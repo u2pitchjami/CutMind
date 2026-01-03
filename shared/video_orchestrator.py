@@ -24,6 +24,7 @@ from cutmind.services.main_validation import validation
 from cutmind.services.manual.update_from_csv import update_segments_csv
 from shared.models.config_manager import reload_and_apply
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import (
     CM_NB_VID_ROUTER,
     COLOR_BLUE,
@@ -34,6 +35,8 @@ from shared.utils.config import (
     COLOR_RESET,
     COLOR_YELLOW,
     IMPORT_DIR_SC,
+    MANUAL_CSV_CUT_PATH,
+    MANUAL_CSV_PATH,
     OUTPUT_DIR_SC,
 )
 from shared.utils.logger import LoggerProtocol, ensure_logger, get_logger, with_child_logger
@@ -299,14 +302,26 @@ def orchestrate(priority: str = "smartcut", logger: LoggerProtocol | None = None
                 logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
             time.sleep(SCAN_INTERVAL)
             try:
-                validation(logger=logger)
+                validation(status=OrchestratorStatus.VIDEO_CUT_DONE, logger=logger)
+            except CutMindError as exc:
+                logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
+            try:
+                validation(status=OrchestratorStatus.VIDEO_READY_FOR_VALIDATION, logger=logger)
             except CutMindError as exc:
                 logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
 
             # 🔹 Import CSV automatique dans CutMind
             logger.info("📥 Import SmartCut CSVs vers CutMind...")
             try:
-                update_segments_csv(logger=logger)
+                update_segments_csv(
+                    status_csv=OrchestratorStatus.VIDEO_PENDING_CHECK, manual_csv=Path(MANUAL_CSV_PATH), logger=logger
+                )
+            except CutMindError as exc:
+                logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
+            try:
+                update_segments_csv(
+                    status_csv=OrchestratorStatus.VIDEO_CUT_DONE, manual_csv=Path(MANUAL_CSV_CUT_PATH), logger=logger
+                )
             except CutMindError as exc:
                 logger.exception("[%s] %s | ctx=%r", exc.code, str(exc), exc.ctx)
             try:

@@ -15,15 +15,13 @@ import uuid
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
-from shared.utils.config import ERROR_DIR_SC
+from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.safe_runner import safe_main
 from shared.utils.settings import get_settings
-from smartcut.executors.analyze.split_utils import move_to_error
 from smartcut.lite.load_segments import load_segments_from_directory
 from smartcut.lite.relocate_and_rename_segments import relocate_and_rename_segments
-from smartcut.services.analyze.apply_confidence import apply_confidence_to_session
-from smartcut.services.analyze.ia_pipeline_service import run_ia_pipeline
+from smartcut.services.analyze.analyze_from_cutmind import analyze_from_cutmind
 
 settings = get_settings()
 
@@ -53,7 +51,7 @@ def lite_cut(directory_path: Path, logger: LoggerProtocol | None = None) -> None
                     uid=str(uuid.uuid4()),
                     name=directory_path.name,
                     video_path=str(directory_path),
-                    status="init",
+                    status=OrchestratorStatus.VIDEO_INIT,
                     origin="smartcut_lite",
                 )
                 repo.insert_video_with_segments(new_vid)
@@ -80,69 +78,81 @@ def lite_cut(directory_path: Path, logger: LoggerProtocol | None = None) -> None
 
             logger.info("💾 Session initialisée (%d segments).", len(vid.segments))
 
-            # Étape 1️⃣ — Analyse IA
-            if vid.status in ("scenes_done",):
-                logger.info("🧠 Analyse IA des segments...")
-                pending_segments = vid.get_pending_segments()
-                logger.debug("Segments en attente : %s", [s.id for s in pending_segments])
+            # # Étape 1️⃣ — Analyse IA
+            # if vid.status in ("scenes_done",):
+            #     logger.info("🧠 Analyse IA des segments...")
+            #     pending_segments = vid.get_pending_segments()
+            #     logger.debug("Segments en attente : %s", [s.id for s in pending_segments])
 
-                if not pending_segments:
-                    logger.info("✅ Tous les segments ont déjà été traités par l’IA.")
-                    vid.status = "ia_done"
-                    repo.update_video(vid)
-                else:
-                    logger.info("📊 %d segments à traiter par l’IA...", len(pending_segments))
-                try:
-                    run_ia_pipeline(
-                        video_path=str(vid.video_path),
-                        segments=pending_segments,
-                        frames_per_segment=FRAME_PER_SEGMENT,
-                        auto_frames=AUTO_FRAMES,
-                        base_rate=BASE_RATE,
-                        fps_extract=FPS_EXTRACT,
-                        lite=True,
-                        logger=logger,
-                    )
+            #     if not pending_segments:
+            #         logger.info("✅ Tous les segments ont déjà été traités par l’IA.")
+            #         vid.status = "ia_done"
+            #         repo.update_video(vid)
+            #     else:
+            #         logger.info("📊 %d segments à traiter par l’IA...", len(pending_segments))
+            #     try:
+            #         run_ia_pipeline(
+            #             video_path=str(vid.video_path),
+            #             segments=pending_segments,
+            #             frames_per_segment=FRAME_PER_SEGMENT,
+            #             auto_frames=AUTO_FRAMES,
+            #             base_rate=BASE_RATE,
+            #             fps_extract=FPS_EXTRACT,
+            #             lite=True,
+            #             logger=logger,
+            #         )
 
-                    vid.status = "ia_done"
-                    repo.update_video(vid)
-                    logger.info("✅ Analyse IA terminée.")
+            #         vid.status = "ia_done"
+            #         repo.update_video(vid)
+            #         logger.info("✅ Analyse IA terminée.")
 
-                except Exception as exc:
-                    logger.error("💥 Erreur durant l’analyse IA : %s", exc)
-                    if vid.tags == "" or "ia_error" not in vid.tags:
-                        vid.add_tag_vid("ia_error")
-                    else:
-                        error_path = move_to_error(file_path=Path(str(vid.video_path)), error_root=ERROR_DIR_SC)
-                        vid.video_path = str(error_path)
-                        vid.status = "error"
-                        logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
-                    repo.update_video(vid)
-                    raise CutMindError(
-                        f"❌ Erreur lors de l'analyse IA {vid.name}",
-                        code=ErrCode.UNEXPECTED,
-                    ) from exc
-            else:
-                logger.info("⏩ Étape IA déjà effectuée — skip.")
+            #     except Exception as exc:
+            #         logger.error("💥 Erreur durant l’analyse IA : %s", exc)
+            #         if vid.tags == "" or "ia_error" not in vid.tags:
+            #             vid.add_tag_vid("ia_error")
+            #         else:
+            #             error_path = move_to_error(file_path=Path(str(vid.video_path)), error_root=ERROR_DIR_SC)
+            #             vid.video_path = str(error_path)
+            #             vid.status = "error"
+            #             logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
+            #         repo.update_video(vid)
+            #         raise CutMindError(
+            #             f"❌ Erreur lors de l'analyse IA {vid.name}",
+            #             code=ErrCode.UNEXPECTED,
+            #         ) from exc
+            # else:
+            #     logger.info("⏩ Étape IA déjà effectuée — skip.")
 
-            # Étape 2️⃣ — Calcul du score de confiance
-            if vid.status == "ia_done":
-                logger.info("📊 Calcul des scores de confiance...")
-                apply_confidence_to_session(
-                    session=vid,
-                    video_or_dir_name=vid.name,
-                    model_name=settings.analyse_confidence.model_confidence,
-                    logger=logger,
-                )
+            # # Étape 2️⃣ — Calcul du score de confiance
+            # if vid.status == "ia_done":
+            #     logger.info("📊 Calcul des scores de confiance...")
+            #     apply_confidence_to_session(
+            #         session=vid,
+            #         video_or_dir_name=vid.name,
+            #         model_name=settings.analyse_confidence.model_confidence,
+            #         logger=logger,
+            #     )
 
-                logger.info("✅ Scores de confiance calculés pour %d segments.", len(vid.segments))
+            #     logger.info("✅ Scores de confiance calculés pour %d segments.", len(vid.segments))
 
-                # Étape 3️⃣ — Finalisation
-                logger.info("📊 Déplacement des fichiers")
-                relocate_and_rename_segments(session=vid, logger=logger)
-                vid.status = "smartcut_done"
-                repo.update_video(vid)
-                logger.info("🏁 SmartCut-Lite terminé pour %s", directory_path)
+            # Étape 3️⃣ — Finalisation
+            logger.info("📊 Déplacement des fichiers")
+            relocate_and_rename_segments(session=vid, logger=logger)
+            vid.status = "smartcut_done"
+            repo.update_video(vid)
+            logger.info("🏁 SmartCut-Lite terminé pour %s", directory_path)
+
+            vid = repo.get_video_with_segments(video_uid=vid.uid)
+            if not vid or not vid.status:
+                raise Exception("Impossible de récupérer la vidéo SmartCut-Lite après chargement des segments.")
+
+            logger.info("🧠 Analyse IA des segments...")
+            pending_segments = vid.get_pending_segments()
+            logger.debug("Segments en attente : %s", [s.id for s in pending_segments])
+
+            for seg in pending_segments:
+                analyze_from_cutmind(seg, logger=logger)
+
         else:
             logger.debug(f"🧹 Le dossier {directory_path} est vide.")
 

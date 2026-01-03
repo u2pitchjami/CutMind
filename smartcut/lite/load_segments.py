@@ -19,6 +19,7 @@ from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode
 from shared.services.video_preparation import prepare_video
+from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.logger import LoggerProtocol, ensure_logger
 
 
@@ -63,7 +64,7 @@ def load_segments_from_directory(video: Video, directory_path: Path, logger: Log
             end=prepared.duration,
             duration=prepared.duration,
             description="",
-            status="raw",
+            status=OrchestratorStatus.SEGMENT_INIT,
             fps=prepared.fps,
             nb_frames=prepared.nb_frames,
             resolution=prepared.resolution,

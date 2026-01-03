@@ -144,6 +144,7 @@ DB_NAME = str(get_required("DB_NAME"))
 
 CUTMIND_BASEDIR = Path(get_path_required("CUTMIND_BASEDIR"))
 MANUAL_CSV_PATH = get_str("MANUAL_CSV_PATH")
+MANUAL_CSV_CUT_PATH = get_str("MANUAL_CSV_CUT_PATH")
 CSV_LOG_PATH = get_str("CSV_LOG_PATH")
 CSV_ARCHIVE_PATH: Path = Path(get_str("CSV_ARCHIVE_PATH", ".csv_archive"))
 JSON_STATES = get_str("JSON_STATES", "/basedir/SmartCut/states")

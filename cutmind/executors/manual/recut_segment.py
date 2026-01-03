@@ -9,6 +9,7 @@ import uuid
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Segment
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import TRASH_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
@@ -104,7 +105,7 @@ def perform_recut(
                 start=start,
                 end=end,
                 duration=end - start,
-                status="pending_check",
+                status=OrchestratorStatus.SEGMENT_READY_FOR_CUT_VALIDATION,
                 confidence=0.00,
                 description="",
                 fps=segment.fps,

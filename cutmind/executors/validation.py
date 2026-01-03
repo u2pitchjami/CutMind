@@ -25,22 +25,19 @@ from typing import Any
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Video
 from cutmind.process.file_mover import CUTMIND_BASEDIR, FileMover, sanitize
-from cutmind.services.categ.categ_serv import match_category
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import OUTPUT_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.remove_empty_dirs import remove_empty_dirs
 from shared.utils.safe_segments import safe_segments
-from smartcut.services.analyze.analyze_from_cutmind import analyze_from_cutmind
 
 
 # =====================================================================
 # ⚙️ Validation automatique d'une vidéo
 # =====================================================================
 @safe_segments
-def analyze_session_validation_db(
-    video: Video, min_confidence: float = 0.45, logger: LoggerProtocol | None = None
-) -> dict[str, Any]:
+def validation_db(video: Video, min_confidence: float = 0.45, logger: LoggerProtocol | None = None) -> dict[str, Any]:
     logger = ensure_logger(logger, __name__)
     repo = CutMindRepository()
     if not video:
@@ -53,57 +50,105 @@ def analyze_session_validation_db(
     # --- Analyse en mémoire ---
     try:
         for seg in video.segments:
-            if not seg.description and not seg.confidence and not seg.keywords:
-                seg.description, seg.keywords = analyze_from_cutmind(seg, logger)
             desc_ok = bool(seg.description and seg.description.strip().lower() not in ("none", ""))
+            cat_ok = bool(seg.category and seg.category.strip().lower() not in ("none", ""))
             conf_ok = (seg.confidence or 0.0) >= min_confidence
             kw_ok = bool(seg.keywords and len(seg.keywords) > 0)
 
-            if seg.status != "enhanced":
-                if desc_ok and conf_ok and kw_ok:
-                    seg.status = "validated"
-                    seg.category = match_category(seg.keywords)
-                    if seg.category and seg.category.strip().lower() not in ("none", ""):
-                        if seg.source_flow == "manual_review":
-                            seg.source_flow = "manual_validation"
-                        else:
-                            seg.source_flow = "auto_validation"
-                        valid_segments.append(seg)
-                    else:
-                        seg.status = "pending_check"
-                        seg.source_flow = "manual_review"
+            if seg.status != OrchestratorStatus.SEGMENT_VALIDATED:
+                if desc_ok and cat_ok and conf_ok and kw_ok:
+                    seg.status = OrchestratorStatus.SEGMENT_VALIDATED
+                    valid_segments.append(seg)
                 else:
-                    seg.status = "pending_check"
+                    seg.status = OrchestratorStatus.SEGMENT_PENDING_CHECK
                     seg.source_flow = "manual_review"
+                    decisions.append(seg)
             else:
-                if desc_ok and conf_ok and kw_ok:
-                    seg.status = "def_validated"
-                    if seg.category and seg.category.strip().lower() not in ("none", ""):
-                        if seg.source_flow == "def_manual_review":
-                            seg.source_flow = "def_manual_validation"
-                        else:
-                            seg.source_flow = "def_auto_validation"
-                        valid_segments.append(seg)
-                    else:
-                        seg.status = "def_pending_check"
-                        seg.source_flow = "def_manual_review"
-                else:
-                    seg.status = "def_pending_check"
-                    seg.source_flow = "def_manual_review"
-
-            decisions.append(seg)
+                valid_segments.append(seg)
 
         valid_count = len(valid_segments)
         auto_valid = valid_count == total
 
         # --- Si pas auto-validée : mise à jour simple ---
-        if video.status != "enhanced":
-            if not auto_valid:
-                with repo.transaction():
-                    for seg in decisions:
-                        repo.update_segment_validation(seg)
-                    video.status = "def_manual_review"
-                    repo.update_video(video)
+        if not auto_valid:
+            with repo.transaction():
+                for seg in decisions:
+                    repo.update_segment_validation(seg)
+                video.status = OrchestratorStatus.VIDEO_PENDING_CHECK
+                repo.update_video(video)
+            return {
+                "uid": video.uid,
+                "valid": valid_count,
+                "total": total,
+                "auto_valid": False,
+                "moved": False,
+            }
+
+            # --- Déplacement réussi : commit DB ---
+        with repo.transaction():
+            for seg in valid_segments:
+                repo.update_segment_validation(seg)
+
+            video.status = OrchestratorStatus.VIDEO_VALIDATED
+            repo.update_video(video)
+
+        remove_empty_dirs(root_path=OUTPUT_DIR_SC)
+
+        return {
+            "uid": video.uid,
+            "valid": valid_count,
+            "total": total,
+            "auto_valid": True,
+            "moved": False,
+        }
+
+    except CutMindError as err:
+        raise err.with_context(get_step_ctx({"name": video.name})) from err
+    except Exception as exc:
+        raise CutMindError(
+            "❌ Erreur innatendue lors de la validation.",
+            code=ErrCode.UNEXPECTED,
+            ctx=get_step_ctx({"name": video.name}),
+        ) from exc
+
+
+@safe_segments
+def validation_cut(video: Video, min_confidence: float = 0.45, logger: LoggerProtocol | None = None) -> dict[str, Any]:
+    logger = ensure_logger(logger, __name__)
+    repo = CutMindRepository()
+    if not video:
+        raise CutMindError("❌ Erreur vidéo absente pour la validation.", code=ErrCode.NOFILE, ctx=get_step_ctx())
+
+    total = len(video.segments)
+    valid_segments = []
+
+    # --- Analyse en mémoire ---
+    try:
+        for seg in video.segments:
+            if seg.status == OrchestratorStatus.SEGMENT_CUT_VALIDATED:
+                valid_segments.append(seg)
+
+        valid_count = len(valid_segments)
+        auto_valid = valid_count == total
+
+        # --- Si pas auto-validée : mise à jour simple ---
+        if not auto_valid:
+            return {
+                "uid": video.uid,
+                "valid": valid_count,
+                "total": total,
+                "auto_valid": False,
+                "moved": False,
+            }
+
+        # --- Auto-validation complète : tentative de déplacement ---
+        mover = FileMover()
+
+        # Plan des destinations (relatives)
+        planned_targets = {}
+        safe_name = sanitize(video.name)
+        for seg in valid_segments:
+            if not seg.filename_predicted:
                 return {
                     "uid": video.uid,
                     "valid": valid_count,
@@ -111,82 +156,40 @@ def analyze_session_validation_db(
                     "auto_valid": False,
                     "moved": False,
                 }
+            dst_final = CUTMIND_BASEDIR / safe_name / seg.filename_predicted
+            dst_rel = dst_final
+            planned_targets[seg.uid] = dst_rel
 
-            # --- Auto-validation complète : tentative de déplacement ---
-            mover = FileMover()
+        moved_ok = mover.move_video_files(video, planned_targets)
 
-            # Plan des destinations (relatives)
-            planned_targets = {}
-            safe_name = sanitize(video.name)
-            for seg in valid_segments:
-                if not seg.filename_predicted:
-                    return {
-                        "uid": video.uid,
-                        "valid": valid_count,
-                        "total": total,
-                        "auto_valid": False,
-                        "moved": False,
-                    }
-                dst_final = CUTMIND_BASEDIR / safe_name / seg.filename_predicted
-                dst_rel = dst_final
-                planned_targets[seg.uid] = dst_rel
-
-            moved_ok = mover.move_video_files(video, planned_targets)
-
-            if not moved_ok:
-                return {
-                    "uid": video.uid,
-                    "valid": valid_count,
-                    "total": total,
-                    "auto_valid": True,
-                    "moved": False,
-                }
-
-            # --- Déplacement réussi : commit DB ---
-            with repo.transaction():
-                for seg in valid_segments:
-                    seg.output_path = str(planned_targets[seg.uid])
-                    repo.update_segment_validation(seg)
-
-                video.status = "validated"
-                repo.update_video(video)
-
-            remove_empty_dirs(root_path=OUTPUT_DIR_SC)
-
+        if not moved_ok:
             return {
                 "uid": video.uid,
                 "valid": valid_count,
                 "total": total,
                 "auto_valid": True,
-                "moved": True,
+                "moved": False,
             }
-        else:
-            if not auto_valid:
-                with repo.transaction():
-                    for seg in decisions:
-                        repo.update_segment_validation(seg)
-                    video.status = "def_manual_review"
-                    repo.update_video(video)
-                    return {
-                        "uid": video.uid,
-                        "valid": valid_count,
-                        "total": total,
-                        "auto_valid": False,
-                        "moved": False,
-                    }
-            else:
-                with repo.transaction():
-                    for seg in decisions:
-                        repo.update_segment_validation(seg)
-                    video.status = "def_manual_review"
-                    repo.update_video(video)
-                    return {
-                        "uid": video.uid,
-                        "valid": valid_count,
-                        "total": total,
-                        "auto_valid": True,
-                        "moved": False,
-                    }
+
+        # --- Déplacement réussi : commit DB ---
+        with repo.transaction():
+            for seg in valid_segments:
+                seg.output_path = str(planned_targets[seg.uid])
+                repo.update_segment_validation(seg)
+
+            video.status = OrchestratorStatus.VIDEO_CUT_VALIDATED
+            repo.update_video(video)
+
+        remove_empty_dirs(root_path=OUTPUT_DIR_SC)
+
+        return {
+            "uid": video.uid,
+            "valid": valid_count,
+            "total": total,
+            "auto_valid": True,
+            "moved": True,
+        }
+
     except CutMindError as err:
         raise err.with_context(get_step_ctx({"name": video.name})) from err
     except Exception as exc:

@@ -1,9 +1,10 @@
 # check/check_enhanced_segments.py
 
 from cutmind.db.repository import CutMindRepository
-from cutmind.executors.validation import analyze_session_validation_db
+from cutmind.executors.validation import validation_cut, validation_db
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
+from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import MIN_CONFIDENCE
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
@@ -12,7 +13,9 @@ settings = get_settings()
 
 
 @with_child_logger
-def validation(status: str = "smartcut_done", logger: LoggerProtocol | None = None) -> None:
+def validation(
+    status: str = OrchestratorStatus.VIDEO_READY_FOR_VALIDATION, logger: LoggerProtocol | None = None
+) -> None:
     logger = ensure_logger(logger, __name__)
     STATUS = status
     repo = CutMindRepository()
@@ -27,7 +30,11 @@ def validation(status: str = "smartcut_done", logger: LoggerProtocol | None = No
             # --- Validation automatique ---
             try:
                 with Timer(f"Traitement de Validation : {video.name}", logger):
-                    result = analyze_session_validation_db(video=video, min_confidence=MIN_CONFIDENCE, logger=logger)
+                    if status == OrchestratorStatus.VIDEO_CUT_DONE:
+                        result = validation_cut(video=video, min_confidence=MIN_CONFIDENCE, logger=logger)
+                    else:
+                        result = validation_db(video=video, min_confidence=MIN_CONFIDENCE, logger=logger)
+
                     auto_valid = result["auto_valid"]
                     valid = result["valid"]
                     total = result["total"]
@@ -40,11 +47,11 @@ def validation(status: str = "smartcut_done", logger: LoggerProtocol | None = No
                         auto_valid_count += 1
                     else:
                         logger.warning("ℹ️ Fichiers vidéo non déplacés pour %s", video.uid)
-                        raise CutMindError(
-                            "❌ Erreur innatendue lors de la validation : Échec du déplacement.",
-                            code=ErrCode.UNEXPECTED,
-                            ctx=get_step_ctx({"name": video.name}),
-                        )
+                        # raise CutMindError(
+                        #     "❌ Erreur innatendue lors de la validation : Échec du déplacement.",
+                        #     code=ErrCode.UNEXPECTED,
+                        #     ctx=get_step_ctx({"name": video.name}),
+                        # )
                 else:
                     logger.info("🕵️ Validation manuelle requise (%d/%d segments)", valid, total)
                     manual_valid_count += 1
