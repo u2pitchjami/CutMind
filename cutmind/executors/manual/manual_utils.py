@@ -79,42 +79,44 @@ def keywords_to_list_from_str(s: str | None) -> list[str]:
 
 
 def build_new_data_from_csv_row(row: dict[str, Any]) -> dict[str, Any]:
-    status = normalize_csv_value(row.get("status")) or "manual_review"
-    description = normalize_csv_value(row.get("description"))
     try:
-        conf = float(row.get("confidence") or 0.0)
-    except (TypeError, ValueError):
-        conf = 0.0
+        status = normalize_csv_value(row.get("status")) or "manual_review"
+        description = normalize_csv_value(row.get("description"))
+        category = normalize_csv_value(row.get("category"))
+        pipeline_target = normalize_csv_value(row.get("pipeline_target"))
 
-    # --- 🔄 Fusion des colonnes de mots-clés ---
-    # Priorité à `keywords`, mais on fusionne `keywords_common` et `keywords_specific` si présentes
-    raw_keywords = []
-    try:
-        for col in ("keywords", "keywords_common", "keywords_specific"):
-            if col in row and row.get(col):
-                normalized = normalize_csv_value(row.get(col))
-                if normalized:
-                    raw_keywords.append(normalized)
+        try:
+            conf = float(row.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            conf = 0.0
 
-        # Joindre tout dans une seule chaîne, puis parser proprement
-        merged_keywords_str = ", ".join(raw_keywords)
-        keywords_list = keywords_to_list_from_str(merged_keywords_str)
+        keywords_list: list[str] = []
+        raw_keywords = normalize_csv_value(row.get("keywords"))
+        if raw_keywords:
+            keywords_list = keywords_to_list_from_str(raw_keywords)
 
         return {
             "description": description,
             "confidence": conf,
             "status": status,
+            "pipeline_target": pipeline_target,
+            "category": category,
             "keywords": keywords_list,
         }
+
     except Exception as exc:
         raise CutMindError(
-            "❌ Erreur inattendue lors de check_secure_in_router.",
+            "❌ Erreur lors de la construction des données depuis le CSV.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"row": row}),
         ) from exc
 
 
-def compare_segment(old: Segment, new: dict[str, Any], float_epsilon: float = 1e-6) -> list[str]:
+def compare_segment(
+    old: Segment,
+    new: dict[str, Any],
+    float_epsilon: float = 1e-6,
+) -> list[str]:
     diffs: list[str] = []
 
     if (old.description or "") != (new.get("description") or ""):
@@ -127,6 +129,12 @@ def compare_segment(old: Segment, new: dict[str, Any], float_epsilon: float = 1e
 
     if (old.status or "") != (new.get("status") or ""):
         diffs.append("status")
+
+    if (old.pipeline_target or "") != (new.get("pipeline_target") or ""):
+        diffs.append("pipeline_target")
+
+    if (old.category or "") != (new.get("category") or ""):
+        diffs.append("category")
 
     if (old.keywords or []) != (new.get("keywords") or []):
         diffs.append("keywords")

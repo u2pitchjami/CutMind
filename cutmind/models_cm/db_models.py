@@ -24,6 +24,7 @@ class Segment:
     end: float = 0.0
     duration: float | None = None
     status: str = OrchestratorStatus.SEGMENT_INIT
+    pipeline_target: str | None = None
     confidence: float | None = None
     description: str | None = None
     rating: int | None = None

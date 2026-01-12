@@ -84,7 +84,7 @@ def compute_num_frames(segment_duration: float, base_rate: int = 5) -> int:
     - base_rate: number of frames per minute of video.
     - Minimum 3 frames per segment.
     """
-    frames = max(3, int(base_rate * (segment_duration / 60)))
+    frames = max(3, int(base_rate * (segment_duration)))
     return frames
 
 

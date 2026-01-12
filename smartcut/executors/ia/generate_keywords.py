@@ -57,6 +57,8 @@ def generate_keywords_from_frames(
     SYSTEM_PROMPT = PROMPTS[system_prompt]
     user_prompt = PROMPTS[prompt_name]
 
+    print("user_prompt:", user_prompt)
+
     content = []
 
     # Paramètres visuels équivalents à ComfyUI
@@ -134,6 +136,8 @@ def generate_keywords_from_frames(
         )[0]
 
         ai_result: AIResult = parse_json_ai_output(decoded_text)
+
+        print(f"ai_result: {ai_result}")
 
         # Nettoyage du texte
         # if "</think>" in output_text:

@@ -21,7 +21,6 @@ from shared.utils.safe_runner import safe_main
 from shared.utils.settings import get_settings
 from smartcut.lite.load_segments import load_segments_from_directory
 from smartcut.lite.relocate_and_rename_segments import relocate_and_rename_segments
-from smartcut.services.analyze.analyze_from_cutmind import analyze_from_cutmind
 
 settings = get_settings()
 
@@ -138,20 +137,13 @@ def lite_cut(directory_path: Path, logger: LoggerProtocol | None = None) -> None
             # Étape 3️⃣ — Finalisation
             logger.info("📊 Déplacement des fichiers")
             relocate_and_rename_segments(session=vid, logger=logger)
-            vid.status = "smartcut_done"
+            vid.status = OrchestratorStatus.VIDEO_CUT_DONE
             repo.update_video(vid)
             logger.info("🏁 SmartCut-Lite terminé pour %s", directory_path)
 
             vid = repo.get_video_with_segments(video_uid=vid.uid)
             if not vid or not vid.status:
                 raise Exception("Impossible de récupérer la vidéo SmartCut-Lite après chargement des segments.")
-
-            logger.info("🧠 Analyse IA des segments...")
-            pending_segments = vid.get_pending_segments()
-            logger.debug("Segments en attente : %s", [s.id for s in pending_segments])
-
-            for seg in pending_segments:
-                analyze_from_cutmind(seg, logger=logger)
 
         else:
             logger.debug(f"🧹 Le dossier {directory_path} est vide.")

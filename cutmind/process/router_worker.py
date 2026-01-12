@@ -19,9 +19,8 @@ from cutmind.models_cm.db_models import Segment, Video
 from cutmind.process.file_mover import FileMover
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
-from shared.status_orchestrator.statuses import OrchestratorStatus
-from shared.utils.config import CM_NB_VID_ROUTER, COLOR_RED, COLOR_RESET, INPUT_DIR, OUTPUT_DIR
-from shared.utils.logger import LoggerProtocol, ensure_logger, get_logger
+from shared.utils.config import COLOR_RED, COLOR_RESET, INPUT_DIR, OUTPUT_DIR
+from shared.utils.logger import get_logger
 from shared.utils.settings import get_settings
 from shared.utils.trash import delete_files
 
@@ -33,9 +32,10 @@ forbidden_hours = settings.router_orchestrator.forbidden_hours
 class RouterWorker:
     """Gère l'envoi automatique des segments non conformes vers ComfyUI Router."""
 
-    def __init__(self, limit_videos: int = CM_NB_VID_ROUTER):
+    def __init__(self, vid: Video, segments: list[Segment]):
         self.logger = get_logger("CutMind-Comfyui_Router")
-        self.limit_videos = limit_videos
+        self.video = vid
+        self.segments = segments
         self.file_mover = FileMover()
 
     # ---------------------------------------------------------
@@ -47,87 +47,58 @@ class RouterWorker:
         Retourne le nombre total de segments envoyés pour traitement.
         """
 
-        self.logger.info("🚀 Démarrage RouterWorker (max %d vidéos)", self.limit_videos)
+        self.logger.info("🚀 Démarrage RouterWorker")
+        if not self.video:
+            self.logger.warning("⚠️ Vidéo introuvable")
+            return 0
 
         processed_count = 0
+        prepared = self._prepare_segments()
 
         # 1️⃣ Sélectionner les vidéos concernées
         repo = CutMindRepository()
-        video_uids = repo.get_nonstandard_videos(self.limit_videos)
-        if not video_uids:
-            self.logger.info("📭 Aucun segment non standard trouvé — base à jour.")
-            return 0
 
-        self.logger.info("🎬 %d vidéos candidates détectées", len(video_uids))
+        self.logger.info("🎞️ Vidéo '%s' nb segments: %i", self.video.name, len(self.segments))
 
-        # 2️⃣ Parcourir les vidéos et segments
-        for uid in video_uids:
-            video = repo.get_video_with_segments(uid)
-            if not video:
-                self.logger.warning("⚠️ Vidéo UID introuvable : %s", uid)
-                continue
+        # 3️⃣ Transaction : copie + maj DB
+        with Timer(f"Traitement Comfyui pour la vidéo : {self.video.name}", self.logger):
+            try:
+                delete_files(path=INPUT_DIR, ext="*.mp4")
 
-            self.logger.info("🎞️ Vidéo '%s' (%d segments)", video.name, len(video.segments))
+                for seg, src, dst in prepared:
+                    self.file_mover.safe_copy(src, dst)
+                    seg.source_flow = "comfyui_router"
+                    repo.update_segment_validation(seg)
 
-            # Sélectionne les segments hors standard
-            prepared = self._prepare_segments(video, logger=self.logger)
+                    # --- DÉCISION INTELLIGENTE ---
+                    current_hour = datetime.now().hour
+                    router_allowed = current_hour not in forbidden_hours
+                    if router_allowed:
+                        with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
+                            delete_files(path=OUTPUT_DIR, ext="*.png")
+                            delete_files(path=OUTPUT_DIR, ext="*.mp4")
+                            processor = VideoProcessor(segment=seg, logger=self.logger)
+                            new_seg = processor.process(Path(dst), logger=self.logger)
+                            repo.update_segment_postprocess(new_seg)
+                            self.logger.debug(f"new_seg {new_seg}")
+                            processed_count += 1
+                    else:
+                        self.logger.info(
+                            f"{COLOR_RED}🌙 Plage horaire silencieuse — Router désactivé (SmartCut forcé)\
+                                {COLOR_RESET}"
+                        )
+                        return processed_count
 
-            if not prepared:
-                self.logger.info("ℹ️ Tous les segments de %s sont conformes.", video.name)
-                video.status = OrchestratorStatus.VIDEO_ENHANCED
-                repo.update_video(video)
-                continue
-
-            # 3️⃣ Transaction : copie + maj DB
-            with Timer(f"Traitement Comfyui pour la vidéo : {video.name}", self.logger):
-                try:
-                    video.status = OrchestratorStatus.VIDEO_IN_ROUTER
-                    repo.update_video(video)
-                    delete_files(path=INPUT_DIR, ext="*.mp4")
-
-                    for seg, src, dst in prepared:
-                        self.file_mover.safe_copy(src, dst)
-                        seg.status = OrchestratorStatus.SEGMENT_IN_ROUTER
-                        seg.source_flow = "comfyui_router"
-                        repo.update_segment_validation(seg)
-
-                        # --- DÉCISION INTELLIGENTE ---
-                        current_hour = datetime.now().hour
-                        router_allowed = current_hour not in forbidden_hours
-                        if router_allowed:
-                            with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
-                                delete_files(path=OUTPUT_DIR, ext="*.png")
-                                delete_files(path=OUTPUT_DIR, ext="*.mp4")
-                                processor = VideoProcessor(segment=seg, logger=self.logger)
-                                new_seg = processor.process(Path(dst), logger=self.logger)
-                                repo.update_segment_postprocess(new_seg)
-                                self.logger.debug(f"new_seg {new_seg}")
-
-                                processed_count += 1
-                        else:
-                            self.logger.info(
-                                f"{COLOR_RED}🌙 Plage horaire silencieuse — Router désactivé (SmartCut forcé)\
-                                    {COLOR_RESET}"
-                            )
-                            video.status = OrchestratorStatus.VIDEO_READY_FOR_ENHANCEMENT
-                            repo.update_video(video)
-                            return processed_count
-
-                    video.status = OrchestratorStatus.VIDEO_ENHANCED
-                    repo.update_video(video)
-
-                    self.logger.info("📬 Vidéo %s envoyée vers Router (%d segments).", video.uid, len(prepared))
-
-                except CutMindError as err:
-                    raise err.with_context(
-                        get_step_ctx({"video.name": video.name, "video.status": video.status})
-                    ) from err
-                except Exception as exc:
-                    raise CutMindError(
-                        "❌ Erreur inatendue durant l'envoi à Processor Comfyui.",
-                        code=ErrCode.UNEXPECTED,
-                        ctx=get_step_ctx({"video.name": video.name, "video.status": video.status}),
-                    ) from exc
+            except CutMindError as err:
+                raise err.with_context(
+                    get_step_ctx({"video.name": self.video.name, "video.status": self.video.status})
+                ) from err
+            except Exception as exc:
+                raise CutMindError(
+                    "❌ Erreur inatendue durant l'envoi à Processor Comfyui.",
+                    code=ErrCode.UNEXPECTED,
+                    ctx=get_step_ctx({"video.name": self.video.name, "video.status": self.video.status}),
+                ) from exc
 
         if processed_count == 0:
             self.logger.info("📭 Aucun segment traité lors de ce cycle.")
@@ -138,44 +109,25 @@ class RouterWorker:
         return processed_count
 
     # ---------------------------------------------------------
-    # 🧠 Vérifie quels segments doivent être routés
-    # ---------------------------------------------------------
-    @staticmethod
-    def _needs_routing(seg: Segment) -> bool:
-        """Retourne True si le segment est hors standard (résolution/fps)."""
-        try:
-            width, height = (int(x) for x in (seg.resolution or "0x0").split("x"))
-        except ValueError:
-            return True
-
-        if width < 1920 or height < 1080:
-            return True
-        if seg.fps is None or seg.fps != 60.0:
-            return True
-        return False
-
-    # ---------------------------------------------------------
     # 🧩 Prépare les segments non conformes d'une vidéo
     # ---------------------------------------------------------
 
-    def _prepare_segments(self, video: Video, logger: LoggerProtocol | None = None) -> list[tuple[Segment, Path, Path]]:
+    def _prepare_segments(self) -> list[tuple[Segment, Path, Path]]:
         """Construit la liste des segments à déplacer pour Router."""
-        logger = ensure_logger(logger, __name__)
         prepared: list[tuple[Segment, Path, Path]] = []
 
-        for seg in video.segments:
-            if self._needs_routing(seg):
-                try:
-                    if not seg.output_path:
-                        raise ValueError(f"Segment sans chemin de sortie : {seg.uid}")
-                    src = Path(seg.output_path)
-                    dst = INPUT_DIR / src.name
-                    prepared.append((seg, src, dst))
-                    logger.debug("🧩 Segment à router : %s → %s", src, dst)
-                except Exception as exc:
-                    raise CutMindError(
-                        "❌ Erreur inatendue lors de la préparation du segement pour : Processor Comfyui.",
-                        code=ErrCode.UNEXPECTED,
-                        ctx=get_step_ctx({"seg.uid": seg.uid}),
-                    ) from exc
+        for seg in self.segments:
+            try:
+                if not seg.output_path:
+                    raise ValueError(f"Segment sans chemin de sortie : {seg.uid}")
+                src = Path(seg.output_path)
+                dst = INPUT_DIR / src.name
+                prepared.append((seg, src, dst))
+                self.logger.debug("🧩 Segment à router : %s → %s", src, dst)
+            except Exception as exc:
+                raise CutMindError(
+                    "❌ Erreur inatendue lors de la préparation du segement pour : Processor Comfyui.",
+                    code=ErrCode.UNEXPECTED,
+                    ctx=get_step_ctx({"seg.uid": seg.uid}),
+                ) from exc
         return prepared

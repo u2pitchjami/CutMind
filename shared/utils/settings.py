@@ -162,17 +162,27 @@ class AuditSettings:
     end: str
 
 
-@dataclass
-class StatusConsistencyRules:
-    scenes_done: list[str]
-    ia_done: list[str]
-    confidence_done: list[str]
-    merged: list[str]
-    smartcut_done: list[str]
-    manual_review: list[str]
-    validated: list[str]
-    processing_router: list[str]
-    enhanced: list[str]
+@dataclass(slots=True)
+class SegmentStatusRule:
+    all: list[str] | None = None
+    any: list[str] | None = None
+    allowed: list[str] | None = None
+    expected: list[str] | None = None
+
+
+@dataclass(slots=True)
+class VideoStatusRule:
+    segments: SegmentStatusRule
+
+
+@dataclass(slots=True)
+class StatusConsistencyRulesV2:
+    rules: dict[str, VideoStatusRule]
+
+
+@dataclass(slots=True)
+class VideoStatusPriority:
+    order: list[str]
 
 
 # ==========================================================
@@ -197,7 +207,8 @@ class Settings:
 
     cutmind_validation: ValidationSettings
     cutmind_audit: AuditSettings
-    cutmind_status_consistency: StatusConsistencyRules
+    cutmind_status_consistency: StatusConsistencyRulesV2
+    cutmind_video_status_priority: VideoStatusPriority
 
     # IMPORTANT :
     # adaptive_batch reste un dict car le code actuel utilise .get() et accès dynamiques
@@ -274,8 +285,14 @@ def init_settings(config: Any) -> None:
             start=cm["audit_window"]["start"],
             end=cm["audit_window"]["end"],
         ),
-        cutmind_status_consistency=StatusConsistencyRules(**cm["status_consistency_rules"]),
         adaptive_batch=rt["adaptive_batch"],  # ← laissé en dict volontairement
+        cutmind_status_consistency=StatusConsistencyRulesV2(
+            rules={
+                video_status: VideoStatusRule(segments=SegmentStatusRule(**rule["segments"]))
+                for video_status, rule in cm["status_consistency_rules"]["rules"].items()
+            }
+        ),
+        cutmind_video_status_priority=VideoStatusPriority(order=cm["video_status_priority"]["order"]),
     )
 
 

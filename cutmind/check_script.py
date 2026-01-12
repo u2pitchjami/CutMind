@@ -10,6 +10,7 @@ from cutmind.services.check.check_files import check_enhanced_segments
 from cutmind.services.check.check_status import check_all_video_segment_status_rules
 from shared.models.config_manager import ConfigManager, set_config
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.logger import get_logger
 from shared.utils.settings import init_settings
 
@@ -21,7 +22,7 @@ def main_check_script() -> None:
     """
     logger = get_logger("CutMind_Check")
     try:
-        check_segments_missing_category(expected_statuses=["validated", "enhanced"], logger=logger)
+        check_segments_missing_category(expected_statuses=[OrchestratorStatus.VIDEO_VALIDATED], logger=logger)
         check_all_video_segment_status_rules(logger=logger)
         check_enhanced_segments(max_videos=50, logger=logger)
         process_standard_videos(limit=50, logger=logger)

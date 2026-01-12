@@ -19,7 +19,7 @@ def update_segment_from_csv(segment: Segment, new_data: dict[str, Any], diffs: l
                     cur,
                     """
                     UPDATE segments
-                    SET description=%s, confidence=%s, status=%s,
+                    SET description=%s, confidence=%s, status=%s, category=%s,
                         source_flow='manual_csv', last_updated=NOW()
                     WHERE id=%s
                     """,
@@ -27,6 +27,7 @@ def update_segment_from_csv(segment: Segment, new_data: dict[str, Any], diffs: l
                         new_data["description"],
                         new_data["confidence"],
                         new_data["status"],
+                        new_data["category"],
                         segment.id,
                     ),
                 )

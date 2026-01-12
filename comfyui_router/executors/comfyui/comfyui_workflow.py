@@ -19,8 +19,12 @@ def route_workflow(video_path: Path) -> Path | None:
         _, height = get_resolution(video_path)
         fps = get_fps(video_path)
         if height == 2160:
+            if fps == 60:
+                return None
             return WORKFLOW_MAP["2160p"]
         if height == 1080:
+            if fps == 60:
+                return None
             return WORKFLOW_MAP["1080p"]
         if height == 720:
             if fps < 60:

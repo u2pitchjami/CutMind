@@ -22,9 +22,6 @@ from smartcut.executors.analyze.analyze_torch_utils import (
     release_gpu_memory,
     vram_gpu,
 )
-from smartcut.executors.analyze.analyze_utils import (
-    delete_frames,
-)
 from smartcut.executors.analyze.extract_frames import extract_segment_frames
 from smartcut.executors.analyze.prep_analyze import cleanup_temp, open_vid, release_cap
 from smartcut.executors.ia.load_model import load_and_batches
@@ -45,11 +42,9 @@ def analyze_from_cutmind(
     auto_frames: bool = True,
     base_rate: int = 5,
     fps_extract: float = 1.0,
-    prompt_name: str = "keywords",
-    system_prompt: str = "system_keywords",
     force: bool = False,
     logger: LoggerProtocol | None = None,
-) -> tuple[str, list[str]]:
+) -> tuple[str, str | None, list[str]]:
     """
     Extrait des frames pour chaque segment et génère les mots-clés IA.
     Retourne un mapping {segment_uid: keywords}.
@@ -76,7 +71,7 @@ def analyze_from_cutmind(
         processor, model, model_name, batch_size, model_precision = load_and_batches(free_gb=free_gb)
         free_vram_gb, total_vram_gb = vram_gpu()
         logger.info(
-            f"🧮 VRAM libre : {free_vram_gb:.2f} Go / {total_vram_gb / 1e9:.2f} Go total | "
+            f"🧮 VRAM libre : {free_vram_gb:.2f} Go / {total_vram_gb:.2f} Go total | "
             f"Précision : {model_precision} | Modèle : {model_name} | "
             f"→ Batch recommandé = {batch_size}"
         )
@@ -90,6 +85,7 @@ def analyze_from_cutmind(
         logger.info(f"🎬 Analyse segment {seg.id} ({start:.2f}s → {end:.2f}s)")
 
         frame_paths = extract_segment_frames(cap, video_name, start, end, auto_frames, fps_extract, base_rate)
+        logger.debug(f"Extracted frame paths: {frame_paths}")
         if not frame_paths:
             logger.warning(f"Aucune frame extraite pour le segment {seg.id}")
             raise CutMindError(
@@ -110,6 +106,7 @@ def analyze_from_cutmind(
                 start=start,
                 end=end,
                 frame_paths=frame_paths,
+                categ=seg.category,
                 batch_size=batch_size,
                 processor=processor,
                 model=model,
@@ -139,7 +136,7 @@ def analyze_from_cutmind(
         logger.debug(f"🔍 seg.id={seg.id} mem_id={id(seg)}")
 
         seg.ai_model = model_name
-        seg.status = OrchestratorStatus.IA_DONE
+        seg.status = OrchestratorStatus.SEGMENT_IA_DONE
         repo.update_segment_validation(seg)
         if not seg.id:
             raise CutMindError(
@@ -156,11 +153,13 @@ def analyze_from_cutmind(
         # logger.debug(f"session : {session}")
 
         release_cap(cap)
+        free, total = vram_gpu()
+        logger.info(f"📊 VRAM avant release : {free:.2f} Go / {total:.2f} Go")
         release_gpu_memory(model)
         free, total = vram_gpu()
-        logger.info(f"🧹 VRAM nettoyée ('full release') → VRAM libre : {free / 1e9:.2f} Go / {total / 1e9:.2f} Go")
+        logger.info(f"🧹 VRAM nettoyée ('full release') → VRAM libre : {free:.2f} Go / {total:.2f} Go")
         logger.info("✅ Analyse complète terminée.")
-        return seg.description, seg.keywords
+        return seg.description, seg.category, seg.keywords
     except CutMindError as err:
         raise err.with_context(get_step_ctx({"segment_id": seg.id})) from err
     except Exception as exc:
@@ -197,7 +196,7 @@ def run_prompt_on_batches(
             BATCH_FRAMES_DIR_SC / f"{video_name}_seg_{int(start * 10)}_{int(end * 10)}" / prompt_name / f"b{b + 1}"
         )
         batch_dir.mkdir(parents=True, exist_ok=True)
-
+        logger.debug(f"📁 Création répertoire batch : {batch_dir}")
         for src_path in batch_paths:
             dst_path = batch_dir / Path(src_path).name
             try:
@@ -240,16 +239,17 @@ def run_prompt_on_batches(
         )
 
         all_batches.append(batch_result)
-
+        free, total = vram_gpu()
+        logger.info(f"📊 VRAM avant release cache only : {free:.2f} Go / {total:.2f} Go")
         release_gpu_memory(model, cache_only=True)
         free, total = vram_gpu()
         logger.debug(f"🧹 all_batches : {all_batches}")
         logger.info(
             "🧹 VRAM nettoyée ('cache_only') → VRAM libre : %.2f Go / %.2f Go",
-            free / 1e9,
-            total / 1e9,
+            free,
+            total,
         )
-        delete_frames(batch_dir)
+        # delete_frames(batch_dir)
 
     return all_batches
 
@@ -294,47 +294,52 @@ def run_ai_pipeline_v25(
     processor: ProcessorMixin,
     model: PreTrainedModel,
     output_type: AIOutputType = "full",
+    categ: str | None = None,
     logger: LoggerProtocol,
 ) -> AIContext:
     context = AIContext()
 
-    # ===== PASSAGE 1 : description + catégorie =====
-    logger.info("🧠 IA Pass 1 — Description + Catégorie")
+    if categ:
+        context.category = categ
+    else:
+        # ===== PASSAGE 1 : description + catégorie =====
+        logger.info("🧠 IA Pass 1 — Description + Catégorie")
 
-    pass1_batches = run_prompt_on_batches(
-        video_name=video_name,
-        start=start,
-        end=end,
-        frame_paths=frame_paths,
-        batch_size=batch_size,
-        processor=processor,
-        model=model,
-        prompt_name="keywords",
-        system_prompt="system_keywords",
-        logger=logger,
-    )
-
-    for i, batch in enumerate(pass1_batches):
-        logger.debug(
-            "🧪 Batch %d → description=%s | keywords=%s",
-            i,
-            batch.get("description"),
-            batch.get("keywords"),
+        pass1_batches = run_prompt_on_batches(
+            video_name=video_name,
+            start=start,
+            end=end,
+            frame_paths=frame_paths,
+            batch_size=batch_size,
+            processor=processor,
+            model=model,
+            prompt_name="keywords",
+            system_prompt="system_keywords",
+            logger=logger,
         )
-    context.description = merge_description(pass1_batches) or ""
-    context.category = merge_category(pass1_batches)
 
-    logger.info(
-        "🧠 Pass 1 result → category=%s",
-        context.category,
-    )
+        for i, batch in enumerate(pass1_batches):
+            logger.debug(
+                "🧪 Batch %d → description=%s | keywords=%s",
+                i,
+                batch.get("description"),
+                batch.get("keywords"),
+            )
+        context.description = merge_description(pass1_batches) or ""
+
+        context.category = merge_category(pass1_batches)
+
+        logger.info(
+            "🧠 Pass 1 result → category=%s",
+            context.category,
+        )
 
     if not context.category:
         logger.warning("⚠️ Aucune catégorie détectée, on arrête le pipeline IA ici.")
 
     else:
         # ===== PASSAGE 2 : keywords guidés =====
-        logger.info("🧠 IA Pass 2 — Keywords guidés")
+        logger.info("🧠 IA Pass 2 — Keywords guidés : %s", context.category)
 
         pass2_batches = run_prompt_on_batches(
             video_name=video_name,
@@ -350,6 +355,13 @@ def run_ai_pipeline_v25(
         )
 
         context.keywords = merge_keywords(pass2_batches)
+        for i, batch in enumerate(pass2_batches):
+            logger.debug(
+                "🧪 Batch %d → description=%s | keywords=%s",
+                i,
+                batch.get("description"),
+                batch.get("keywords"),
+            )
 
     return context
 

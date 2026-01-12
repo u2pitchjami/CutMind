@@ -232,13 +232,14 @@ class CutMindRepository:
                 cur,
                 """
                 INSERT INTO segments (
-                    uid, video_id, start, end, duration, status,
+                    uid, video_id, start, end, duration, status, pipeline_target,
                     confidence, description, fps, nb_frames, resolution, codec,
                     bitrate, filesize_mb, has_audio, audio_codec, sample_rate,
                     channels, audio_duration, filename_predicted, output_path,
                     source_flow, processed_by, ai_model
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     seg.uid,
@@ -247,6 +248,7 @@ class CutMindRepository:
                     seg.end,
                     seg.duration,
                     seg.status,
+                    seg.pipeline_target,
                     seg.confidence,
                     seg.description,
                     seg.fps,
@@ -685,6 +687,85 @@ class CutMindRepository:
                 ctx=get_step_ctx(),
             ) from exc
 
+    def get_active_videos(self) -> list[Video]:
+        """
+        Retourne les vidéos pouvant avancer automatiquement :
+        - au moins un segment
+        - aucun segment en attente de validation humaine
+        """
+        try:
+            query = """
+                SELECT v.*
+                FROM videos v
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM segments s
+                    WHERE s.video_id = v.id
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM segments s
+                    WHERE s.video_id = v.id
+                    AND s.pipeline_target IN ('VALIDATION', 'VALIDATION_CUT')
+                )
+            """
+            rows = self._fetch_all(query)
+            return [Video.from_row(row) for row in rows]
+
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx()) from err
+
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur Repo get_active_videos.",
+                code=ErrCode.DB,
+                ctx=get_step_ctx(),
+            ) from exc
+
+    def get_segments_by_video_status(self, video_status: str) -> list[dict[str, Any]]:
+        """
+        Retourne la liste des segments (id + status) pour les vidéos ayant un statut donné.
+        """
+        try:
+            query = """
+                SELECT s.id AS segment_id, s.status AS segment_status
+                FROM videos v
+                JOIN segments s ON s.video_id = v.id
+                WHERE v.status = %s
+            """
+            return self._fetch_all(query, (video_status,))
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx({"video_status": video_status})) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur Repo get_segments_by_video_status.",
+                code=ErrCode.DB,
+                ctx=get_step_ctx({"video_status": video_status}),
+            ) from exc
+
+    def get_segment_status_counts_by_video_status(self, video_status: str) -> dict[str, int]:
+        """
+        Retourne un dict {segment_status: count} pour un statut vidéo donné.
+        """
+        try:
+            query = """
+                SELECT s.status, COUNT(*) AS cnt
+                FROM videos v
+                JOIN segments s ON s.video_id = v.id
+                WHERE v.status = %s
+                GROUP BY s.status
+            """
+            rows = self._fetch_all(query, (video_status,))
+            return {row["status"]: row["cnt"] for row in rows}
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx({"video_status": video_status})) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur Repo get_segment_status_counts_by_video_status.",
+                code=ErrCode.DB,
+                ctx=get_step_ctx({"video_status": video_status}),
+            ) from exc
+
     def get_segments_status_mismatch(
         self, video_status: str, expected_segment_statuses: list[str]
     ) -> list[dict[str, Any]]:
@@ -721,6 +802,7 @@ class CutMindRepository:
                 """
                 UPDATE segments
                 SET status=%s,
+                    pipeline_target=%s,
                     source_flow=%s,
                     confidence=%s,
                     description=%s,
@@ -734,6 +816,7 @@ class CutMindRepository:
                 """,
                 (
                     seg.status,
+                    seg.pipeline_target,
                     seg.source_flow,
                     seg.confidence,
                     seg.description,
@@ -861,6 +944,65 @@ class CutMindRepository:
                 "❌ Erreur Repo update_segment_from_metadata.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"segment.id": segment_id}),
+            ) from exc
+
+    def update_segment_from_csv(self, segment: Segment, new_data: dict[str, Any], diffs: list[str]) -> None:
+        """Compare et met à jour les champs d’un segment depuis CSV."""
+        try:
+            with db_conn() as conn:
+                with get_dict_cursor(conn) as cur:
+                    safe_execute_dict(
+                        cur,
+                        """
+                        UPDATE segments
+                        SET description=%s, confidence=%s, status=%s, pipeline_target=%s, category=%s,
+                            source_flow='manual_csv', last_updated=NOW()
+                        WHERE id=%s
+                        """,
+                        (
+                            new_data["description"],
+                            new_data["confidence"],
+                            new_data["status"],
+                            new_data["pipeline_target"],
+                            new_data["category"],
+                            segment.id,
+                        ),
+                    )
+                    conn.commit()
+
+            if "keywords" in diffs:
+                with db_conn() as conn:
+                    with get_dict_cursor(conn) as cur:
+                        safe_execute_dict(cur, "DELETE FROM segment_keywords WHERE segment_id=%s", (segment.id,))
+                        conn.commit()
+                for kw in new_data["keywords"]:
+                    with db_conn() as conn:
+                        with get_dict_cursor(conn) as cur:
+                            safe_execute_dict(cur, "SELECT id FROM keywords WHERE keyword=%s", (kw,))
+                            row_kw = cur.fetchone()
+                    if not row_kw:
+                        with db_conn() as conn:
+                            with get_dict_cursor(conn) as cur:
+                                safe_execute_dict(cur, "INSERT INTO keywords (keyword) VALUES (%s)", (kw,))
+                                kw_id = cur.lastrowid
+                    else:
+                        kw_id = row_kw["id"]
+
+                    with db_conn() as conn:
+                        with get_dict_cursor(conn) as cur:
+                            safe_execute_dict(
+                                cur,
+                                "INSERT INTO segment_keywords (segment_id, keyword_id) VALUES (%s, %s)",
+                                (segment.id, kw_id),
+                            )
+                            conn.commit()
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx({"segment_id": segment.id})) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur de la modif via CSV.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"segment_id": segment.id}),
             ) from exc
 
     # -------------------------------------------------------------

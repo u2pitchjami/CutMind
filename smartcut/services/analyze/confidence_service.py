@@ -21,6 +21,7 @@ class ConfidenceService:
     """
 
     def __init__(self, model_name: str):
+        self.model_name = model_name
         self.executor = ConfidenceExecutor(model_name)
 
     def compute_for_segments(
@@ -32,15 +33,14 @@ class ConfidenceService:
 
         try:
             for seg in segments:
-                if seg.status != "ia_done":
+                if not seg.id:
                     continue
-
-                if not seg.description or not seg.id:
+                if not seg.description:
                     score = 0.0
-                    continue
-                score = self.executor.compute(seg.description, seg.keywords)
-
-                merged = list(set(seg.keywords + auto_keywords)) if seg.keywords else auto_keywords.copy()
+                    merged = auto_keywords.copy()
+                else:
+                    score = self.executor.compute(seg.description, seg.keywords)
+                    merged = list(set(seg.keywords + auto_keywords)) if seg.keywords else auto_keywords.copy()
 
                 results.append(
                     ConfidenceResult(

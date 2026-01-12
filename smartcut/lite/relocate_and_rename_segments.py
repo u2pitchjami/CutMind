@@ -8,6 +8,7 @@ import shutil
 
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Video
+from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import OUTPUT_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.safe_segments import safe_segments
@@ -35,7 +36,8 @@ def relocate_and_rename_segments(
             # Nouveau nom prédictif
             seg.filename_predicted = f"seg_{seg.id:04d}_{seg.uid}.mp4"
             seg.output_path = str(output_dir / seg.filename_predicted)
-            seg.status = "cut"
+            seg.status = OrchestratorStatus.SEGMENT_CUT_DONE
+            seg.pipeline_target = OrchestratorStatus.SEGMENT_IN_CUT_VALIDATION
             dest = Path(seg.output_path)
 
             # Déplacement

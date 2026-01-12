@@ -9,7 +9,7 @@ from shared.executors.ffmpeg_utils import detect_nvenc_available
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 
 
-def convert_to_60fps(input_path: Path, output_path: Path) -> bool:
+def convert_to_60fps(input_path: Path, output_path: Path) -> Path:
     """
     Convertit une vidéo à 60 FPS en H.265, avec détection auto GPU/CPU.
 
@@ -50,7 +50,7 @@ def convert_to_60fps(input_path: Path, output_path: Path) -> bool:
     ]
     try:
         subprocess.run(cmd, check=True)
-        return True
+        return output_path
     except subprocess.CalledProcessError as err:
         raise CutMindError(
             "❌ Erreur FFprobe lors de la de la conversion 60 fps.",

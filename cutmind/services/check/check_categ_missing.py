@@ -3,6 +3,7 @@
 
 from cutmind.db.repository import CutMindRepository
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 
@@ -19,7 +20,7 @@ def check_segments_missing_category(
     repo = CutMindRepository()
     try:
         if expected_statuses is None:
-            expected_statuses = ["validated", "enhanced"]
+            expected_statuses = [OrchestratorStatus.VIDEO_VALIDATED]
 
         segments = repo.get_segments_by_category(category=None, expected_segment_statuses=expected_statuses)
 

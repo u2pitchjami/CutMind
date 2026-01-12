@@ -309,7 +309,7 @@ def multi_stage_cut(
         # ======================
         # ✂️ Étape 4 : Découpage final des segments
         # ======================
-        if vid.status == OrchestratorStatus.VIDEO_CUT_DONE:
+        if vid.status == OrchestratorStatus.VIDEO_READY_FOR_CUT:
             logger.info("✂️ Cut final des segments...")
 
             service_cut = CutService()
@@ -351,6 +351,7 @@ def multi_stage_cut(
             # mise à jour de la session
             for seg in vid.segments:
                 seg.status = OrchestratorStatus.SEGMENT_CUT_DONE
+                seg.pipeline_target = OrchestratorStatus.SEGMENT_IN_CUT_VALIDATION
                 seg.last_updated = datetime.now().isoformat()
                 repo.update_segment_validation(seg)
 

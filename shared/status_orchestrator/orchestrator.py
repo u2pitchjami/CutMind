@@ -2,17 +2,26 @@ from __future__ import annotations
 
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Video
-from shared.status_orchestrator.statuses import OrchestratorStatus
-from shared.status_orchestrator.steps import OrchestratorStep
+from cutmind.process.file_mover import CUTMIND_BASEDIR, FileMover, sanitize
+from cutmind.process.router_worker import RouterWorker
+from cutmind.services.check.check_status import compute_video_status
+from cutmind.services.ia.main_ia import IAWorker
+from cutmind.services.main_validation import validation
+from shared.models.exceptions import CutMindError, ErrCode
+from shared.status_orchestrator.statuses import SegmentStatus
 from shared.utils.logger import LoggerProtocol, ensure_logger
+from shared.utils.settings import get_settings
+
+settings = get_settings()
 
 
-class CutMindOrchestrator:
+class CutMindOrchestratorV2:
     """
-    Orchestrateur séquentiel simple.
-    Chaque étape :
-      - décide si elle peut s'exécuter
-      - met à jour les statuts
+    Orchestrateur CutMind V2 — segment-centric.
+
+    - Les décisions se basent sur les segments
+    - Le statut vidéo est une projection recalculée
+    - pipeline_target permet le rework ciblé
     """
 
     def __init__(
@@ -21,116 +30,186 @@ class CutMindOrchestrator:
         logger: LoggerProtocol | None = None,
     ):
         self.repo = repo or CutMindRepository()
+        self.mover = FileMover()
         self.logger = ensure_logger(logger, __name__)
-        self.steps = self._build_steps()
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def run(self, video: Video) -> None:
-        self.logger.info("🎛️ Orchestration démarrée pour video %s", video.id)
+        if not video or not video.id:
+            raise ValueError("Video must have an ID to run the orchestrator.")
+        self.logger.info("🎛️ Orchestration V2 démarrée pour video %s", video.id)
+        fetched = self.repo.get_video_with_segments(video_id=video.id)
+        if fetched is None:
+            raise ValueError(f"Video with id {video.id} not found in repository.")
+        video = fetched
+        segments = list(video.segments)
+        self.logger.debug("🔍 Segments : %s", [s.status for s in segments])
 
-        for step in self.steps:
-            if step.can_run(video):
-                self.logger.info("▶️ Étape déclenchée : %s", step.name)
-                step.run(video)
-                self.repo.update_video(video=video)
-            else:
-                self.logger.debug("⏭️ Étape ignorée : %s", step.name)
+        # 1️⃣ Move post-cut
+        self._maybe_run_move(video)
 
-        self.logger.info("✅ Orchestration terminée pour video %s", video.id)
+        # 1️⃣ Enhancement
+        self._maybe_run_enhancement(video)
 
-    # ------------------------------------------------------------------
-    # Step registry
-    # ------------------------------------------------------------------
+        # 2️⃣ IA
+        self._maybe_run_ia(video)
 
-    def _build_steps(self) -> list[OrchestratorStep]:
-        return [
-            OrchestratorStep(
-                name="smartcut",
-                can_run=self._can_run_smartcut,
-                run=self._run_smartcut,
-            ),
-            OrchestratorStep(
-                name="validate_cuts",
-                can_run=self._can_run_cut_validation,
-                run=self._run_cut_validation,
-            ),
-            OrchestratorStep(
-                name="enhancement",
-                can_run=self._can_run_enhancement,
-                run=self._run_enhancement,
-            ),
-            OrchestratorStep(
-                name="ia_analysis",
-                can_run=self._can_run_ia,
-                run=self._run_ia,
-            ),
-            OrchestratorStep(
-                name="confidence",
-                can_run=self._can_run_confidence,
-                run=self._run_confidence,
-            ),
-            OrchestratorStep(
-                name="category_validation",
-                can_run=self._can_run_category_validation,
-                run=self._run_category_validation,
-            ),
-        ]
+        # 3️⃣ Confidence
+        self._maybe_run_confidence(video)
+
+        # 4️⃣ Validation finale
+        self._maybe_run_validation(video)
+
+        # 5️⃣ Recalcul statut vidéo (projection)
+        new_status = compute_video_status(video)
+        if new_status != video.status:
+            self.logger.info(
+                "🔄 Video %s statut mis à jour: %s → %s",
+                video.id,
+                video.status,
+                new_status,
+            )
+            video.status = new_status
+            self.repo.update_video(video)
+
+        self.logger.info("✅ Orchestration V2 terminée pour video %s", video.id)
 
     # ------------------------------------------------------------------
-    # Conditions
+    # Move post-cut
     # ------------------------------------------------------------------
 
-    def _can_run_smartcut(self, video: Video) -> bool:
-        return video.status == OrchestratorStatus.VIDEO_INIT
+    def _maybe_run_move(self, video: Video) -> None:
+        segments = [s for s in video.segments if s.pipeline_target == SegmentStatus.TO_MOVE]
+        self.logger.debug("🔍 Segments à déplacer post-cut : %s", [s.id for s in segments])
+        if not segments:
+            return
 
-    def _can_run_cut_validation(self, video: Video) -> bool:
-        return video.status == OrchestratorStatus.SCENES_DONE
+        self.logger.info(
+            "🎨 Move Post Cut (%s segments) pour video %s",
+            len(segments),
+            video.id,
+        )
+        # Plan des destinations (relatives)
+        planned_targets = {}
+        safe_name = sanitize(video.name)
+        for seg in segments:
+            if not seg.filename_predicted:
+                raise CutMindError(
+                    "❌ Erreur fichier prédit manquant pour le déplacement post-cut.", code=ErrCode.NOFILE
+                )
+            dst_final = CUTMIND_BASEDIR / safe_name / seg.filename_predicted
+            dst_rel = dst_final
+            planned_targets[seg.uid] = dst_rel
 
-    def _can_run_enhancement(self, video: Video) -> bool:
-        return video.status == OrchestratorStatus.CUT_VALIDATED
+        moved_ok = self.mover.move_video_files(video, planned_targets)
+        self.logger.debug("🔍 Résultat du déplacement des fichiers : %s", moved_ok)
 
-    def _can_run_ia(self, video: Video) -> bool:
-        return video.status == OrchestratorStatus.ENHANCED
+        if not moved_ok:
+            raise CutMindError(
+                "Échec déplacement fichiers post-cut",
+                code=ErrCode.FILE_ERROR,
+            )
 
-    def _can_run_confidence(self, video: Video) -> bool:
-        return video.status == OrchestratorStatus.IA_DONE
-
-    def _can_run_category_validation(self, video: Video) -> bool:
-        return video.status == OrchestratorStatus.CONFIDENCE_DONE
+        # nettoyage
+        for seg in segments:
+            seg.output_path = str(planned_targets[seg.uid])
+            seg.pipeline_target = None
+            self.repo.update_segment_validation(seg)
 
     # ------------------------------------------------------------------
-    # Actions (implémentations réelles à brancher)
+    # Enhancement
     # ------------------------------------------------------------------
 
-    def _run_smartcut(self, video: Video) -> None:
-        self.logger.info("✂️ SmartCut pour video %s", video.id)
-        # appel smartcut executor
-        video.status = OrchestratorStatus.SCENES_DONE
+    def _maybe_run_enhancement(self, video: Video) -> None:
+        segments = [s for s in video.segments if s.status == SegmentStatus.CUT_VALIDATED]
+        self.logger.debug("🔍 Segments à enhanced : %s", [s.id for s in segments])
+        if not segments:
+            return
 
-    def _run_cut_validation(self, video: Video) -> None:
-        self.logger.info("✅ Validation des cuts pour video %s", video.id)
-        # validation auto / attente CSV
-        video.status = OrchestratorStatus.CUT_VALIDATED
+        self.logger.info(
+            "🎨 Enhancement (%s segments) pour video %s",
+            len(segments),
+            video.id,
+        )
 
-    def _run_enhancement(self, video: Video) -> None:
-        self.logger.info("🎨 Enhancement ComfyUI pour video %s", video.id)
-        # appel comfyui_router
-        video.status = OrchestratorStatus.ENHANCED
+        worker = RouterWorker(vid=video, segments=segments)
+        worker.run()
 
-    def _run_ia(self, video: Video) -> None:
-        self.logger.info("🧠 Analyse IA pour video %s", video.id)
-        # appel analyse IA
-        video.status = OrchestratorStatus.IA_DONE
+    # ------------------------------------------------------------------
+    # IA
+    # ------------------------------------------------------------------
 
-    def _run_confidence(self, video: Video) -> None:
-        self.logger.info("📊 Calcul confidence pour video %s", video.id)
-        # appel confidence engine
-        video.status = OrchestratorStatus.CONFIDENCE_DONE
+    def _maybe_run_ia(self, video: Video) -> None:
+        segments = [s for s in video.segments if s.status == SegmentStatus.ENHANCED or s.pipeline_target == "IA"]
+        self.logger.debug("🔍 Segments analyse ia : %s", [s.id for s in segments])
+        if not segments:
+            return
 
-    def _run_category_validation(self, video: Video) -> None:
-        self.logger.info("🏁 Validation catégories pour video %s", video.id)
-        # validation auto / manuelle
-        video.status = OrchestratorStatus.CATEGORIES_VALIDATED
+        self.logger.info(
+            "🧠 IA (%s segments) pour video %s",
+            len(segments),
+            video.id,
+        )
+
+        worker = IAWorker(vid=video, segments=segments)
+        worker.run()
+
+    # ------------------------------------------------------------------
+    # Confidence
+    # ------------------------------------------------------------------
+
+    def _maybe_run_confidence(self, video: Video) -> None:
+        segments = [s for s in video.segments if s.status == SegmentStatus.IA_DONE]
+        self.logger.debug("🔍 Segments confidence : %s", [s.id for s in segments])
+        if not segments:
+            return
+
+        self.logger.info(
+            "📊 Confidence (%s segments) pour video %s",
+            len(segments),
+            video.id,
+        )
+
+        # Le moteur accepte une liste → même 1 segment OK
+        from smartcut.services.analyze.apply_confidence import (
+            apply_confidence_to_session,
+        )
+
+        apply_confidence_to_session(
+            session=video,
+            segments=segments,
+            model_name=settings.analyse_confidence.model_confidence,
+            logger=self.logger,
+        )
+
+    # ------------------------------------------------------------------
+    # Validation finale
+    # ------------------------------------------------------------------
+
+    def _maybe_run_validation(self, video: Video) -> None:
+        segments = [s for s in video.segments if s.status == SegmentStatus.CONFIDENCE_DONE]
+        self.logger.debug("🔍 Segments à valider : %s", [s.id for s in segments])
+        if not segments:
+            return
+
+        self.logger.info(
+            "🏁 Validation (%s segments) pour video %s",
+            len(segments),
+            video.id,
+        )
+
+        # Validation auto / manuelle via CSV
+        validation(
+            vid=video,
+            segments=segments,
+            status=SegmentStatus.CONFIDENCE_DONE,
+            logger=self.logger,
+        )
+
+        # ⚠️ La validation peut :
+        # - mettre SEGMENT_VALIDATED
+        # - ou poser pipeline_target="IA" pour rework
+        # self.repo.update_segments(segments)

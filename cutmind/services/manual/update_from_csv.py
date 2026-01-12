@@ -14,9 +14,6 @@ import csv
 from pathlib import Path
 
 from cutmind.db.db_connection import db_conn, get_dict_cursor
-from cutmind.db.manual_db import (
-    update_segment_from_csv,
-)
 from cutmind.db.repository import CutMindRepository
 from cutmind.executors.manual.manual_utils import (
     archive_csv,
@@ -27,7 +24,6 @@ from cutmind.executors.manual.manual_utils import (
 )
 from cutmind.executors.manual.merge_perform import parse_merge_ids, perform_merge
 from cutmind.executors.manual.recut_segment import parse_recut_points, perform_recut
-from cutmind.services.main_validation import validation
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import CSV_ARCHIVE_PATH, CSV_LOG_PATH, MANUAL_CSV_PATH, TRASH_DIR_SC
@@ -69,8 +65,14 @@ def update_segments_csv(
                         segment = next(s for s in video.segments if s.id == int(seg_id))
 
                         new_data = build_new_data_from_csv_row(row)
-                        status = new_data["status"]
+                        logger.debug("🔍 Segment %s | Données CSV : %s", seg_id, new_data)
+                        has_category = bool(new_data["category"])
+                        has_description = bool(new_data["description"])
+                        has_keywords = bool(new_data["keywords"])
+                        has_confidence = new_data["confidence"] > 0.0
 
+                        status = new_data["status"]
+                        logger.debug("🔍 Segment %s | Nouveau statut CSV : %s", seg_id, status)
                         if status in ("delete", "to_delete"):
                             if segment.output_path:
                                 old_output = Path(segment.output_path)
@@ -82,11 +84,11 @@ def update_segments_csv(
 
                         if status in ("ok", "OK"):
                             new_data["status"] = OrchestratorStatus.SEGMENT_CUT_VALIDATED
+                            new_data["pipeline_target"] = OrchestratorStatus.SEGMENT_TO_MOVE
                             stats["updated"] += 1
                             log_rows.append(
                                 {"segment_id": seg_id, "action": "Cut Validation OK", "differences": "status"}
                             )
-                            continue
 
                         recut_points = parse_recut_points(status)
                         if recut_points:
@@ -109,6 +111,22 @@ def update_segments_csv(
                                 }
                             )
                             continue
+
+                        if has_category and not (has_description or has_keywords or has_confidence):
+                            new_data["pipeline_target"] = OrchestratorStatus.SEGMENT_TO_IA
+
+                            stats["updated"] += 1
+                            log_rows.append(
+                                {
+                                    "segment_id": seg_id,
+                                    "action": "rework ia",
+                                    "differences": "category",
+                                }
+                            )
+
+                        if has_category and has_description and has_keywords and has_confidence:
+                            segment.pipeline_target = None
+
                         if not segment:
                             logger.warning("⚠️ Segment %s non trouvé", seg_id)
                             continue
@@ -119,12 +137,10 @@ def update_segments_csv(
                             log_rows.append({"segment_id": seg_id, "action": "unchanged", "differences": ""})
                             continue
 
-                        update_segment_from_csv(segment, new_data, diffs)
+                        repo.update_segment_from_csv(segment, new_data, diffs)
+                        repo.update_video(video)
                         stats["updated"] += 1
                         log_rows.append({"segment_id": seg_id, "action": "updated", "differences": ", ".join(diffs)})
-                        archived_path = archive_csv(Path(MANUAL_CSV_PATH), CSV_ARCHIVE_PATH)
-                        logger.info("🗄️ Fichier CSV archivé vers %s", archived_path)
-                        purge_old_trash(CSV_ARCHIVE_PATH, days=60, logger=logger)
 
                     except Exception as exc:  # pylint: disable=broad-except
                         stats["errors"] += 1
@@ -132,10 +148,13 @@ def update_segments_csv(
                         log_rows.append({"segment_id": seg_id or "", "action": "error", "differences": str(exc)})
 
                 conn.commit()
+                archived_path = archive_csv(Path(manual_csv), CSV_ARCHIVE_PATH)
+                logger.info("🗄️ Fichier CSV archivé vers %s", archived_path)
+                purge_old_trash(CSV_ARCHIVE_PATH, days=60, logger=logger)
 
         write_csv_log(csv_log, log_rows)
         summarize_import(stats, csv_log, logger=logger)
-        validation(status=status_csv, logger=logger)
+        # validation(status=status_csv, logger=logger)
     except CutMindError as err:
         raise err.with_context(get_step_ctx({"manual_csv": manual_csv})) from err
     except Exception as exc:

@@ -11,7 +11,7 @@ from shared.utils.logger import get_logger
 from shared.utils.settings import init_settings
 
 
-def main(priority: str = "smartcut") -> None:
+def main() -> None:
     """
     main du projet cutmind
     Args:
@@ -22,9 +22,9 @@ def main(priority: str = "smartcut") -> None:
     set_config(config)
     init_settings(config)
 
-    from shared.video_orchestrator import orchestrate
+    from cutmind.orchestrators.master import run_master
 
-    orchestrate(priority=priority, logger=logger)
+    run_master(logger=logger)
 
 
 # ============================================================
@@ -43,4 +43,4 @@ def parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = parse_args()
-    main(priority=args.priority)
+    main()
