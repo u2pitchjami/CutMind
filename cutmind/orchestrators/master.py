@@ -1,3 +1,4 @@
+import multiprocessing as mp
 from multiprocessing import Process
 
 from cutmind.orchestrators.csv_validation_loop import csv_validation_loop
@@ -8,6 +9,7 @@ from shared.utils.logger import LoggerProtocol, ensure_logger
 
 def run_master(logger: LoggerProtocol | None = None) -> None:
     logger = ensure_logger(logger, __name__)
+    mp.set_start_method("spawn", force=True)
     logger.info("🎛️ Master Orchestrator démarré")
 
     p_smartcut = Process(
@@ -19,7 +21,7 @@ def run_master(logger: LoggerProtocol | None = None) -> None:
     p_cutmind = Process(
         target=cutmind_loop,
         args=(None,),
-        daemon=True,
+        daemon=False,
     )
 
     p_csv = Process(

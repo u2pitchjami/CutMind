@@ -6,9 +6,7 @@ from __future__ import annotations
 
 import argparse
 
-from shared.models.config_manager import ConfigManager, set_config
 from shared.utils.logger import get_logger
-from shared.utils.settings import init_settings
 
 
 def main() -> None:
@@ -18,9 +16,9 @@ def main() -> None:
         priority (str, optional): _description_. Defaults to "smartcut".
     """
     logger = get_logger("CutMind")
-    config = ConfigManager(logger=logger)
-    set_config(config)
-    init_settings(config)
+    from shared.models.config_manager import bootstrap_process
+
+    bootstrap_process(logger=logger)
 
     from cutmind.orchestrators.master import run_master
 

@@ -71,6 +71,7 @@ def update_segments_csv(
                         has_keywords = bool(new_data["keywords"])
                         has_confidence = new_data["confidence"] > 0.0
 
+                        new_data["pipeline_target"] = None
                         status = new_data["status"]
                         logger.debug("🔍 Segment %s | Nouveau statut CSV : %s", seg_id, status)
                         if status in ("delete", "to_delete"):

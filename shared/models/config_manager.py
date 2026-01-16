@@ -166,3 +166,9 @@ def reload_and_apply(logger: LoggerProtocol | None = None) -> None:
     cfg = get_config()
     cfg.reload(logger=logger)
     init_settings(cfg)
+
+
+def bootstrap_process(logger: LoggerProtocol | None = None) -> None:
+    config = ConfigManager(logger=logger)
+    set_config(config)
+    init_settings(config)

@@ -58,30 +58,25 @@ def validation_db(
             kw_ok = bool(seg.keywords and len(seg.keywords) > 0)
 
             if desc_ok and cat_ok and conf_ok and kw_ok:
-                seg.status = OrchestratorStatus.SEGMENT_VALIDATED
                 valid_segments.append(seg)
             else:
-                seg.pipeline_target = OrchestratorStatus.SEGMENT_PENDING_CHECK
                 decisions.append(seg)
 
         valid_count = len(valid_segments)
         # auto_valid = valid_count == total
 
         # --- Si pas auto-validée : mise à jour simple ---
-        if not valid_segments:
+        if decisions:
             with repo.transaction():
                 for seg in decisions:
+                    seg.pipeline_target = OrchestratorStatus.SEGMENT_PENDING_CHECK
                     repo.update_segment_validation(seg)
-            return {
-                "uid": video.uid,
-                "valid": valid_count,
-                "total": total,
-                "moved": False,
-            }
-
-        with repo.transaction():
-            for seg in valid_segments:
-                repo.update_segment_validation(seg)
+        if valid_segments:
+            with repo.transaction():
+                for seg in valid_segments:
+                    seg.status = OrchestratorStatus.SEGMENT_VALIDATED
+                    seg.pipeline_target = None
+                    repo.update_segment_validation(seg)
 
         remove_empty_dirs(root_path=OUTPUT_DIR_SC)
 

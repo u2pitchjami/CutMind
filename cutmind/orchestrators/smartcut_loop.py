@@ -1,8 +1,5 @@
-import gc
 from pathlib import Path
 import time
-
-import torch
 
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import (
@@ -10,19 +7,20 @@ from shared.utils.config import (
     OUTPUT_DIR_SC,
 )
 from shared.utils.logger import LoggerProtocol, ensure_logger, get_logger, with_child_logger
-from shared.utils.settings import get_settings
 from smartcut.lite.smartcut_lite import lite_cut
 from smartcut.smartcut import multi_stage_cut
-
-settings = get_settings()
-
-SMARTCUT_BATCH = settings.smartcut.batch_size
-SCAN_INTERVAL = settings.smartcut.scan_interval
-USE_CUDA = settings.smartcut.use_cuda
 
 
 def smartcut_loop() -> None:
     logger = get_logger("CutMind-SmartCut")
+    from shared.models.config_manager import bootstrap_process
+
+    bootstrap_process(logger=logger)
+    from shared.utils.settings import get_settings
+
+    settings = get_settings()
+    SMARTCUT_BATCH = settings.smartcut.batch_size
+    SCAN_INTERVAL = settings.smartcut.scan_interval
     while True:
         try:
             videos, dirs = list_videos_and_dirs(IMPORT_DIR_SC)
@@ -83,44 +81,10 @@ def process_smartcut_batch(
                 return count
         return count
     except CutMindError as err:
-        auto_clean_gpu(logger=logger)
         raise err.with_context(get_step_ctx()) from err
     except Exception as exc:
-        auto_clean_gpu(logger=logger)
         raise CutMindError(
             "❌ Erreur lors du process Smartcut batch.",
-            code=ErrCode.UNEXPECTED,
-            ctx=get_step_ctx(),
-        ) from exc
-
-
-# ============================================================
-# 🧹 Outils GPU
-# ============================================================
-@with_child_logger
-def auto_clean_gpu(max_wait_sec: int = 30, logger: LoggerProtocol | None = None) -> None:
-    """Nettoie la VRAM GPU et synchronise CUDA."""
-    logger = ensure_logger(logger, __name__)
-    waited = 0
-    while not torch.cuda.is_available():
-        if waited >= max_wait_sec:
-            logger.warning(f"❌ GPU non détecté après {max_wait_sec}s.")
-            return
-        logger.info("⏳ En attente du GPU CUDA...")
-        time.sleep(2)
-        waited += 2
-
-    try:
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
-        gc.collect()
-        free, total = torch.cuda.mem_get_info()
-        logger.info(f"🧹 GPU nettoyé : {free / 1e9:.2f} Go libres / {total / 1e9:.2f} Go totaux")
-    except CutMindError as err:
-        raise err.with_context(get_step_ctx()) from err
-    except Exception as exc:
-        raise CutMindError(
-            "❌ Erreur lors du Nettoyage VRAM.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx(),
         ) from exc
@@ -131,16 +95,18 @@ def auto_clean_gpu(max_wait_sec: int = 30, logger: LoggerProtocol | None = None)
 # ============================================================
 def process_smartcut_video(video_path: Path) -> None:
     logger = get_logger("CutMind-SmartCut")
+    from shared.utils.settings import get_settings
+
+    settings = get_settings()
+    USE_CUDA = settings.smartcut.use_cuda
     try:
         logger.info(f"🚀 SmartCut (complet) : {video_path.name}")
 
         multi_stage_cut(video_path=video_path, out_dir=OUTPUT_DIR_SC, use_cuda=USE_CUDA, logger=logger)
 
     except CutMindError as err:
-        auto_clean_gpu(logger=logger)
         raise err.with_context(get_step_ctx({"video_path.name": video_path.name})) from err
     except Exception as exc:
-        auto_clean_gpu(logger=logger)
         raise CutMindError(
             "❌ Erreur lors du process Smartcut.",
             code=ErrCode.UNEXPECTED,
@@ -156,10 +122,8 @@ def process_smartcut_folder(folder_path: Path) -> None:
         lite_cut(directory_path=folder_path)
 
     except CutMindError as err:
-        auto_clean_gpu(logger=logger)
         raise err.with_context(get_step_ctx({"folder_path.name": folder_path.name})) from err
     except Exception as exc:
-        auto_clean_gpu(logger=logger)
         raise CutMindError(
             "❌ Erreur lors du process Smartcut Lite.",
             code=ErrCode.UNEXPECTED,

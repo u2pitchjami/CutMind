@@ -24,10 +24,6 @@ from shared.utils.logger import get_logger
 from shared.utils.settings import get_settings
 from shared.utils.trash import delete_files
 
-settings = get_settings()
-
-forbidden_hours = settings.router_orchestrator.forbidden_hours
-
 
 class RouterWorker:
     """Gère l'envoi automatique des segments non conformes vers ComfyUI Router."""
@@ -46,7 +42,8 @@ class RouterWorker:
         Exécute un cycle complet d'envoi vers Router.
         Retourne le nombre total de segments envoyés pour traitement.
         """
-
+        settings = get_settings()
+        forbidden_hours = settings.router_orchestrator.forbidden_hours
         self.logger.info("🚀 Démarrage RouterWorker")
         if not self.video:
             self.logger.warning("⚠️ Vidéo introuvable")

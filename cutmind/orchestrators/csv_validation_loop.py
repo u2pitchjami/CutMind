@@ -11,7 +11,9 @@ CSV_CHECK_INTERVAL = 30  # secondes
 
 def csv_validation_loop(logger: LoggerProtocol | None = None) -> None:
     logger = ensure_logger(logger, __name__)
+    from shared.models.config_manager import bootstrap_process
 
+    bootstrap_process(logger=logger)
     manual_csv_cut = Path(MANUAL_CSV_CUT_PATH)
     manual_csv_final = Path(MANUAL_CSV_PATH)
 

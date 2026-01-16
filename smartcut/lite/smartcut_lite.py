@@ -18,16 +18,8 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.safe_runner import safe_main
-from shared.utils.settings import get_settings
 from smartcut.lite.load_segments import load_segments_from_directory
 from smartcut.lite.relocate_and_rename_segments import relocate_and_rename_segments
-
-settings = get_settings()
-
-FRAME_PER_SEGMENT = settings.smartcut.frame_per_segment
-AUTO_FRAMES = settings.smartcut.auto_frames
-FPS_EXTRACT = settings.analyse_segment.fps_extract
-BASE_RATE = settings.analyse_segment.base_rate
 
 
 @safe_main

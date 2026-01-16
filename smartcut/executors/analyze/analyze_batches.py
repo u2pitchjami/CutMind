@@ -5,6 +5,7 @@ from pathlib import Path
 from transformers import PreTrainedModel, ProcessorMixin
 
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.utils.logger import LoggerProtocol
 from smartcut.models_sc.ai_result import AIOutputType, AIResult
 from smartcut.services.main_gen_keywords import generate_keywords_for_segment
 
@@ -29,6 +30,7 @@ def process_batches(
     prompt_name: str = "keywords",
     system_prompt: str = "system_keywords",
     output_type: AIOutputType = "full",
+    logger: LoggerProtocol | None = None,
 ) -> AIResult:
     """
     Traite un segment vidéo par lots et récupère la sortie IA selon le type.
@@ -45,6 +47,7 @@ def process_batches(
             prompt_name=prompt_name,
             system_prompt=system_prompt,
             output_type=output_type,
+            logger=logger,
         )
 
         return result
@@ -57,4 +60,5 @@ def process_batches(
             "❌ Erreur lors du traitement IA.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video name": video_name}),
+            original_exception=exc,
         ) from exc

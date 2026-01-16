@@ -10,13 +10,7 @@ from pathlib import Path
 from sentence_transformers import SentenceTransformer, util
 
 from shared.utils.config import KW_CACHE_FILE_SC, KW_FORBIDDEN_FILE_SC, KW_MAPPING_FILE_SC
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
-from shared.utils.settings import get_settings
-
-settings = get_settings()
-MODEL_NAME = settings.keyword_normalizer.model_name_key
-MODE = settings.keyword_normalizer.mode
-SIMILARITY_THRESHOLD = settings.keyword_normalizer.similarity_threshold
+from shared.utils.logger import LoggerProtocol, ensure_logger
 
 
 class KeywordNormalizer:
@@ -24,12 +18,11 @@ class KeywordNormalizer:
     Normalise les mots-clés via un mapping manuel, embeddings et fichiers JSON.
     """
 
-    @with_child_logger
     def __init__(
         self,
-        model_name: str = MODEL_NAME,
-        threshold: float = SIMILARITY_THRESHOLD,
-        mode: str = MODE,  # "full", "strict" ou "mixed"
+        model_name: str,
+        threshold: float,
+        mode: str,  # "full", "strict" ou "mixed"
         mapping_path: Path = KW_MAPPING_FILE_SC,
         forbidden_path: Path = KW_FORBIDDEN_FILE_SC,
         logger: LoggerProtocol | None = None,
@@ -49,7 +42,7 @@ class KeywordNormalizer:
             raise ValueError("Mode invalide : choisissez 'full', 'strict' ou 'mixed'.")
 
     # -------------------- Gestion fichiers -------------------- #
-    @with_child_logger
+
     def _load_mapping(self, path: Path, logger: LoggerProtocol | None = None) -> dict[str, str]:
         """
         Charge le mapping depuis mapping.json, ou renvoie un dict vide si absent.
@@ -78,7 +71,6 @@ class KeywordNormalizer:
             logger.info("ℹ️ Aucun mapping.json trouvé — aucun mapping appliqué.")
             return {}
 
-    @with_child_logger
     def _save_mapping(self, logger: LoggerProtocol | None = None) -> None:
         """
         Sauvegarde le mapping trié alphabétiquement dans mapping.json.
@@ -92,7 +84,6 @@ class KeywordNormalizer:
         except Exception as e:
             logger.error("Erreur lors de la sauvegarde du mapping : %s", e)
 
-    @with_child_logger
     def _load_forbidden(self, path: Path, logger: LoggerProtocol | None = None) -> set[str]:
         """
         Charge la liste de mots interdits depuis forbidden.json et la trie alphabétiquement.
@@ -111,7 +102,6 @@ class KeywordNormalizer:
             logger.warning("Aucun forbidden.json trouvé — pas de filtre appliqué.")
         return set()
 
-    @with_child_logger
     def _save_forbidden(self, logger: LoggerProtocol | None = None) -> None:
         """
         Sauvegarde la liste de mots interdits triée alphabétiquement dans forbidden.json.
@@ -125,7 +115,6 @@ class KeywordNormalizer:
         except Exception as e:
             logger.error("Erreur lors de la sauvegarde de la liste interdite : %s", e)
 
-    @with_child_logger
     def _load_cache(self, logger: LoggerProtocol | None = None) -> dict[str, str]:
         """
         Charge le cache depuis keyword_cache.json et le trie alphabétiquement.
@@ -144,7 +133,6 @@ class KeywordNormalizer:
             logger.info("Aucun cache existant trouvé — initialisation d’un cache vide.")
         return {}
 
-    @with_child_logger
     def _save_cache(self, logger: LoggerProtocol | None = None) -> None:
         """
         Sauvegarde le cache trié alphabétiquement dans keyword_cache.json.
@@ -160,7 +148,6 @@ class KeywordNormalizer:
 
     # -------------------- Normalisation -------------------- #
 
-    @with_child_logger
     def _normalize_with_embeddings(self, word: str, candidates: list[str], logger: LoggerProtocol | None = None) -> str:
         """
         Compare un mot avec les candidats via embeddings et retourne le plus proche.
@@ -211,7 +198,6 @@ class KeywordNormalizer:
 
         return candidates[best_idx] if best_score >= self.threshold else word
 
-    @with_child_logger
     def normalize(self, word: str, logger: LoggerProtocol | None = None) -> str:
         logger = ensure_logger(logger, __name__)
         word = word.lower().strip()
@@ -236,7 +222,6 @@ class KeywordNormalizer:
 
     # -------------------- Mode de traitement -------------------- #
 
-    @with_child_logger
     def normalize_keywords(self, keywords: str | list[str], logger: LoggerProtocol | None = None) -> list[str]:
         """
         Normalise une liste ou une chaîne de mots-clés.

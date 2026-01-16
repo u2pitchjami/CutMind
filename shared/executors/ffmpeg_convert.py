@@ -9,18 +9,17 @@ import ffmpeg  # type: ignore
 from shared.models.exceptions import CutMindError, ErrCode
 from shared.utils.settings import get_settings
 
-settings = get_settings()
-PRESET = settings.ffsmartcut.preset
-RC = settings.ffsmartcut.rc
-CQ = settings.ffsmartcut.cq
-PIX_FMT = settings.ffsmartcut.pix_fmt
-VCODEC = settings.ffsmartcut.vcodec
-
 
 def convert_safe_video_format(video_path: str, output_path: str) -> None:
     """
     convert video to safe format
     """
+    settings = get_settings()
+    PRESET = settings.ffsmartcut.preset
+    RC = settings.ffsmartcut.rc
+    CQ = settings.ffsmartcut.cq
+    PIX_FMT = settings.ffsmartcut.pix_fmt
+    VCODEC = settings.ffsmartcut.vcodec
     try:
         ffmpeg.input(video_path).output(
             str(output_path),

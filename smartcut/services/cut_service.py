@@ -6,16 +6,6 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.settings import get_settings
 from smartcut.executors.ffmpeg_cut_executor import FfmpegCutExecutor
 
-settings = get_settings()
-
-USE_CUDA = settings.smartcut.use_cuda
-PRESET = settings.smartcut.preset_gpu if USE_CUDA else settings.smartcut.preset_cpu
-RC = settings.ffsmartcut.rc
-CQ = settings.ffsmartcut.cq
-PIX_FMT = settings.ffsmartcut.pix_fmt
-VCODEC = settings.smartcut.vcodec_gpu if USE_CUDA else settings.smartcut.vcodec_cpu
-CRF = settings.smartcut.crf
-
 
 @dataclass
 class CutRequest:
@@ -41,6 +31,12 @@ class CutService:
         input_video: str,
         segments: list[CutRequest],
     ) -> list[CutResult]:
+        settings = get_settings()
+
+        USE_CUDA = settings.smartcut.use_cuda
+        PRESET = settings.smartcut.preset_gpu if USE_CUDA else settings.smartcut.preset_cpu
+        VCODEC = settings.smartcut.vcodec_gpu if USE_CUDA else settings.smartcut.vcodec_cpu
+        CRF = settings.smartcut.crf
         results: list[CutResult] = []
         try:
             for seg in segments:

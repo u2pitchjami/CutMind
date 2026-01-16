@@ -30,6 +30,7 @@ class SegmentStatus(str, Enum):
     CUT_VALIDATED = "cut_validated"
     ENHANCED = "enhanced"
     IA_DONE = "ia_done"
+    IA_ERROR = "IA_error"
     CONFIDENCE_DONE = "confidence_done"
     VALIDATED = "validated"
     PENDING_CHECK_VALIDATION = "VALIDATION"

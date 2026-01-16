@@ -11,14 +11,6 @@ from shared.utils.settings import get_settings
 from smartcut.models_sc.ai_result import AIResult
 from smartcut.services.keyword_normalizer import KeywordNormalizer
 
-settings = get_settings()
-
-QBIT = settings.analyse_segment.precision_4bit
-BFLOAT16 = settings.analyse_segment.precision_bfloat16
-FLOAT16 = settings.analyse_segment.precision_float16
-FLOAT32 = settings.analyse_segment.precision_float32
-DEFAULT = settings.analyse_segment.precision_default
-
 
 def extract_keywords_from_filename(filename: str | Path) -> list[str]:
     """
@@ -63,6 +55,12 @@ def estimate_safe_batch_size(
     """
     Estime dynamiquement un batch size sûr en fonction de la VRAM libre.
     """
+    settings = get_settings()
+    QBIT = settings.analyse_segment.precision_4bit
+    BFLOAT16 = settings.analyse_segment.precision_bfloat16
+    FLOAT16 = settings.analyse_segment.precision_float16
+    FLOAT32 = settings.analyse_segment.precision_float32
+    DEFAULT = settings.analyse_segment.precision_default
     # Estimations empiriques à adapter si besoin
     est_mem_per_image = {
         "4bit": QBIT,

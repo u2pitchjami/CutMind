@@ -1,7 +1,6 @@
 # /exceptions.py
 from __future__ import annotations
 
-from collections.abc import Mapping
 from enum import Enum
 import inspect
 from typing import Any
@@ -30,10 +29,18 @@ class CutMindError(RuntimeError):
 
     __slots__ = ("code", "ctx")
 
-    def __init__(self, message: str, *, code: ErrCode, ctx: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: ErrCode,
+        ctx: dict[str, Any] | None = None,
+        original_exception: Exception | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
-        self.ctx: dict[str, Any] = dict(ctx or {})
+        self.ctx = ctx or {}
+        self.original_exception = original_exception
 
     def with_context(self, extra: dict[str, Any]) -> CutMindError:
         # N’écrase pas ce qui existe déjà
@@ -41,8 +48,11 @@ class CutMindError(RuntimeError):
             self.ctx.setdefault(k, v)
         return self
 
-    def __str__(self) -> str:  # utile dans les logs
-        return f"{self.code}: {super().__str__()}"
+    def __str__(self) -> str:
+        base = f"{self.code}: {super().__str__()} | ctx: {self.ctx}"
+        if self.original_exception:
+            base += f" | caused by: {self.original_exception!r}"
+        return base
 
 
 def get_step_ctx(extra: dict[str, Any] | None = None, depth: int = 1) -> dict[str, Any]:

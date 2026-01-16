@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import re
 import shutil
 
 from comfyui_router.executors.smart_recut_hybrid_exec import (
@@ -17,19 +16,6 @@ from shared.utils.config import TRASH_DIR
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
 from smartcut.executors.ffmpeg_cut_executor import FfmpegCutExecutor
-
-settings = get_settings()
-
-USE_CUDA = settings.smartcut.use_cuda
-PRESET = settings.smartcut.preset_gpu if USE_CUDA else settings.smartcut.preset_cpu
-RC = settings.ffsmartcut.rc
-CQ = settings.ffsmartcut.cq
-PIX_FMT = settings.ffsmartcut.pix_fmt
-VCODEC = settings.smartcut.vcodec_gpu if USE_CUDA else settings.smartcut.vcodec_cpu
-CRF = settings.smartcut.crf
-
-RE_PTS_TIME = re.compile(r"pts_time[:=](\d+(?:\.\d+)?)")
-RE_SCENE_SCORE = re.compile(r"(?:lavfi\.)?scene_score=(\d+(?:\.\d+)?)")
 
 
 @with_child_logger
@@ -45,6 +31,11 @@ def smart_recut_hybrid(
     """
     logger = ensure_logger(logger, __name__)
     executor = FfmpegCutExecutor()
+    settings = get_settings()
+    USE_CUDA = settings.smartcut.use_cuda
+    PRESET = settings.smartcut.preset_gpu if USE_CUDA else settings.smartcut.preset_cpu
+    VCODEC = settings.smartcut.vcodec_gpu if USE_CUDA else settings.smartcut.vcodec_cpu
+    CRF = settings.smartcut.crf
     try:
         duration = get_duration(video_path)
         if duration == 0:

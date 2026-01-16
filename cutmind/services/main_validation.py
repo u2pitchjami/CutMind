@@ -7,9 +7,6 @@ from shared.models.timer_manager import Timer
 from shared.status_orchestrator.statuses import SegmentStatus
 from shared.utils.config import MIN_CONFIDENCE
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
-from shared.utils.settings import get_settings
-
-settings = get_settings()
 
 
 @with_child_logger

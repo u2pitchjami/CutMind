@@ -124,6 +124,7 @@ class CutMindRepository:
                 "❌ Erreur Repo video_exists.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"uid": uid}),
+                original_exception=exc,
             ) from exc
 
     def video_exists_by_video_path(self, video_path: str) -> int | None:
@@ -140,6 +141,7 @@ class CutMindRepository:
                 "❌ Erreur Repo video_exists_by_video_path.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"video_path": video_path}),
+                original_exception=exc,
             ) from exc
 
     # -------------------------------------------------------------
@@ -207,6 +209,7 @@ class CutMindRepository:
                 "❌ Erreur Repo insert_video_with_segments.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"video_id": video_id}),
+                original_exception=exc,
             ) from exc
 
     # -------------------------------------------------------------
@@ -290,6 +293,7 @@ class CutMindRepository:
                 "❌ Erreur Repo _insert_segment.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"segment_id": seg.id}),
+                original_exception=exc,
             ) from exc
 
     # -------------------------------------------------------------
@@ -302,6 +306,8 @@ class CutMindRepository:
                 kw_clean = kw.strip().lower()
                 if not kw_clean:
                     continue
+
+                safe_execute_dict(cur, "DELETE FROM segment_keywords WHERE segment_id=%s", (segment_id,))
 
                 safe_execute_dict(cur, "SELECT id FROM keywords WHERE keyword=%s", (kw_clean,))
                 row = cur.fetchone()
@@ -323,6 +329,7 @@ class CutMindRepository:
                 "❌ Erreur Repo insert_keywords_for_segment.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"segment_id": segment_id}),
+                original_exception=exc,
             ) from exc
 
     def insert_keywords_standalone(self, segment_id: int, keywords: list[str]) -> None:
@@ -338,6 +345,7 @@ class CutMindRepository:
                 "❌ Erreur Repo insert_keywords_standalone.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"segment_id": segment_id}),
+                original_exception=exc,
             ) from exc
 
     # -------------------------------------------------------------
@@ -402,6 +410,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_video_with_segments.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx(ctx_base),
+                original_exception=exc,
             ) from exc
 
     def get_videos_by_status(self, status: str) -> list[Video]:
@@ -441,6 +450,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_videos_by_status.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"status": status}),
+                original_exception=exc,
             ) from exc
 
     def get_video_id_from_segment_id(self, segment_id: int) -> int | None:
@@ -460,6 +470,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_video_id_from_segment_id.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"segment_id": segment_id}),
+                original_exception=exc,
             ) from exc
 
     def get_segments_by_status(self, status: str) -> list[Segment]:
@@ -477,6 +488,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_segments_by_status.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"status": status}),
+                original_exception=exc,
             ) from exc
 
     def get_segments_pending_review(self) -> list[Segment]:
@@ -494,6 +506,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_segments_pending_review.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx(),
+                original_exception=exc,
             ) from exc
 
     def get_segments_by_ids(self, segment_ids: list[int]) -> list[Segment]:
@@ -515,6 +528,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_segments_by_ids.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"segment_ids": segment_ids}),
+                original_exception=exc,
             ) from exc
 
     def get_segment_by_id(self, segment_id: int) -> Segment | None:
@@ -531,6 +545,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_segment_by_id.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"segment_id": segment_id}),
+                original_exception=exc,
             ) from exc
 
     def get_segment_by_uid(self, uid: str) -> Segment | None:
@@ -550,6 +565,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_segments_by_uid.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"uid": uid}),
+                original_exception=exc,
             ) from exc
 
     def get_segments_by_category(self, category: str | None, expected_segment_statuses: list[str]) -> list[Segment]:
@@ -587,6 +603,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_segments_by_category.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"category": category}),
+                original_exception=exc,
             ) from exc
 
     # -------------------------------------------------------------
@@ -613,6 +630,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_keywords_for_segment.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"segment_id": segment_id}),
+                original_exception=exc,
             ) from exc
 
     def get_nonstandard_videos(self, limit_videos: int = 10) -> list[str]:
@@ -652,6 +670,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_non_standard_videos.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx(),
+                original_exception=exc,
             ) from exc
 
     def get_standard_videos(self, limit_videos: int = 10) -> list[str]:
@@ -685,6 +704,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_standard_videos.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx(),
+                original_exception=exc,
             ) from exc
 
     def get_active_videos(self) -> list[Video]:
@@ -720,6 +740,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_active_videos.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx(),
+                original_exception=exc,
             ) from exc
 
     def get_segments_by_video_status(self, video_status: str) -> list[dict[str, Any]]:
@@ -741,6 +762,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_segments_by_video_status.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"video_status": video_status}),
+                original_exception=exc,
             ) from exc
 
     def get_segment_status_counts_by_video_status(self, video_status: str) -> dict[str, int]:
@@ -764,6 +786,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_segment_status_counts_by_video_status.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"video_status": video_status}),
+                original_exception=exc,
             ) from exc
 
     def get_segments_status_mismatch(
@@ -790,6 +813,7 @@ class CutMindRepository:
                 "❌ Erreur Repo get_segments_status_mismatch.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"video_status": video_status}),
+                original_exception=exc,
             ) from exc
 
     # -------------------------------------------------------------
@@ -836,6 +860,7 @@ class CutMindRepository:
                 "❌ Erreur Repo update_segment_validation.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"seg.id": seg.id}),
+                original_exception=exc,
             ) from exc
 
     def update_segment_postprocess(self, seg: ProcessedSegment, conn: Connection | None = None) -> None:
@@ -881,6 +906,7 @@ class CutMindRepository:
                 "❌ Erreur Repo update_segment_postprocess.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"seg.id": seg.id}),
+                original_exception=exc,
             ) from exc
 
     def update_segment_from_metadata(
@@ -944,6 +970,7 @@ class CutMindRepository:
                 "❌ Erreur Repo update_segment_from_metadata.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"segment.id": segment_id}),
+                original_exception=exc,
             ) from exc
 
     def update_segment_from_csv(self, segment: Segment, new_data: dict[str, Any], diffs: list[str]) -> None:
@@ -1003,6 +1030,7 @@ class CutMindRepository:
                 "❌ Erreur de la modif via CSV.",
                 code=ErrCode.UNEXPECTED,
                 ctx=get_step_ctx({"segment_id": segment.id}),
+                original_exception=exc,
             ) from exc
 
     # -------------------------------------------------------------
@@ -1035,6 +1063,7 @@ class CutMindRepository:
                 "❌ Erreur Repo update_video.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"video.name": video.name}),
+                original_exception=exc,
             ) from exc
 
     # ------------------------------------------------------------------
@@ -1055,6 +1084,7 @@ class CutMindRepository:
                 "❌ Erreur Repo delete_segment_by_uid.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"seg_uid": seg_uid}),
+                original_exception=exc,
             ) from exc
 
     def delete_segment(self, seg_id: int) -> None:
@@ -1072,6 +1102,7 @@ class CutMindRepository:
                 "❌ Erreur Repo delete_segment.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"seg_id": seg_id}),
+                original_exception=exc,
             ) from exc
 
     # ------------------------------------------------------------------
@@ -1100,4 +1131,5 @@ class CutMindRepository:
                     "❌ Rollback transaction SQL.",
                     code=ErrCode.DB,
                     ctx=get_step_ctx(),
+                    original_exception=exc,
                 ) from exc

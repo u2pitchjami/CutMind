@@ -16,29 +16,11 @@ from transformers import (
 
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import PROMPTS
+from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
 from smartcut.executors.ia.gen_frames import load_frames_as_tensor, temp_batch_image
 from smartcut.executors.ia.parse_output import parse_json_ai_output
 from smartcut.models_sc.ai_result import AIOutputType, AIResult
-
-settings = get_settings()
-
-MIN_PIXELS = settings.generate_keywords.min_pixels
-MAX_PIXELS = settings.generate_keywords.max_pixels
-TOTAL_PIXELS = settings.generate_keywords.total_pixels
-SIZEH = settings.generate_keywords.sizeh
-SIZEL = settings.generate_keywords.sizel
-TOKENIZE = settings.generate_keywords.tokenize
-ADD_GENERATION_PROMPT = settings.generate_keywords.add_generation_prompt
-PADDING = settings.generate_keywords.padding
-RETURN_TENSORS = settings.generate_keywords.return_tensors
-MAX_NEW_TOKENS = settings.generate_keywords.max_new_tokens
-TEMPERATURE = settings.generate_keywords.temperature
-TOP_P = settings.generate_keywords.top_p
-REPETITION_PENALTY = settings.generate_keywords.repetition_penalty
-DO_SAMPLE = settings.generate_keywords.do_sample
-SKIP_SPECIAL_TOKENS = settings.generate_keywords.skip_special_tokens
-CLEAN_UP_TOKENIZATION_SPACES = settings.generate_keywords.clean_up_tokenization_spaces
 
 
 def generate_keywords_from_frames(
@@ -50,14 +32,34 @@ def generate_keywords_from_frames(
     prompt_name: str = "keywords",
     system_prompt: str = "system_keywords",
     output_type: AIOutputType = "full",
+    logger: LoggerProtocol | None = None,
 ) -> AIResult:
     """
     Génération des mots-clés pour un batch de frames.
     """
+    logger = ensure_logger(logger, __name__)
+    logger.debug(">>> [generate_keywords_from_frames] start with segment_id=%s", segment_id)
+    settings = get_settings()
+
+    MIN_PIXELS = settings.generate_keywords.min_pixels
+    MAX_PIXELS = settings.generate_keywords.max_pixels
+    TOTAL_PIXELS = settings.generate_keywords.total_pixels
+    SIZEH = settings.generate_keywords.sizeh
+    SIZEL = settings.generate_keywords.sizel
+    TOKENIZE = settings.generate_keywords.tokenize
+    ADD_GENERATION_PROMPT = settings.generate_keywords.add_generation_prompt
+    PADDING = settings.generate_keywords.padding
+    RETURN_TENSORS = settings.generate_keywords.return_tensors
+    MAX_NEW_TOKENS = settings.generate_keywords.max_new_tokens
+    TEMPERATURE = settings.generate_keywords.temperature
+    TOP_P = settings.generate_keywords.top_p
+    REPETITION_PENALTY = settings.generate_keywords.repetition_penalty
+    DO_SAMPLE = settings.generate_keywords.do_sample
+    SKIP_SPECIAL_TOKENS = settings.generate_keywords.skip_special_tokens
+    CLEAN_UP_TOKENIZATION_SPACES = settings.generate_keywords.clean_up_tokenization_spaces
+
     SYSTEM_PROMPT = PROMPTS[system_prompt]
     user_prompt = PROMPTS[prompt_name]
-
-    print("user_prompt:", user_prompt)
 
     content = []
 
@@ -92,6 +94,9 @@ def generate_keywords_from_frames(
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": content},
     ]
+
+    logger.debug("🧠 Prompt pour segment %s : %s", segment_id, user_prompt[:300])
+    logger.debug("🖼️ Batch frames count: %d", num_frames)
 
     try:
         # 1️⃣ Conversion du chat en texte brut pour le modèle
@@ -137,7 +142,7 @@ def generate_keywords_from_frames(
 
         ai_result: AIResult = parse_json_ai_output(decoded_text)
 
-        print(f"ai_result: {ai_result}")
+        logger.debug(f"ai_result: {ai_result}")
 
         # Nettoyage du texte
         # if "</think>" in output_text:
@@ -147,8 +152,10 @@ def generate_keywords_from_frames(
 
         return ai_result
     except Exception as exc:
+        logger.exception("Exception dans generate_keywords_from_frames")
         raise CutMindError(
             "❌ Erreur lors de la génération des mots clés par IA.",
             code=ErrCode.IAERROR,
             ctx=get_step_ctx({"model": model, "segment_id": segment_id}),
+            original_exception=exc,
         ) from exc

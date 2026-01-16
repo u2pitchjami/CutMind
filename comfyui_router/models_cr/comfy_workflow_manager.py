@@ -15,9 +15,6 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
 
-settings = get_settings()
-MIN_SIZE = settings.router_optimal_batch_size.min_size
-
 
 class ComfyWorkflowManager:
     @with_child_logger
@@ -25,6 +22,8 @@ class ComfyWorkflowManager:
         """
         Définit et charge le workflow adapté.
         """
+        settings = get_settings()
+        MIN_SIZE = settings.router_optimal_batch_size.min_size
         logger = ensure_logger(logger, __name__)
         wf_path = route_workflow(video_job.path)
         if not wf_path:

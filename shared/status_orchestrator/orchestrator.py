@@ -1,18 +1,18 @@
 from __future__ import annotations
 
+from multiprocessing import Process
+
 from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Video
 from cutmind.process.file_mover import CUTMIND_BASEDIR, FileMover, sanitize
 from cutmind.process.router_worker import RouterWorker
 from cutmind.services.check.check_status import compute_video_status
-from cutmind.services.ia.main_ia import IAWorker
+from cutmind.services.ia.ia_worker_process import run_ia_for_video
 from cutmind.services.main_validation import validation
 from shared.models.exceptions import CutMindError, ErrCode
 from shared.status_orchestrator.statuses import SegmentStatus
 from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
-
-settings = get_settings()
 
 
 class CutMindOrchestratorV2:
@@ -148,20 +148,19 @@ class CutMindOrchestratorV2:
         if not segments:
             return
 
-        self.logger.info(
-            "🧠 IA (%s segments) pour video %s",
-            len(segments),
-            video.id,
-        )
+        self.logger.info("🧠 IA (%s segments) pour video %s", len(segments), video.id)
 
-        worker = IAWorker(vid=video, segments=segments)
-        worker.run()
+        # --- Process GPU isolé ---
+        p = Process(target=run_ia_for_video, args=(video, segments, self.logger), daemon=False)
+        p.start()
+        p.join()
 
     # ------------------------------------------------------------------
     # Confidence
     # ------------------------------------------------------------------
 
     def _maybe_run_confidence(self, video: Video) -> None:
+        settings = get_settings()
         segments = [s for s in video.segments if s.status == SegmentStatus.IA_DONE]
         self.logger.debug("🔍 Segments confidence : %s", [s.id for s in segments])
         if not segments:

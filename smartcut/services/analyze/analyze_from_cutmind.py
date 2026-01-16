@@ -7,12 +7,10 @@ import shutil
 
 from transformers import PreTrainedModel, ProcessorMixin
 
-from cutmind.db.repository import CutMindRepository
 from cutmind.models_cm.db_models import Segment
 from shared.executors.ffmpeg_utils import get_duration
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
-from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import BATCH_FRAMES_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.safe_segments import safe_segments
@@ -24,7 +22,6 @@ from smartcut.executors.analyze.analyze_torch_utils import (
 )
 from smartcut.executors.analyze.extract_frames import extract_segment_frames
 from smartcut.executors.analyze.prep_analyze import cleanup_temp, open_vid, release_cap
-from smartcut.executors.ia.load_model import load_and_batches
 from smartcut.models_sc.ai_result import AIOutputType, AIResult
 from smartcut.models_sc.ia_models import AIContext
 
@@ -38,6 +35,11 @@ KeywordsBatches = list[AIResult]
 @with_child_logger
 def analyze_from_cutmind(
     seg: Segment,
+    processor: ProcessorMixin,
+    model: PreTrainedModel,
+    model_precision: str,
+    model_name: str,
+    batch_size: int,
     frames_per_segment: int = 3,
     auto_frames: bool = True,
     base_rate: int = 5,
@@ -50,7 +52,6 @@ def analyze_from_cutmind(
     Retourne un mapping {segment_uid: keywords}.
     """
     logger = ensure_logger(logger, __name__)
-    repo = CutMindRepository()
     try:
         # Nettoyage répertoires temporaires
         cleanup_temp()
@@ -65,10 +66,6 @@ def analyze_from_cutmind(
             )
         cap, video_name = open_vid(seg.output_path)
 
-        # Chargement du modèle IA + paramètres de batching
-        free_gb, total_gb = vram_gpu()
-        logger.info(f"📊 VRAM avant chargement : {free_gb:.2f} Go / {total_gb:.2f} Go")
-        processor, model, model_name, batch_size, model_precision = load_and_batches(free_gb=free_gb)
         free_vram_gb, total_vram_gb = vram_gpu()
         logger.info(
             f"🧮 VRAM libre : {free_vram_gb:.2f} Go / {total_vram_gb:.2f} Go total | "
@@ -85,7 +82,6 @@ def analyze_from_cutmind(
         logger.info(f"🎬 Analyse segment {seg.id} ({start:.2f}s → {end:.2f}s)")
 
         frame_paths = extract_segment_frames(cap, video_name, start, end, auto_frames, fps_extract, base_rate)
-        logger.debug(f"Extracted frame paths: {frame_paths}")
         if not frame_paths:
             logger.warning(f"Aucune frame extraite pour le segment {seg.id}")
             raise CutMindError(
@@ -135,19 +131,14 @@ def analyze_from_cutmind(
         # --- 💾 Mise à jour du segment
         logger.debug(f"🔍 seg.id={seg.id} mem_id={id(seg)}")
 
-        seg.ai_model = model_name
-        seg.status = OrchestratorStatus.SEGMENT_IA_DONE
-        repo.update_segment_validation(seg)
-        if not seg.id:
-            raise CutMindError(
-                "❌ Erreur DB : aucun seg.id.",
-                code=ErrCode.DB,
-                ctx=get_step_ctx({"video_name": video_name}),
-            )
-        if seg.keywords:
-            # normalizer = KeywordNormalizer()
-            # seg.keywords = normalizer.normalize_keywords(seg.keywords)
-            repo.insert_keywords_standalone(segment_id=seg.id, keywords=seg.keywords)
+        # seg.ai_model = model_name
+        # seg.status = OrchestratorStatus.SEGMENT_IA_DONE
+        # repo.update_segment_validation(seg)
+
+        # if seg.keywords:
+        # normalizer = KeywordNormalizer()
+        # seg.keywords = normalizer.normalize_keywords(seg.keywords)
+        # repo.insert_keywords_standalone(segment_id=seg.id, keywords=seg.keywords)
 
         logger.debug(f"💾 Session mise à jour (segment {seg.id})")
         # logger.debug(f"session : {session}")
@@ -155,9 +146,7 @@ def analyze_from_cutmind(
         release_cap(cap)
         free, total = vram_gpu()
         logger.info(f"📊 VRAM avant release : {free:.2f} Go / {total:.2f} Go")
-        release_gpu_memory(model)
-        free, total = vram_gpu()
-        logger.info(f"🧹 VRAM nettoyée ('full release') → VRAM libre : {free:.2f} Go / {total:.2f} Go")
+
         logger.info("✅ Analyse complète terminée.")
         return seg.description, seg.category, seg.keywords
     except CutMindError as err:
@@ -167,6 +156,7 @@ def analyze_from_cutmind(
             "Erreur lors du traitement IA.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"segment_id": seg.id}),
+            original_exception=exc,
         ) from exc
 
 
@@ -236,12 +226,13 @@ def run_prompt_on_batches(
             model=model,
             prompt_name=prompt_name,
             system_prompt=system_prompt,
+            logger=logger,
         )
 
         all_batches.append(batch_result)
         free, total = vram_gpu()
         logger.info(f"📊 VRAM avant release cache only : {free:.2f} Go / {total:.2f} Go")
-        release_gpu_memory(model, cache_only=True)
+        release_gpu_memory(cache_only=True, extra_objects=[batch_result])
         free, total = vram_gpu()
         logger.debug(f"🧹 all_batches : {all_batches}")
         logger.info(
@@ -326,7 +317,6 @@ def run_ai_pipeline_v25(
                 batch.get("keywords"),
             )
         context.description = merge_description(pass1_batches) or ""
-
         context.category = merge_category(pass1_batches)
 
         logger.info(
@@ -353,7 +343,7 @@ def run_ai_pipeline_v25(
             system_prompt="system_keywords",
             logger=logger,
         )
-
+        context.description = merge_description(pass2_batches) or ""
         context.keywords = merge_keywords(pass2_batches)
         for i, batch in enumerate(pass2_batches):
             logger.debug(

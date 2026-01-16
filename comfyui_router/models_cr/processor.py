@@ -39,14 +39,6 @@ from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
 from shared.utils.trash import purge_old_trash
 
-settings = get_settings()
-
-FORCE_DEINTERLACE = settings.router_processor.force_deinterlace
-CLEANUP = settings.router_processor.cleanup
-PURGE_DAYS = settings.router_processor.purge_days
-DELTA_DURATION = settings.router_processor.delta_duration
-RATIO_DURATION = settings.router_processor.ratio_duration
-
 
 class VideoProcessor:
     @with_child_logger
@@ -62,9 +54,14 @@ class VideoProcessor:
 
     @with_child_logger
     def process(
-        self, video_path: Path, force_deinterlace: bool = FORCE_DEINTERLACE, logger: LoggerProtocol | None = None
+        self, video_path: Path, force_deinterlace: bool = False, logger: LoggerProtocol | None = None
     ) -> ProcessedSegment:
         logger = ensure_logger(logger, __name__)
+        settings = get_settings()
+        CLEANUP = settings.router_processor.cleanup
+        PURGE_DAYS = settings.router_processor.purge_days
+        DELTA_DURATION = settings.router_processor.delta_duration
+        RATIO_DURATION = settings.router_processor.ratio_duration
         if not self.segment or not self.segment.output_path or not self.segment.id or not self.segment.uid:
             raise CutMindError(
                 "❌ Erreur inattendue : Vidéo inconnue.",

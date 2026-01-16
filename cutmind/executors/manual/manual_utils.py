@@ -83,7 +83,7 @@ def build_new_data_from_csv_row(row: dict[str, Any]) -> dict[str, Any]:
         status = normalize_csv_value(row.get("status")) or "manual_review"
         description = normalize_csv_value(row.get("description"))
         category = normalize_csv_value(row.get("category"))
-        pipeline_target = normalize_csv_value(row.get("pipeline_target"))
+        pipeline_target = normalize_csv_value(row.get("pipeline_target")).upper()
 
         try:
             conf = float(row.get("confidence") or 0.0)

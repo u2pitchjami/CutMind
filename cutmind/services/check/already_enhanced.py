@@ -18,15 +18,13 @@ from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.safe_segments import safe_segments
 from shared.utils.settings import get_settings
 
-settings = get_settings()
-
-CLEANUP = settings.router_processor.cleanup
-
 
 @safe_segments
 @with_child_logger
 def process_standard_videos(limit: int = 10, logger: LoggerProtocol | None = None) -> None:
     logger = ensure_logger(logger, __name__)
+    settings = get_settings()
+    CLEANUP = settings.router_processor.cleanup
     repo = CutMindRepository()
     uids = repo.get_standard_videos(limit)
 

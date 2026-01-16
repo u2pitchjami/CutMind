@@ -12,9 +12,6 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
 
-settings = get_settings()
-adaptive_cfg = settings.adaptive_batch
-
 
 @dataclass
 class VideoJob:
@@ -63,6 +60,8 @@ class VideoJob:
         Calcule dynamiquement la taille de batch optimale
         en fonction du workflow et de la mémoire disponible.
         """
+        settings = get_settings()
+        adaptive_cfg = settings.adaptive_batch
         logger = ensure_logger(logger, __name__)
         try:
             batch_policy = adaptive_cfg.get("batch_policy", {})
