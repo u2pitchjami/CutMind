@@ -5,20 +5,22 @@ from datetime import datetime
 from transformers import PreTrainedModel, ProcessorMixin
 
 from cutmind.db.repository import CutMindRepository
+from cutmind.executors.analyze.analyze_torch_utils import (
+    release_gpu_memory,
+    vram_gpu,
+)
+from cutmind.executors.check.processing_checks import evaluate_ia_output
+from cutmind.executors.check.processing_log import processing_step
+from cutmind.executors.ia.load_model import load_and_batches
 from cutmind.models_cm.db_models import Segment, Video
+from cutmind.services.analyze.IA_analyze import analyze_IA
+from cutmind.services.keyword_normalizer import KeywordNormalizer
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
 from shared.status_orchestrator.statuses import SegmentStatus
 from shared.utils.config import COLOR_RED, COLOR_RESET
 from shared.utils.logger import get_logger
 from shared.utils.settings import get_settings
-from smartcut.executors.analyze.analyze_torch_utils import (
-    release_gpu_memory,
-    vram_gpu,
-)
-from smartcut.executors.ia.load_model import load_and_batches
-from smartcut.services.analyze.analyze_from_cutmind import analyze_from_cutmind
-from smartcut.services.keyword_normalizer import KeywordNormalizer
 
 
 class IAWorker:
@@ -71,47 +73,68 @@ class IAWorker:
         with Timer(f"Traitement IA pour la vidéo : {self.video.name}", self.logger):
             try:
                 for seg in self.segments:
-                    # --- DÉCISION INTELLIGENTE ---
-                    current_hour = datetime.now().hour
-                    router_allowed = current_hour not in forbidden_hours
-                    if router_allowed:
-                        with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
-                            seg.description, seg.category, seg.keywords = analyze_from_cutmind(
-                                seg=seg,
-                                processor=self.processor,
-                                model=self.model,
-                                model_precision=self.model_precision,
-                                model_name=self.model_name,
-                                batch_size=self.batch_size,
-                                force=False,
-                                logger=self.logger,
-                            )
+                    with processing_step(self.video, seg, action="Analyse IA") as history:
+                        # --- DÉCISION INTELLIGENTE ---
+                        current_hour = datetime.now().hour
+                        IA_allowed = current_hour not in forbidden_hours
+                        if IA_allowed:
+                            with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
+                                (
+                                    seg.description,
+                                    seg.category,
+                                    seg.keywords,
+                                    seg.quality_score,
+                                    seg.rating,
+                                    seg.hashes,
+                                ) = analyze_IA(
+                                    seg=seg,
+                                    processor=self.processor,
+                                    model=self.model,
+                                    model_precision=self.model_precision,
+                                    model_name=self.model_name,
+                                    batch_size=self.batch_size,
+                                    force=False,
+                                    logger=self.logger,
+                                )
+                                self.logger.info(
+                                    f"seg.description, seg.category, seg.keywords, seg.rating :\
+                                {seg.description, seg.category, seg.keywords, seg.rating}"
+                                )
+                                seg.status = SegmentStatus.IA_DONE
+                                seg.ai_model = self.model_name
+                                seg.pipeline_target = None
+                                self.logger.debug(f"segment : {seg}")
+                                self.repo.update_segment_validation(seg)
+
+                                if not seg.id:
+                                    raise CutMindError(
+                                        "❌ Erreur DB : aucun seg.id.",
+                                        code=ErrCode.DB,
+                                        ctx=get_step_ctx({"video_name": self.video.name}),
+                                    )
+                                if seg.keywords:
+                                    normalizer = KeywordNormalizer(
+                                        model_name=MODEL_NAME, threshold=SIMILARITY_THRESHOLD, mode=MODE
+                                    )
+                                    seg.keywords = normalizer.normalize_keywords(seg.keywords)
+                                    self.logger.debug(f"keywords : {seg.keywords}")
+                                    self.repo.insert_keywords_standalone(segment_id=seg.id, keywords=seg.keywords)
+
+                                if seg.hashes:
+                                    self.repo.replace_segment_frame_hashes(seg.id, seg.hashes)
+
+                                processed_count += 1
+                                status, message = evaluate_ia_output(seg)
+                                history.status = status
+                                history.message = message
+                        else:
                             self.logger.info(
-                                f"seg.description, seg.category, seg.keywords :\
-                                {seg.description, seg.category, seg.keywords}"
+                                f"{COLOR_RED}🌙 Plage horaire silencieuse — Analyse IA désactivé\
+                                    {COLOR_RESET}"
                             )
-                            seg.status = SegmentStatus.IA_DONE
-                            seg.pipeline_target = None
-                            self.repo.update_segment_validation(seg)
-                            if not seg.id:
-                                raise CutMindError(
-                                    "❌ Erreur DB : aucun seg.id.",
-                                    code=ErrCode.DB,
-                                    ctx=get_step_ctx({"video_name": self.video.name}),
-                                )
-                            if seg.keywords:
-                                normalizer = KeywordNormalizer(
-                                    model_name=MODEL_NAME, threshold=SIMILARITY_THRESHOLD, mode=MODE
-                                )
-                                seg.keywords = normalizer.normalize_keywords(seg.keywords)
-                                self.repo.insert_keywords_standalone(segment_id=seg.id, keywords=seg.keywords)
-                            processed_count += 1
-                    else:
-                        self.logger.info(
-                            f"{COLOR_RED}🌙 Plage horaire silencieuse — Analyse IA désactivé\
-                                {COLOR_RESET}"
-                        )
-                        return processed_count
+                            history.status = "ko"
+                            history.message = "Plage horaire silencieuse — Analyse IA désactivé"
+                            return processed_count
 
                     free, total = vram_gpu()
                     self.logger.info(f"📊 VRAM avant release : {free:.2f} Go / {total:.2f} Go")

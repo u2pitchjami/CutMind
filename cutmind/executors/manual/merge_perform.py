@@ -158,6 +158,7 @@ def perform_merge(
             "❌ Erreur lors du traitement merge via CSV.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx(),
+            original_exception=exc,
         ) from exc
 
 

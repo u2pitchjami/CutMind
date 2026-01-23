@@ -21,6 +21,7 @@ def sanitize(name: str) -> str:
             "❌ Erreur inattendue lors du sanitize.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"name": name}),
+            original_exception=exc,
         ) from exc
 
 
@@ -43,6 +44,7 @@ class FileMover:
         """
         logger = ensure_logger(logger, __name__)
         logger.debug("🔍 Déplacement des fichiers pour la vidéo : %s", video.name)
+        logger.debug(f"planned_targets : {planned_targets}")
 
         safe_name = sanitize(video.name)
         logger.debug("🔍 Nom sécurisé pour la vidéo : %s", safe_name)
@@ -51,6 +53,7 @@ class FileMover:
 
         # Index segments par uid pour accès O(1)
         segments_by_uid = {seg.uid: seg for seg in video.segments}
+        logger.debug(f"segments_by_uid : {segments_by_uid}")
 
         try:
             # ------------------------------------------------------------------
@@ -130,6 +133,7 @@ class FileMover:
                 "❌ Échec déplacement vidéo.",
                 code=ErrCode.UNEXPECTED,
                 ctx=get_step_ctx({"video.name": video.name}),
+                original_exception=exc,
             ) from exc
 
     @staticmethod
@@ -142,6 +146,7 @@ class FileMover:
                 "❌ Échec déplacement vidéo.",
                 code=ErrCode.UNEXPECTED,
                 ctx=get_step_ctx({"src": src, "dst": dst}),
+                original_exception=err,
             ) from err
 
     @staticmethod
@@ -155,6 +160,7 @@ class FileMover:
                     "❌ Échec nettoyage après échec déplacement.",
                     code=ErrCode.UNEXPECTED,
                     ctx=get_step_ctx({"dst_temp": dst_temp}),
+                    original_exception=err,
                 ) from err
 
     @staticmethod
@@ -201,4 +207,5 @@ class FileMover:
                     "❌ Échec cleanup.",
                     code=ErrCode.UNEXPECTED,
                     ctx=get_step_ctx({"tmp_path": tmp_path}),
+                    original_exception=err,
                 ) from err

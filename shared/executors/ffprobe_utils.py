@@ -54,6 +54,7 @@ def _ffprobe_json(video_path: Path) -> FFprobeData:
                     "error": exc.output.decode("utf-8"),
                 }
             ),
+            original_exception=exc,
         ) from exc
 
     except Exception as exc:  # pylint: disable=broad-except
@@ -61,6 +62,7 @@ def _ffprobe_json(video_path: Path) -> FFprobeData:
             "❌ Erreur interne FFprobe.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": str(video_path)}),
+            original_exception=exc,
         ) from exc
 
 
@@ -107,6 +109,7 @@ def get_duration(video_path: Path, probe: FFprobeData | None = None) -> float:
             "❌ Durée illisible.",
             code=ErrCode.FILE_ERROR,
             ctx=get_step_ctx({"video_path": str(video_path)}),
+            original_exception=exc,
         ) from exc
 
 
@@ -125,6 +128,7 @@ def get_fps(video_path: Path, probe: FFprobeData | None = None) -> float:
             "❌ FPS illisible.",
             code=ErrCode.FILE_ERROR,
             ctx=get_step_ctx({"video_path": str(video_path), "avg_frame_rate": rate}),
+            original_exception=exc,
         ) from exc
 
 

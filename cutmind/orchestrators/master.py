@@ -20,13 +20,13 @@ def run_master(logger: LoggerProtocol | None = None) -> None:
 
     p_cutmind = Process(
         target=cutmind_loop,
-        args=(None,),
+        args=(logger,),
         daemon=False,
     )
 
     p_csv = Process(
         target=csv_validation_loop,
-        args=(None,),
+        args=(),
         daemon=True,
     )
 

@@ -45,4 +45,5 @@ def check_segments(seg: Segment, metadata: VideoPrepared, path: Path) -> bool:
             "❌ Erreur inattendue lors de check_segments.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"seg.id": seg.id, "path": str(path)}),
+            original_exception=exc,
         ) from exc

@@ -62,4 +62,5 @@ def convert_to_60fps(input_path: Path, output_path: Path) -> Path:
             "❌ Erreur innatendue lors de la de la conversion 60 fps.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": input_path}),
+            original_exception=exc,
         ) from exc

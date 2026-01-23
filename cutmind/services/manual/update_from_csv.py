@@ -163,4 +163,5 @@ def update_segments_csv(
             "❌ Erreur inattendue lors du traitement du fichier csv manuel.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"manual_csv": manual_csv}),
+            original_exception=exc,
         ) from exc

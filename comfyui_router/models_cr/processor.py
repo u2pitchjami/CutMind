@@ -137,6 +137,12 @@ class VideoProcessor:
 
             job.path = output_path if output_path else job.path
             logger.info(f"🔧 Fichier à recouper intelligemment : {job.path}")
+            logger.info(
+                "smart_recut_hybrid input | exists=%s size=%d path=%s",
+                job.path.exists(),
+                job.path.stat().st_size if job.path.exists() else -1,
+                job.path,
+            )
             job.path = smart_recut_hybrid(job.path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
             logger.info(f"✅ Smart recut terminé : {job.path}")
             # 🔧 Définition officielle du fichier final
@@ -224,6 +230,7 @@ class VideoProcessor:
                 "❌ Erreur innatendue Processor Comfyui.",
                 code=ErrCode.UNEXPECTED,
                 ctx=get_step_ctx({"job.path.name": job.path.name, "segment": self.segment.filename_predicted}),
+                original_exception=exc,
             ) from exc
 
     @with_child_logger
@@ -272,6 +279,7 @@ class VideoProcessor:
                             "job.path": str(job.path),
                         }
                     ),
+                    original_exception=move_err,
                 ) from move_err
 
             if not target_path.exists():
@@ -294,6 +302,7 @@ class VideoProcessor:
                 "❌ Erreur innatendue notification CutMind.",
                 code=ErrCode.UNEXPECTED,
                 ctx=get_step_ctx({"job.path.name": job.path.name, "seg_uid": self.segment.uid}),
+                original_exception=exc,
             ) from exc
 
     @with_child_logger
@@ -330,7 +339,7 @@ class VideoProcessor:
         # 📌 FPS
         logger.info(
             f"{COLOR_BLUE}📌 FPS        : {COLOR_YELLOW}{fmt_float(job.fps_in)}"
-            f"{COLOR_RESET} → {COLOR_GREEN}{fmt_float(meta.fps)}{COLOR_RESET}"
+            f"{COLOR_RESET} → {COLOR_GREEN}{fmt_float(job.fps_out)}{COLOR_RESET}"
         )
 
         # 📌 Résolution

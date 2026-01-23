@@ -48,6 +48,7 @@ class ComfyWorkflowManager:
                 "❌ Erreur inatendue durant la préparation du workflow.",
                 code=ErrCode.UNEXPECTED,
                 ctx=get_step_ctx({"video_path": video_job.path}),
+                original_exception=exc,
             ) from exc
 
     def run(self, workflow: dict[str, Any]) -> str:
@@ -70,4 +71,5 @@ class ComfyWorkflowManager:
                 "❌ Erreur inatendue durant le lancement du workflow.",
                 code=ErrCode.UNEXPECTED,
                 ctx=get_step_ctx(),
+                original_exception=exc,
             ) from exc

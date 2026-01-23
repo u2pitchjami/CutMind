@@ -153,6 +153,7 @@ def perform_recut(
             "❌ Erreur lors du traitement recut via csv.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx(),
+            original_exception=exc,
         ) from exc
 
 

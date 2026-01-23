@@ -152,4 +152,5 @@ def lite_cut(directory_path: Path, logger: LoggerProtocol | None = None) -> None
             "❌ Erreur lors du traitement Smartcut Lite.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"directory_path": directory_path}),
+            original_exception=exc,
         ) from exc

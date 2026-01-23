@@ -68,4 +68,5 @@ def refine_long_segments(
             "❌ Erreur lors de la détection de scènes : refine.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": video_path}),
+            original_exception=exc,
         ) from exc

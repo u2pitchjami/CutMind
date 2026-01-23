@@ -42,7 +42,12 @@ def get_db_connection() -> Connection:
         conn = pymysql.connect(**DB_CONFIG)
         return conn
     except pymysql.MySQLError as exc:
-        raise CutMindError("❌ Échec connexion DB", code=ErrCode.DB, ctx=get_step_ctx()) from exc
+        raise CutMindError(
+            "❌ Échec connexion DB",
+            code=ErrCode.DB,
+            ctx=get_step_ctx(),
+            original_exception=exc,
+        ) from exc
 
 
 # -------------------------------------------------------------------
@@ -101,6 +106,7 @@ def db_conn(*, autocommit: bool = False) -> Iterator[Connection]:
                     "db_error_type": type(exc).__name__,
                 }
             ),
+            original_exception=exc,
         ) from exc
 
     finally:

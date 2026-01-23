@@ -51,4 +51,5 @@ def run_pyscenedetect(
                 "internal_error": str(exc),
                 "type": type(exc).__name__,
             },
+            original_exception=exc,
         ) from exc

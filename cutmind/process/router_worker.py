@@ -15,6 +15,8 @@ from pathlib import Path
 
 from comfyui_router.models_cr.processor import VideoProcessor
 from cutmind.db.repository import CutMindRepository
+from cutmind.executors.check.processing_checks import evaluate_comfyui_output
+from cutmind.executors.check.processing_log import processing_step
 from cutmind.models_cm.db_models import Segment, Video
 from cutmind.process.file_mover import FileMover
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
@@ -44,7 +46,7 @@ class RouterWorker:
         """
         settings = get_settings()
         forbidden_hours = settings.router_orchestrator.forbidden_hours
-        self.logger.info("🚀 Démarrage RouterWorker")
+        self.logger.info("🚀 Démarrage Router Worker")
         if not self.video:
             self.logger.warning("⚠️ Vidéo introuvable")
             return 0
@@ -63,28 +65,34 @@ class RouterWorker:
                 delete_files(path=INPUT_DIR, ext="*.mp4")
 
                 for seg, src, dst in prepared:
-                    self.file_mover.safe_copy(src, dst)
-                    seg.source_flow = "comfyui_router"
-                    repo.update_segment_validation(seg)
+                    with processing_step(self.video, seg, action="Comfyui Router") as history:
+                        self.file_mover.safe_copy(src, dst)
+                        seg.source_flow = "comfyui_router"
+                        repo.update_segment_validation(seg)
 
-                    # --- DÉCISION INTELLIGENTE ---
-                    current_hour = datetime.now().hour
-                    router_allowed = current_hour not in forbidden_hours
-                    if router_allowed:
-                        with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
-                            delete_files(path=OUTPUT_DIR, ext="*.png")
-                            delete_files(path=OUTPUT_DIR, ext="*.mp4")
-                            processor = VideoProcessor(segment=seg, logger=self.logger)
-                            new_seg = processor.process(Path(dst), logger=self.logger)
-                            repo.update_segment_postprocess(new_seg)
-                            self.logger.debug(f"new_seg {new_seg}")
-                            processed_count += 1
-                    else:
-                        self.logger.info(
-                            f"{COLOR_RED}🌙 Plage horaire silencieuse — Router désactivé (SmartCut forcé)\
-                                {COLOR_RESET}"
-                        )
-                        return processed_count
+                        # --- DÉCISION INTELLIGENTE ---
+                        current_hour = datetime.now().hour
+                        router_allowed = current_hour not in forbidden_hours
+                        if router_allowed:
+                            with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
+                                delete_files(path=OUTPUT_DIR, ext="*.png")
+                                delete_files(path=OUTPUT_DIR, ext="*.mp4")
+                                processor = VideoProcessor(segment=seg, logger=self.logger)
+                                new_seg = processor.process(Path(dst), logger=self.logger)
+                                repo.update_segment_postprocess(new_seg)
+                                self.logger.debug(f"new_seg {new_seg}")
+                                processed_count += 1
+                                status, message = evaluate_comfyui_output(new_seg.fps, new_seg.resolution)
+                                history.status = status
+                                history.message = message
+                        else:
+                            self.logger.info(
+                                f"{COLOR_RED}🌙 Plage horaire silencieuse — Router désactivé (SmartCut forcé)\
+                                    {COLOR_RESET}"
+                            )
+                            history.status = "ko"
+                            history.message = "Plage horaire silencieuse — Analyse IA désactivé"
+                            return processed_count
 
             except CutMindError as err:
                 raise err.with_context(
@@ -95,6 +103,7 @@ class RouterWorker:
                     "❌ Erreur inatendue durant l'envoi à Processor Comfyui.",
                     code=ErrCode.UNEXPECTED,
                     ctx=get_step_ctx({"video.name": self.video.name, "video.status": self.video.status}),
+                    original_exception=exc,
                 ) from exc
 
         if processed_count == 0:
@@ -126,5 +135,6 @@ class RouterWorker:
                     "❌ Erreur inatendue lors de la préparation du segement pour : Processor Comfyui.",
                     code=ErrCode.UNEXPECTED,
                     ctx=get_step_ctx({"seg.uid": seg.uid}),
+                    original_exception=exc,
                 ) from exc
         return prepared

@@ -40,4 +40,5 @@ def fill_missing_segments(
             "❌ Erreur lors de la détection de scènes.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx(),
+            original_exception=exc,
         ) from exc

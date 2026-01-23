@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from math import ceil
+import os
 from pathlib import Path
 import time
 
@@ -59,8 +60,10 @@ class OutputManager:
         last_growth_time = time.time()
 
         SIZE_DELTA_THRESHOLD = 1 * 1024 * 1024  # 5 MB : croissance significative
-        FREEZE_TIME = max(stable_time * 2, 120)  # si aucune croissance pendant trop longtemps → crash suspect
-
+        logger.debug(f"SIZE_DELTA_THRESHOLD : {SIZE_DELTA_THRESHOLD}")
+        FREEZE_TIME = max(stable_time * 3, 120)  # si aucune croissance pendant trop longtemps → crash suspect
+        logger.debug(f"FREEZE_TIME : {FREEZE_TIME}")
+        logger.debug(f"stable_time : {stable_time}")
         while time.time() - start < timeout:
             # ------------------------------------------
             # 1) Détection du fichier vidéo partiel
@@ -69,7 +72,7 @@ class OutputManager:
                 matches = sorted(OUTPUT_DIR.glob(f"{filename_prefix}_*.mp4"))
                 if matches:
                     video_file = matches[0]
-                    last_size = video_file.stat().st_size
+                    # last_size = video_file.stat().st_size
                     last_growth_time = time.time()
                     logger.info(f"📹 Fichier détecté : {video_file.name}")
 
@@ -77,36 +80,48 @@ class OutputManager:
                 time.sleep(poll_interval)
                 continue
 
+            stat = os.stat(video_file)
+            logger.debug(
+                "size=%d mtime=%f",
+                stat.st_size,
+                stat.st_mtime,
+            )
             # ------------------------------------------
             # 2) Analyse de la croissance du fichier
             # ------------------------------------------
             current_size = video_file.stat().st_size
+            logger.debug(f"current_size : {current_size}")
             delta = current_size - last_size
+            logger.debug(f"delta : {delta}")
+            if first_batch_detected is False:
+                batch1_time = last_growth_time - start
+                logger.debug(f"batch1_time : {batch1_time}")
+                FREEZE_TIME = min(max(int(batch1_time * 3), 120), 900)
+                logger.debug(f"FREEZE_TIME : {FREEZE_TIME}")
+                stable_time = min(max(int(batch1_time * 1.5), 30), 300)
+                logger.debug(f"stable_time : {stable_time}")
 
-            if delta > SIZE_DELTA_THRESHOLD:
-                # Croissance visible → batch suspecté
-                growth_mb = delta / 1024 / 1024
-                logger.info(f"📈 Croissance détectée : +{growth_mb:.2f} MB")
-                last_size = current_size
-                last_growth_time = time.time()
-                if first_batch_detected is False:
-                    batch1_time = last_growth_time - start
-                    FREEZE_TIME = min(max(int(batch1_time * 2), 120), 900)
-                    stable_time = min(max(int(batch1_time * 1.5), 30), 180)
-
-                    logger.info(f"⏱️ Premier batch détecté : {batch1_time:.2f}s")
-                    logger.info(f"⏳ Freeze time ajusté à {FREEZE_TIME}s, stable time à {stable_time}s")
-                    first_batch_detected = True
+                logger.info(f"⏱️ Premier batch détecté : {batch1_time:.2f}s")
+                logger.info(f"⏳ Freeze time ajusté à {FREEZE_TIME}s, stable time à {stable_time}s")
+                first_batch_detected = True
 
             # ------------------------------------------
             # 3) Vérification du fichier audio final
             # ------------------------------------------
             if expect_audio:
-                audio_file = video_file.with_name(video_file.stem + "-audio.mp4")
+                if delta > SIZE_DELTA_THRESHOLD:
+                    # Croissance visible → batch suspecté
+                    growth_mb = delta / 1024 / 1024
+                    logger.info(f"📈 Croissance détectée : +{growth_mb:.2f} MB")
+                    last_size = current_size
+                    logger.debug(f"last_size : {last_size}")
+                    last_growth_time = time.time()
+                    logger.debug(f"last_growth_time : {last_growth_time}")
+                    audio_file = video_file.with_name(video_file.stem + "-audio.mp4")
                 if audio_file.exists():
                     logger.info(f"🎧 Audio final détecté : {audio_file.name}")
 
-                    if _is_stable(audio_file, stable_time, poll_interval):
+                    if _is_stable(audio_file, 30, poll_interval):
                         logger.info("✅ Audio stable → workflow terminé")
                         video_job.output_file = audio_file
                         return audio_file
@@ -119,6 +134,7 @@ class OutputManager:
                     logger.info("✅ Vidéo stable → workflow terminé")
                     video_job.output_file = video_file
                     return video_file
+                logger.info(" Vidéo non stable")
 
             # ------------------------------------------
             # 5) Détection de freeze (ComfyUI planté)

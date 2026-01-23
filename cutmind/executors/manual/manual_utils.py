@@ -109,6 +109,7 @@ def build_new_data_from_csv_row(row: dict[str, Any]) -> dict[str, Any]:
             "❌ Erreur lors de la construction des données depuis le CSV.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"row": row}),
+            original_exception=exc,
         ) from exc
 
 

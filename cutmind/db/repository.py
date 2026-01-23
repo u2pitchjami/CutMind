@@ -22,6 +22,8 @@ from cutmind.db.db_connection import db_conn, get_dict_cursor
 from cutmind.db.db_utils import safe_execute_dict, to_db_json
 from cutmind.models_cm.cursor_protocol import DictCursorProtocol
 from cutmind.models_cm.db_models import Segment, Video
+from cutmind.models_cm.frames_hash import SegmentFrameHash
+from cutmind.models_cm.processing_histo import ProcessingHistory
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.services.video_preparation import VideoPrepared
 from shared.status_orchestrator.statuses import OrchestratorStatus
@@ -299,29 +301,52 @@ class CutMindRepository:
     # -------------------------------------------------------------
     # 🔗 Insertion des mots-clés liés à un segment
     # -------------------------------------------------------------
-    def insert_keywords_for_segment(self, cur: DictCursorProtocol, segment_id: int, keywords: list[str]) -> None:
+    def insert_keywords_for_segment(
+        self,
+        cur: DictCursorProtocol,
+        segment_id: int,
+        keywords: list[str],
+    ) -> None:
         """Insère les mots-clés d’un segment (en évitant les doublons)."""
         try:
+            # 🔥 DELETE UNE SEULE FOIS
+            safe_execute_dict(
+                cur,
+                "DELETE FROM segment_keywords WHERE segment_id=%s",
+                (segment_id,),
+            )
+
             for kw in keywords:
                 kw_clean = kw.strip().lower()
                 if not kw_clean:
                     continue
 
-                safe_execute_dict(cur, "DELETE FROM segment_keywords WHERE segment_id=%s", (segment_id,))
-
-                safe_execute_dict(cur, "SELECT id FROM keywords WHERE keyword=%s", (kw_clean,))
+                safe_execute_dict(
+                    cur,
+                    "SELECT id FROM keywords WHERE keyword=%s",
+                    (kw_clean,),
+                )
                 row = cur.fetchone()
+
                 if row:
                     kw_id = row["id"]
                 else:
-                    safe_execute_dict(cur, "INSERT INTO keywords (keyword) VALUES (%s)", (kw_clean,))
+                    safe_execute_dict(
+                        cur,
+                        "INSERT INTO keywords (keyword) VALUES (%s)",
+                        (kw_clean,),
+                    )
                     kw_id = cur.lastrowid
 
                 safe_execute_dict(
                     cur,
-                    "INSERT INTO segment_keywords (segment_id, keyword_id) VALUES (%s, %s)",
+                    """
+                    INSERT INTO segment_keywords (segment_id, keyword_id)
+                    VALUES (%s, %s)
+                    """,
                     (segment_id, kw_id),
                 )
+
         except CutMindError as err:
             raise err.with_context(get_step_ctx({"segment_id": segment_id})) from err
         except Exception as exc:
@@ -345,6 +370,146 @@ class CutMindRepository:
                 "❌ Erreur Repo insert_keywords_standalone.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"segment_id": segment_id}),
+                original_exception=exc,
+            ) from exc
+
+    def replace_segment_frame_hashes(
+        self,
+        segment_id: int,
+        hashes: list[SegmentFrameHash],
+    ) -> None:
+        """
+        Supprime puis insère les hashes perceptuels d'un segment.
+        Opération idempotente (safe pour re-run IA).
+        """
+        try:
+            with db_conn() as conn:
+                with get_dict_cursor(conn) as cur:
+                    # 1️⃣ Delete existant
+                    safe_execute_dict(
+                        cur,
+                        """
+                        DELETE FROM segment_frame_hash
+                        WHERE segment_id = %s
+                        """,
+                        (segment_id,),
+                    )
+
+                    # 2️⃣ Insert nouveau
+                    if hashes:
+                        values = [h.to_sql_values() for h in hashes]
+
+                        safe_execute_dict(
+                            cur,
+                            """
+                            INSERT INTO segment_frame_hash (
+                                segment_id,
+                                frame_index,
+                                hash_type,
+                                hash_value
+                            ) VALUES (%s, %s, %s, %s)
+                            """,
+                            values,
+                            many=True,  # ⬅️ important
+                        )
+
+                conn.commit()
+
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur Repo replace_segment_frame_hashes",
+                code=ErrCode.DB,
+                ctx=get_step_ctx({"segment_id": segment_id}),
+                original_exception=exc,
+            ) from exc
+
+    def insert_processing_history(self, history: ProcessingHistory) -> int:
+        """
+        Insère une entrée dans la table processing_history et retourne l'ID.
+        """
+        try:
+            with db_conn() as conn:
+                with get_dict_cursor(conn) as cur:
+                    safe_execute_dict(
+                        cur,
+                        """
+                        INSERT INTO processing_history (
+                            video_id,
+                            segment_id,
+                            video_name,
+                            segment_uid,
+                            action,
+                            status,
+                            message,
+                            started_at,
+                            ended_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        history.to_sql_values(),
+                    )
+
+                    history.id = cur.lastrowid
+
+                    if not history.id:
+                        raise CutMindError(
+                            "❌ Erreur Repo insert_processing_history : ID non retourné.",
+                            code=ErrCode.DB,
+                            ctx=get_step_ctx({"action": history.action}),
+                        )
+
+                conn.commit()
+                return history.id  # ✅ retourne l'ID inséré
+
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur Repo insert_processing_history",
+                code=ErrCode.DB,
+                ctx=get_step_ctx({"action": history.action}),
+                original_exception=exc,
+            ) from exc
+
+    def update_processing_history(self, history: ProcessingHistory) -> None:
+        """
+        Met à jour le statut, le message et la date de fin d'une entrée processing_history.
+        """
+        if history.id is None:
+            raise CutMindError(
+                "❌ Impossible de mettre à jour une entrée sans ID.",
+                code=ErrCode.DB,
+                ctx=get_step_ctx(
+                    {
+                        "action": history.action,
+                        "video_id": history.video_id,
+                        "segment_id": history.segment_id,
+                    }
+                ),
+            )
+
+        try:
+            with db_conn() as conn:
+                with get_dict_cursor(conn) as cur:
+                    safe_execute_dict(
+                        cur,
+                        """
+                        UPDATE processing_history
+                        SET status = %s,
+                            message = %s,
+                            ended_at = %s
+                        WHERE id = %s
+                        """,
+                        (
+                            history.status,
+                            history.message,
+                            history.ended_at.strftime("%Y-%m-%d %H:%M:%S"),
+                            history.id,
+                        ),
+                    )
+                conn.commit()
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur lors de la mise à jour processing_history",
+                code=ErrCode.DB,
+                ctx=get_step_ctx({"id": history.id, "action": history.action}),
                 original_exception=exc,
             ) from exc
 
@@ -835,6 +1000,8 @@ class CutMindRepository:
                     category=%s,
                     ai_model=%s,
                     tags=%s,
+                    quality_score=%s,
+                    rating=%s,
                     last_updated=NOW()
                 WHERE uid=%s
                 """,
@@ -849,6 +1016,8 @@ class CutMindRepository:
                     seg.category,
                     seg.ai_model,
                     to_db_json(seg.tags),
+                    seg.quality_score,
+                    seg.rating,
                     seg.uid,
                 ),
                 conn=conn,

@@ -6,17 +6,17 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
 from shared.status_orchestrator.statuses import SegmentStatus
 from shared.utils.config import MIN_CONFIDENCE
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import get_logger
 
 
-@with_child_logger
 def validation(
     vid: Video,
     segments: list[Segment],
     status: str = SegmentStatus.CONFIDENCE_DONE,
-    logger: LoggerProtocol | None = None,
 ) -> None:
-    logger = ensure_logger(logger, __name__)
+    logger = get_logger("CutMind-Analyse_Confidence")
+    logger.info("🚀 Démarrage de la Validation")
+    logger.info("🎞️ Vidéo '%s' nb segments: %i", vid.name, len(segments))
     try:
         valid_count = 0
         manual_valid_count = 0
@@ -65,4 +65,5 @@ def validation(
             "❌ Erreur innatendue lors de la validation.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"name": vid.name, "status": status}),
+            original_exception=exc,
         ) from exc

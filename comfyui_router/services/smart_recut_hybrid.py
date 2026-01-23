@@ -30,6 +30,13 @@ def smart_recut_hybrid(
     Découpe la vidéo au début et à la fin selon les changements de scène.
     """
     logger = ensure_logger(logger, __name__)
+    logger.debug("Début de la découpe de %s", video_path)
+    logger.info(
+        "smart_recut_hybrid input | exists=%s size=%d path=%s",
+        video_path.exists(),
+        video_path.stat().st_size if video_path.exists() else -1,
+        video_path,
+    )
     executor = FfmpegCutExecutor()
     settings = get_settings()
     USE_CUDA = settings.smartcut.use_cuda
@@ -38,6 +45,7 @@ def smart_recut_hybrid(
     CRF = settings.smartcut.crf
     try:
         duration = get_duration(video_path)
+        logger.debug("durée de %s: %s", video_path, duration)
         if duration == 0:
             logger.error("Impossible de déterminer la durée de %s", video_path)
             return video_path
@@ -85,4 +93,5 @@ def smart_recut_hybrid(
             "❌ Erreur innatendue lors de smart_cut_hybrid.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": video_path}),
+            original_exception=exc,
         ) from exc

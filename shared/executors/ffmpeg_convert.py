@@ -34,4 +34,5 @@ def convert_safe_video_format(video_path: str, output_path: str) -> None:
             "[FFMPEG] ❌ Erreur dans la conversion de la vidéo",
             code=ErrCode.FFMPEG,
             ctx={"step": "convert_safe_video_format", "video_path": video_path},
+            original_exception=exc,
         ) from exc

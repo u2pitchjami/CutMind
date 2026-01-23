@@ -87,6 +87,7 @@ def process_smartcut_batch(
             "❌ Erreur lors du process Smartcut batch.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx(),
+            original_exception=exc,
         ) from exc
 
 
@@ -111,6 +112,7 @@ def process_smartcut_video(video_path: Path) -> None:
             "❌ Erreur lors du process Smartcut.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path.name": video_path.name}),
+            original_exception=exc,
         ) from exc
 
 
@@ -128,4 +130,5 @@ def process_smartcut_folder(folder_path: Path) -> None:
             "❌ Erreur lors du process Smartcut Lite.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"folder_path.name": folder_path.name}),
+            original_exception=exc,
         ) from exc

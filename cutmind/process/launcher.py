@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 
 from cutmind.db.repository import CutMindRepository
-from shared.status_orchestrator.orchestrator import CutMindOrchestratorV2
+from cutmind.orchestrators.orchestrator import CutMindOrchestratorV2
 from shared.utils.logger import LoggerProtocol, ensure_logger
 
 
@@ -23,8 +23,8 @@ class VideoFlowLauncherV2:
         logger: LoggerProtocol | None = None,
     ) -> None:
         self.repo = repo or CutMindRepository()
-        self.orchestrator = orchestrator or CutMindOrchestratorV2(repo=self.repo)
         self.logger = ensure_logger(logger, __name__)
+        self.orchestrator = orchestrator or CutMindOrchestratorV2(repo=self.repo, logger=self.logger)
 
     def run(self, *, limit: int = 1, randomize: bool = True) -> None:
         if limit <= 0:

@@ -54,6 +54,7 @@ def ffmpeg_concat_segments(
             "Erreur lors de la création du fichier concat.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx(),
+            original_exception=exc,
         ) from exc
 
     # --- 2️⃣ Commande ffmpeg ---

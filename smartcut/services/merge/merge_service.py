@@ -104,4 +104,5 @@ class MergeService:
                 "❌ Erreur inattendue lors du merge Smartcut.",
                 code=ErrCode.UNEXPECTED,
                 ctx=get_step_ctx({"start": seg.start, "end": seg.end, "merged_from": seg.merged_from}),
+                original_exception=exc,
             ) from exc

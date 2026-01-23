@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 import uuid
 
+from cutmind.models_cm.frames_hash import SegmentFrameHash
 from shared.models.exceptions import CutMindError, ErrCode
 from shared.status_orchestrator.statuses import OrchestratorStatus
 
@@ -27,7 +28,7 @@ class Segment:
     pipeline_target: str | None = None
     confidence: float | None = None
     description: str | None = None
-    rating: int | None = None
+    rating: float | None = None
     quality_score: float | None = None
     category: str | None = None
     ai_model: str | None = None
@@ -54,6 +55,7 @@ class Segment:
     created_at: datetime | None = None
     last_updated: str = field(default_factory=lambda: datetime.now().isoformat())
     keywords: list[str] = field(default_factory=list)
+    hashes: list[SegmentFrameHash] = field(default_factory=list)
 
     # --- Factory : construit à partir d’une ligne SQL
     @classmethod
@@ -194,6 +196,7 @@ class Video:
                 f"Erreur from_row pour {cls.__name__}",
                 code=ErrCode.MODEL,
                 ctx={"row_keys": list(row.keys())},
+                original_exception=exc,
             ) from exc
 
     def finalize_segments(self, output_dir: str | Path = "./outputs") -> None:

@@ -15,7 +15,7 @@ def main() -> None:
     Args:
         priority (str, optional): _description_. Defaults to "smartcut".
     """
-    logger = get_logger("CutMind")
+    logger = get_logger("CutMind_Orchestrator")
     from shared.models.config_manager import bootstrap_process
 
     bootstrap_process(logger=logger)

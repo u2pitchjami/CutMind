@@ -4,13 +4,13 @@ import time
 from cutmind.services.manual.update_from_csv import update_segments_csv
 from shared.models.exceptions import CutMindError
 from shared.utils.config import MANUAL_CSV_CUT_PATH, MANUAL_CSV_PATH
-from shared.utils.logger import LoggerProtocol, ensure_logger
+from shared.utils.logger import LoggerProtocol, get_logger
 
 CSV_CHECK_INTERVAL = 30  # secondes
 
 
-def csv_validation_loop(logger: LoggerProtocol | None = None) -> None:
-    logger = ensure_logger(logger, __name__)
+def csv_validation_loop() -> None:
+    logger = get_logger("CutMind-CSV_Validation")
     from shared.models.config_manager import bootstrap_process
 
     bootstrap_process(logger=logger)

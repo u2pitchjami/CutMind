@@ -133,6 +133,7 @@ def check_video_segment_status(
             "❌ Erreur lors du check de cohérence vidéo/segments (V2).",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_status": video_status}),
+            original_exception=exc,
         ) from exc
 
 
@@ -163,4 +164,5 @@ def check_all_video_segment_status_rules(
             "❌ Erreur lors de l'exécution des checks V2.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx(),
+            original_exception=exc,
         ) from exc

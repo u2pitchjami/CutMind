@@ -115,4 +115,5 @@ class MergeExecutor:
                 "❌ Erreur lors du process de merge.",
                 code=ErrCode.FFMPEG,
                 ctx=get_step_ctx({"merged_from": merged_from, "current": current}),
+                original_exception=exc,
             ) from exc

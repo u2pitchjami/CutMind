@@ -18,16 +18,17 @@ from pathlib import Path
 import uuid
 
 from cutmind.db.repository import CutMindRepository
+from cutmind.executors.check.processing_checks import evaluate_scene_detection_output
+from cutmind.executors.check.processing_log import processing_step
 from cutmind.models_cm.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
-from shared.models.timer_manager import Timer
 from shared.services.video_preparation import prepare_video
 from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import ERROR_DIR_SC, OUTPUT_DIR_SC, TRASH_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
 from shared.utils.trash import move_to_trash, purge_old_trash
-from smartcut.executors.analyze.split_utils import get_downscale_factor, move_to_error
+from smartcut.executors.split_utils import get_downscale_factor, move_to_error
 from smartcut.services.cut_service import CutRequest, CutService
 from smartcut.services.scene_split.pipeline_service import adaptive_scene_split
 
@@ -124,7 +125,7 @@ def multi_stage_cut(
             )
         if vid.status in (OrchestratorStatus.VIDEO_READY_PYSCENE,):
             logger.info("🔍 Découpage vidéo avec pyscenedetect...")
-            with Timer(f"Traitement Split : {vid.name}", logger):
+            with processing_step(vid, None, action="Découpage pyscenedetect") as history:
                 try:
                     cuts = adaptive_scene_split(
                         str(video_path),
@@ -136,6 +137,9 @@ def multi_stage_cut(
                         max_duration=MAX_DURATION,
                         downscale_factor=get_downscale_factor(str(video_path)),
                     )
+                    status, message = evaluate_scene_detection_output(True, len(cuts))
+                    history.status = status
+                    history.message = message
                 except CutMindError as e:
                     logger.error("❌ Scene split error: %s", e)
                     if not Path(vid.video_path).exists():
@@ -183,7 +187,7 @@ def multi_stage_cut(
 
             cut_requests = []
             for seg in vid.segments:
-                if not seg.output_path:
+                if not vid.id or not seg.id or not seg.output_path:
                     raise CutMindError(
                         "Capteur vidéo non initialisé avant extraction des frames.",
                         code=ErrCode.CONTEXT,
@@ -191,6 +195,7 @@ def multi_stage_cut(
                     )
                 cut_requests.append(
                     CutRequest(
+                        seg_obj=seg,
                         uid=seg.uid,
                         start=seg.start,
                         end=seg.end,
@@ -199,7 +204,7 @@ def multi_stage_cut(
                 )
 
             try:
-                service_cut.cut_segments(str(video_path), cut_requests)
+                service_cut.cut_segments(vid, str(video_path), cut_requests)
             except CutMindError as err:
                 if vid.tags == "" or "cut_error" not in vid.tags:
                     vid.add_tag_vid("cut_error")
@@ -241,4 +246,5 @@ def multi_stage_cut(
             "❌ Erreur lors du traitement Smartcut.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": video_path}),
+            original_exception=exc,
         ) from exc

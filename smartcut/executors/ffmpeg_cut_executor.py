@@ -42,4 +42,5 @@ class FfmpegCutExecutor:
                 "❌ Erreur technique pendant le cut de la vidéo.",
                 code=ErrCode.FFMPEG,
                 ctx=get_step_ctx({"input_path": input_path, "start": start, "end": end, "output_path": output_path}),
+                original_exception=exc,
             ) from exc

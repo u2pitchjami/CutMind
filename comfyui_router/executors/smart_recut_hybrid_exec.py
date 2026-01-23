@@ -37,12 +37,14 @@ def detect_scene_changes_with_scores(video_path: Path, threshold: float = 0.005)
             "❌ Erreur FFMPEG lors de la détection de changements de scènes.",
             code=ErrCode.FFMPEG,
             ctx=get_step_ctx({"video_path": video_path}),
+            original_exception=err,
         ) from err
     except Exception as exc:
         raise CutMindError(
             "❌ Erreur innatendue lors de la détection de changements de scènes.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": video_path}),
+            original_exception=exc,
         ) from exc
 
 
@@ -74,6 +76,7 @@ def auto_threshold_pass(video_path: Path, base_threshold: float = 0.005) -> list
             "❌ Erreur inatendue durant auto_threshold_pass.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": video_path}),
+            original_exception=exc,
         ) from exc
 
 

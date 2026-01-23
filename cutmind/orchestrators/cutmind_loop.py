@@ -1,8 +1,8 @@
 import time
 
+from cutmind.executors.analyze.analyze_torch_utils import auto_clean_gpu
 from cutmind.process.launcher import VideoFlowLauncherV2
 from shared.utils.logger import LoggerProtocol, ensure_logger
-from smartcut.executors.analyze.analyze_torch_utils import auto_clean_gpu
 
 
 def cutmind_loop(logger: LoggerProtocol | None = None) -> None:

@@ -23,8 +23,8 @@ def fix_segment_resolution(
     input_res: tuple[int, int],
 ) -> tuple[int, int]:
     """
-    Fixe une résolution non standard en ciblant 1920x1080 ou 3840x2160 si proche.
-    Upscale + pad si trop petit, sinon crop au centre.
+    Fixe une résolution non standard en ciblant 1920x1080 ou 3840x2160.
+    Garantit une résolution finale paire (codec-safe).
     """
     try:
         if is_close(input_res, STANDARD_2160P):
@@ -35,12 +35,23 @@ def fix_segment_resolution(
         if input_res[0] < target[0] or input_res[1] < target[1]:
             vf = (
                 f"scale={target[0]}:{target[1]}:force_original_aspect_ratio=decrease,"
-                f"pad={target[0]}:{target[1]}:(ow-iw)/2:(oh-ih)/2"
+                f"pad={target[0]}:{target[1]}:(ow-iw)/2:(oh-ih)/2,"
+                f"scale=trunc(iw/2)*2:trunc(ih/2)*2"
             )
         else:
-            vf = f"crop={target[0]}:{target[1]}"
+            vf = f"crop={target[0]}:{target[1]},scale=trunc(iw/2)*2:trunc(ih/2)*2"
 
-        cmd = ["ffmpeg", "-y", "-i", str(in_path), "-vf", vf, "-c:a", "copy", str(out_path)]
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(in_path),
+            "-vf",
+            vf,
+            "-c:a",
+            "copy",
+            str(out_path),
+        ]
 
         subprocess.run(cmd, check=True)
         return target
@@ -50,10 +61,12 @@ def fix_segment_resolution(
             "❌ Erreur FFMPEG fix_segment_resolution.",
             code=ErrCode.FFMPEG,
             ctx=get_step_ctx({"video_path": str(in_path)}),
+            original_exception=e,
         ) from e
     except Exception as exc:
         raise CutMindError(
             "❌ Erreur inattendue lors du fix_segment_resolution.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": str(in_path)}),
+            original_exception=exc,
         ) from exc

@@ -86,4 +86,5 @@ class PostMergeRattrapage:
                 "❌ Erreur inattendue lors du rattrapage merge Smartcut.",
                 code=ErrCode.UNEXPECTED,
                 ctx=get_step_ctx({"start": seg.start, "end": seg.end, "merged_from": seg.merged_from}),
+                original_exception=exc,
             ) from exc

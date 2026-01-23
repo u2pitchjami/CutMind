@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 from cutmind.db.repository import CutMindRepository
+from cutmind.executors.check.processing_log import processing_step
 from cutmind.models_cm.db_models import Segment, Video
 from cutmind.process.file_mover import CUTMIND_BASEDIR, FileMover, sanitize
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
@@ -52,15 +53,30 @@ def validation_db(
     # --- Analyse en mémoire ---
     try:
         for seg in segments:
-            desc_ok = bool(seg.description and seg.description.strip().lower() not in ("none", ""))
-            cat_ok = bool(seg.category and seg.category.strip().lower() not in ("none", ""))
-            conf_ok = (seg.confidence or 0.0) >= min_confidence
-            kw_ok = bool(seg.keywords and len(seg.keywords) > 0)
+            with processing_step(video, seg, action="Validation") as history:
+                desc_ok = bool(seg.description and seg.description.strip().lower() not in ("none", ""))
+                cat_ok = bool(seg.category and seg.category.strip().lower() not in ("none", ""))
+                conf_ok = (seg.confidence or 0.0) >= min_confidence
+                kw_ok = bool(seg.keywords and len(seg.keywords) > 0)
 
-            if desc_ok and cat_ok and conf_ok and kw_ok:
-                valid_segments.append(seg)
-            else:
-                decisions.append(seg)
+                if desc_ok and cat_ok and conf_ok and kw_ok:
+                    valid_segments.append(seg)
+                    history.status = "ok"
+                    history.message = f"Validation (confiance = {seg.confidence:.2f})"
+                else:
+                    decisions.append(seg)
+                    history.status = "ko"
+                    problems = []
+                    if not desc_ok:
+                        problems.append("description manquante")
+                    if not cat_ok:
+                        problems.append("catégorie absente")
+                    if not kw_ok:
+                        problems.append("aucun mot-clé")
+                    if not conf_ok:
+                        problems.append(f"confiance trop faible ({seg.confidence:.2f})")
+
+                    history.message = "Validation KO : " + ", ".join(problems)
 
         valid_count = len(valid_segments)
         # auto_valid = valid_count == total
@@ -94,6 +110,7 @@ def validation_db(
             "❌ Erreur innatendue lors de la validation.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"name": video.name}),
+            original_exception=exc,
         ) from exc
 
 
@@ -186,4 +203,5 @@ def validation_cut(
             "❌ Erreur innatendue lors de la validation.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"name": video.name}),
+            original_exception=exc,
         ) from exc

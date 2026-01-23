@@ -47,4 +47,5 @@ def detect_initial_scenes(
             "❌ Erreur lors de la détection de scènes.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": video_path}),
+            original_exception=exc,
         ) from exc

@@ -52,6 +52,7 @@ class VideoJob:
                 "❌ Erreur inatendue durant la définition du batch optimal.",
                 code=ErrCode.UNEXPECTED,
                 ctx=get_step_ctx({"video_path": self.path}),
+                original_exception=exc,
             ) from exc
 
     @with_child_logger
@@ -110,4 +111,5 @@ class VideoJob:
                 "❌ Erreur innatendue lors du calcul batch dynamique.",
                 code=ErrCode.UNEXPECTED,
                 ctx=get_step_ctx({"wf_path": wf_path}),
+                original_exception=exc,
             ) from exc
