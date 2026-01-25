@@ -90,9 +90,7 @@ class OutputManager:
             # 2) Analyse de la croissance du fichier
             # ------------------------------------------
             current_size = video_file.stat().st_size
-            logger.debug(f"current_size : {current_size}")
             delta = current_size - last_size
-            logger.debug(f"delta : {delta}")
             if first_batch_detected is False:
                 batch1_time = last_growth_time - start
                 logger.debug(f"batch1_time : {batch1_time}")
@@ -109,6 +107,7 @@ class OutputManager:
             # 3) Vérification du fichier audio final
             # ------------------------------------------
             if expect_audio:
+                audio_file = video_file.with_name(video_file.stem + "-audio.mp4")
                 if delta > SIZE_DELTA_THRESHOLD:
                     # Croissance visible → batch suspecté
                     growth_mb = delta / 1024 / 1024
@@ -117,10 +116,9 @@ class OutputManager:
                     logger.debug(f"last_size : {last_size}")
                     last_growth_time = time.time()
                     logger.debug(f"last_growth_time : {last_growth_time}")
-                    audio_file = video_file.with_name(video_file.stem + "-audio.mp4")
+
                 if audio_file.exists():
                     logger.info(f"🎧 Audio final détecté : {audio_file.name}")
-
                     if _is_stable(audio_file, 30, poll_interval):
                         logger.info("✅ Audio stable → workflow terminé")
                         video_job.output_file = audio_file

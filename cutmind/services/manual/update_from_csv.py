@@ -113,7 +113,11 @@ def update_segments_csv(
                             )
                             continue
 
-                        if has_category and not (has_description or has_keywords or has_confidence):
+                        if (
+                            has_category
+                            and status == OrchestratorStatus.VIDEO_READY_FOR_VALIDATION
+                            and not (has_description or has_keywords or has_confidence)
+                        ):
                             new_data["pipeline_target"] = OrchestratorStatus.SEGMENT_TO_IA
 
                             stats["updated"] += 1
