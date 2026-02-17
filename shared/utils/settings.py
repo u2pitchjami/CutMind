@@ -38,9 +38,19 @@ class SmartcutCoreSettings:
 class FFSmartcutSettings:
     vcodec: str
     preset: str
-    rc: str
-    cq: int
     pix_fmt: str
+    crf: int
+    profile: str
+    color_primaries: str
+    color_trc: str
+    colorspace: str
+    vsync: str
+    tag: str
+    movflags: str
+    acodec: str
+    audio_bitrate: str
+    ar: int
+    ac: int
 
 
 @dataclass

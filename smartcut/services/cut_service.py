@@ -7,7 +7,6 @@ from cutmind.executors.check.processing_checks import evaluate_segment_cut
 from cutmind.executors.check.processing_log import processing_step
 from cutmind.models_cm.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
-from shared.utils.settings import get_settings
 from smartcut.executors.ffmpeg_cut_executor import FfmpegCutExecutor
 
 
@@ -37,12 +36,6 @@ class CutService:
         input_video: str,
         segments: list[CutRequest],
     ) -> list[CutResult]:
-        settings = get_settings()
-
-        USE_CUDA = settings.smartcut.use_cuda
-        PRESET = settings.smartcut.preset_gpu if USE_CUDA else settings.smartcut.preset_cpu
-        VCODEC = settings.smartcut.vcodec_gpu if USE_CUDA else settings.smartcut.vcodec_cpu
-        CRF = settings.smartcut.crf
         results: list[CutResult] = []
         try:
             for seg in segments:
@@ -59,9 +52,7 @@ class CutService:
                         )
 
                     try:
-                        self.executor.cut(
-                            input_video, seg.start, seg.end, seg.output_path, USE_CUDA, VCODEC, CRF, PRESET
-                        )
+                        self.executor.cut(input_video, seg.start, seg.end, seg.output_path)
                         status, message = evaluate_segment_cut(Path(seg.output_path))
                         history.status = status
                         history.message = message

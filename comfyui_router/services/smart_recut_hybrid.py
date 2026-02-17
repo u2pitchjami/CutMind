@@ -14,7 +14,6 @@ from shared.executors.ffmpeg_utils import get_duration
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import TRASH_DIR
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
-from shared.utils.settings import get_settings
 from smartcut.executors.ffmpeg_cut_executor import FfmpegCutExecutor
 
 
@@ -38,11 +37,7 @@ def smart_recut_hybrid(
         video_path,
     )
     executor = FfmpegCutExecutor()
-    settings = get_settings()
-    USE_CUDA = settings.smartcut.use_cuda
-    PRESET = settings.smartcut.preset_gpu if USE_CUDA else settings.smartcut.preset_cpu
-    VCODEC = settings.smartcut.vcodec_gpu if USE_CUDA else settings.smartcut.vcodec_cpu
-    CRF = settings.smartcut.crf
+
     try:
         duration = get_duration(video_path)
         logger.debug("durée de %s: %s", video_path, duration)
@@ -69,7 +64,7 @@ def smart_recut_hybrid(
             return video_path
 
         output_path = video_path.with_name(video_path.stem + "_smart_trimmed.mp4")
-        executor.cut(str(video_path), start_time, end_time, str(output_path), USE_CUDA, VCODEC, CRF, PRESET)
+        executor.cut(str(video_path), start_time, end_time, str(output_path))
 
         logger.info(
             "Découpage : début %.3fs / fin %.3fs (durée originale %.3fs) → %s",

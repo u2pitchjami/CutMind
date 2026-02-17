@@ -12,7 +12,6 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import TRASH_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger
-from shared.utils.settings import get_settings
 from shared.utils.trash import move_to_trash
 from smartcut.executors.ffmpeg_cut_executor import FfmpegCutExecutor
 
@@ -25,11 +24,6 @@ def perform_recut(
     """Recoupe un segment déjà extrait — sécurisé avec validations strictes."""
     logger = ensure_logger(logger, __name__)
     repo = CutMindRepository()
-    settings = get_settings()
-    USE_CUDA = settings.smartcut.use_cuda
-    PRESET = settings.smartcut.preset_gpu if USE_CUDA else settings.smartcut.preset_cpu
-    VCODEC = settings.smartcut.vcodec_gpu if USE_CUDA else settings.smartcut.vcodec_cpu
-    CRF = settings.smartcut.crf
 
     try:
         if not segment or not segment.id or not segment.duration:
@@ -76,7 +70,7 @@ def perform_recut(
             output_path = output_dir / f"seg_{segment.id:04d}_{new_uid}.mp4"
 
             try:
-                executor.cut(str(input_path), start, end, str(output_path), USE_CUDA, VCODEC, CRF, PRESET)
+                executor.cut(str(input_path), start, end, str(output_path))
                 # ffmpeg_cut_one_segment(
                 #     input_path=input_path,
                 #     start=start,

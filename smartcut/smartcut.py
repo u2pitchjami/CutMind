@@ -74,7 +74,7 @@ def multi_stage_cut(
 
         if not session:
             # 1. Prépare la vidéo (format, durée, fps, etc.)
-            prep = prepare_video(video_path)
+            prep = prepare_video(video_path, normalize=True)
             orig = Path(video_path).resolve()
             safe = Path(prep.path).resolve()
 

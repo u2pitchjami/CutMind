@@ -8,7 +8,6 @@ from shared.executors.ffprobe_utils import (
 )
 from shared.models.exceptions import CutMindError, ErrCode
 from shared.models.videoprep import VideoPrepared
-from shared.utils.config import SAFE_FORMATS
 
 # ============================================================
 # 🔧 Étape 1 : Normalisation du format
@@ -20,13 +19,13 @@ def normalize_format(video_path: Path) -> Path:
     Si le format n'est pas supporté → convertit vers MP4.
     Lève CutMindError en cas d'échec.
     """
-    ext = video_path.suffix.lower()
+    # ext = video_path.suffix.lower()
 
-    if ext in SAFE_FORMATS:
-        return video_path  # rien à faire
+    # if ext in SAFE_FORMATS:
+    #     return video_path  # rien à faire
 
     # format non supporté → conversion
-    safe_path = video_path.with_suffix(".mp4")
+    safe_path = video_path.with_suffix("_conv.mp4")
 
     try:
         convert_safe_video_format(str(video_path), str(safe_path))
@@ -87,17 +86,18 @@ def validate_video(prep: VideoPrepared) -> None:
 # ============================================================
 
 
-def prepare_video(video_path: Path) -> VideoPrepared:
+def prepare_video(video_path: Path, normalize: bool = False) -> VideoPrepared:
     """
     Pipeline complet en version optimisée :
     - 1 seul ffprobe
     - validation basée sur VideoMetadata
     - retour d’un dict directement
     """
-    try:
-        normalized_path = normalize_format(video_path)
-    except CutMindError as err:
-        raise err.with_context({"pipeline_step": "prepare_video"}) from err
+    if normalize:
+        try:
+            normalized_path = normalize_format(video_path)
+        except CutMindError as err:
+            raise err.with_context({"pipeline_step": "prepare_video"}) from err
 
     # 1 seul ffprobe
     try:

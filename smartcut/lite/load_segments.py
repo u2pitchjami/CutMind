@@ -20,7 +20,9 @@ from cutmind.models_cm.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode
 from shared.services.video_preparation import prepare_video
 from shared.status_orchestrator.statuses import OrchestratorStatus
+from shared.utils.config import TRASH_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger
+from shared.utils.trash import move_to_trash
 
 
 def load_segments_from_directory(video: Video, directory_path: Path, logger: LoggerProtocol | None = None) -> None:
@@ -49,7 +51,13 @@ def load_segments_from_directory(video: Video, directory_path: Path, logger: Log
 
     for _, file_path in enumerate(video_files, start=1):
         try:
-            prepared = prepare_video(file_path)
+            prepared = prepare_video(file_path, normalize=True)
+            orig = Path(file_path).resolve()
+            safe = Path(prepared.path).resolve()
+
+            if orig != safe:
+                logger.info(f"🎞️ Conversion automatique : {orig.name} → {safe.name}")
+                move_to_trash(orig, TRASH_DIR_SC)
         except CutMindError as exc:
             # E3 : on continue, mais on enregistre l’erreur
             msg = f"Erreur préparation segment {file_path.name}: {exc}"

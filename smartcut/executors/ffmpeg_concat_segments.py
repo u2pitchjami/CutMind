@@ -6,6 +6,7 @@ import tempfile
 
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.logger import LoggerProtocol
+from shared.utils.settings import get_settings
 
 
 def ffmpeg_concat_segments(
@@ -30,6 +31,23 @@ def ffmpeg_concat_segments(
 
     output_path = Path(output_file)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    settings = get_settings()
+
+    PRESET: str = settings.ffsmartcut.preset
+    PIX_FMT: str = settings.ffsmartcut.pix_fmt
+    VCODEC: str = settings.ffsmartcut.vcodec
+    CRF: int = settings.ffsmartcut.crf
+    PROFILE: str = settings.ffsmartcut.profile
+    COLOR_PRIMARIES: str = settings.ffsmartcut.color_primaries
+    COLOR_TRC: str = settings.ffsmartcut.color_trc
+    COLORSPACE: str = settings.ffsmartcut.colorspace
+    VSYNC: str = settings.ffsmartcut.vsync
+    TAG: str = settings.ffsmartcut.tag
+    MOVFLAGS: str = settings.ffsmartcut.movflags
+    ACODEC: str = settings.ffsmartcut.acodec
+    AUDIO_BITRATE: str = settings.ffsmartcut.audio_bitrate
+    AR: int = settings.ffsmartcut.ar
+    AC: int = settings.ffsmartcut.ac
 
     # --- 1️⃣ Création du fichier liste temporaire ---
     try:
@@ -67,8 +85,36 @@ def ffmpeg_concat_segments(
         "0",
         "-i",
         str(list_file),
-        "-c",
-        "copy",
+        "-c:v",
+        VCODEC,
+        "-preset",
+        PRESET,
+        "-crf",
+        str(CRF),
+        "-pix_fmt",
+        PIX_FMT,
+        "-profile:v",
+        PROFILE,
+        "-color_primaries",
+        COLOR_PRIMARIES,
+        "-color_trc",
+        COLOR_TRC,
+        "-colorspace",
+        COLORSPACE,
+        "-vsync",
+        VSYNC,
+        "-tag:v",
+        TAG,
+        "-movflags",
+        MOVFLAGS,
+        "-c:a",
+        ACODEC,
+        "-b:a",
+        AUDIO_BITRATE,
+        "-ar",
+        str(AR),
+        "-ac",
+        str(AC),
         str(output_path),
     ]
 

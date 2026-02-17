@@ -30,12 +30,20 @@ def run_master(logger: LoggerProtocol | None = None) -> None:
         daemon=True,
     )
 
+    p_check = Process(
+        target=csv_validation_loop,
+        args=(),
+        daemon=True,
+    )
+
     p_smartcut.start()
     p_cutmind.start()
     p_csv.start()
+    p_check.start()
 
     logger.info("🚀 SmartCut + CutMind + CSV loops lancés")
 
     p_smartcut.join()
     p_cutmind.join()
     p_csv.join()
+    p_check.join()
