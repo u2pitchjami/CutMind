@@ -1,0 +1,48 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from e_IA.keywords.utils.ai_result import AIOutputType
+
+
+@dataclass
+class IASegmentInput:
+    """
+    Ce que le pipeline IA reçoit pour chaque segment à analyser.
+    - mode complet : source_path = vidéo originale, start/end = timing du segment
+    - mode lite    : source_path = fichier du segment découpé, start/end = timing relatif à ce fichier
+    """
+
+    segment_id: int
+    start: float
+    end: float
+    source_path: str  # vidéo originale OU vidéo du segment (lite)
+
+
+@dataclass
+class IASegmentResult:
+    """
+    Résultat IA pour un segment.
+    """
+
+    segment_id: int
+    description: str
+    keywords: list[str]
+    model_name: str | None = None
+    error: str | None = None
+
+
+@dataclass(slots=True)
+class AIPass:
+    name: str
+    system_prompt: str
+    output_type: AIOutputType
+
+
+@dataclass(slots=True)
+class AIContext:
+    description: str | None = None
+    category: str | None = None
+    keywords: list[str] | None = None
+    quality_rating: float | None = None
+    interest_rating: float | None = None

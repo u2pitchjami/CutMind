@@ -21,7 +21,6 @@ def format_resolution(res: tuple[int, int] | None) -> str | None:
             "❌ Erreur inattendue lors de format_resolution.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"res": res}),
-            original_exception=exc,
         ) from exc
 
 
@@ -34,5 +33,4 @@ def resolution_str_to_tuple(res: str) -> tuple[int, int]:
             "❌ Résolution invalide (format attendu 'WxH')",
             code=ErrCode.FILE_ERROR,
             ctx={"resolution": res},
-            original_exception=exc,
         ) from exc

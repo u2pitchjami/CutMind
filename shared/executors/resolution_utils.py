@@ -109,7 +109,6 @@ def fix_segment_resolution(
             "❌ Erreur FFMPEG fix_segment_resolution.",
             code=ErrCode.FFMPEG,
             ctx=get_step_ctx({"video_path": str(in_path)}),
-            original_exception=exc,
         ) from exc
 
     except Exception as exc:
@@ -117,5 +116,4 @@ def fix_segment_resolution(
             "❌ Erreur inattendue lors du fix_segment_resolution.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": str(in_path)}),
-            original_exception=exc,
         ) from exc

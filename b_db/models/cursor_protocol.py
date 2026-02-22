@@ -1,0 +1,49 @@
+# brainops/sql/db_utils.py
+
+from __future__ import annotations
+
+from typing import Any, Protocol, runtime_checkable
+
+# Types de retour classiques
+RowDict = dict[str, Any]
+RowTuple = tuple[Any, ...]
+
+# Supporte les 2 types de retours possibles
+Row = RowDict | RowTuple
+
+
+@runtime_checkable
+class DictCursorProtocol(Protocol):
+    def execute(
+        self,
+        query: str,
+        params: tuple[Any, ...] | dict[str, Any] | None = ...,
+    ) -> int: ...
+    def executemany(
+        self,
+        query: str,
+        params: list[tuple[Any, ...]] | list[dict[str, Any]],
+    ) -> int: ...
+    def fetchone(self) -> dict[str, Any] | None: ...
+    def fetchall(self) -> list[dict[str, Any]]: ...
+    def close(self) -> None: ...
+    def __enter__(self) -> DictCursorProtocol: ...
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None: ...
+    def nextset(self) -> bool | None: ...
+
+    rowcount: int | None
+    lastrowid: int | None
+
+
+@runtime_checkable
+class TupleCursorProtocol(Protocol):
+    def execute(self, query: str, params: tuple[Any, ...] | dict[str, Any] | None = ...) -> int: ...
+    def fetchone(self) -> tuple[Any, ...] | None: ...
+    def fetchall(self) -> list[tuple[Any, ...]]: ...
+    def close(self) -> None: ...
+    def __enter__(self) -> TupleCursorProtocol: ...
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None: ...
+    def nextset(self) -> bool | None: ...
+
+    rowcount: int | None
+    lastrowid: int | None

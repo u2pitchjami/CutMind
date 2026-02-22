@@ -40,7 +40,6 @@ def is_interlaced(video_path: Path) -> str:
             "❌ Erreur inattendue lors du test deinterlace.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": str(video_path)}),
-            original_exception=exc,
         ) from exc
 
 
@@ -116,7 +115,6 @@ def deinterlace_video(input_path: Path, output_path: Path) -> bool:
             "❌ Erreur FFMPEG lors du désentrelacement.",
             code=ErrCode.FFMPEG,
             ctx=get_step_ctx({"video_path": str(input_path)}),
-            original_exception=exc,
         ) from exc
 
     except Exception as exc:
@@ -124,5 +122,4 @@ def deinterlace_video(input_path: Path, output_path: Path) -> bool:
             "❌ Erreur inattendue lors du désentrelacement.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": str(input_path)}),
-            original_exception=exc,
         ) from exc

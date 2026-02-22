@@ -21,7 +21,6 @@ def delete_files(path: Path, ext: str = "*.jpg") -> None:
                 "❌ Erreur inatendue lors de la suppression.",
                 code=ErrCode.UNEXPECTED,
                 ctx=get_step_ctx({"path": path, "file": file.name}),
-                original_exception=exc,
             ) from exc
 
 
@@ -50,7 +49,6 @@ def move_to_trash(file_path: Path, trash_root: Path) -> Path:
             "Impossible de déplacer le fichier vers la corbeille.",
             code=ErrCode.FILE_ERROR,
             ctx=get_step_ctx({"file_path": str(file_path), "trash_root": str(trash_root)}),
-            original_exception=exc,
         ) from exc
 
 

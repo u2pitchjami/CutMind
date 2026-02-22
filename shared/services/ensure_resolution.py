@@ -51,5 +51,4 @@ def ensure_resolution(
             "❌ Erreur inattendue lors du resize de la vidéo.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": str(video_path)}),
-            original_exception=exc,
         ) from exc

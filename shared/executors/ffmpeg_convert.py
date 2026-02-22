@@ -64,5 +64,4 @@ def convert_safe_video_format(video_path: str, output_path: str, logger: LoggerP
             "[FFMPEG] ❌ Erreur dans la normalisation vidéo",
             code=ErrCode.FFMPEG,
             ctx={"step": "convert_safe_video_format", "video_path": video_path},
-            original_exception=exc,
         ) from exc

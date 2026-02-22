@@ -3,7 +3,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
-from cutmind.models_cm.db_models import Segment, Video
+from shared.models.db_models import Segment, Video
 from shared.utils.fs import safe_file_check
 from shared.utils.logger import LoggerProtocol, ensure_logger
 

@@ -72,7 +72,6 @@ def get_duration(video_path: Path) -> float:
                     "video_path": str(video_path),
                     "ffprobe_output": ffout[:500],
                 },
-                original_exception=exc,
             ) from exc
 
     except ValueError as exc:
@@ -80,7 +79,6 @@ def get_duration(video_path: Path) -> float:
             "FFmpeg a renvoyé une durée invalide.",
             code=ErrCode.FFMPEG,
             ctx={"video_path": str(video_path), "output": output},
-            original_exception=exc,
         ) from exc
 
     except Exception as exc:
@@ -88,7 +86,6 @@ def get_duration(video_path: Path) -> float:
             "Erreur inattendue lors de la récupération de durée.",
             code=ErrCode.UNEXPECTED,
             ctx={"video_path": str(video_path)},
-            original_exception=exc,
         ) from exc
 
 
