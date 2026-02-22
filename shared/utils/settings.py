@@ -19,19 +19,11 @@ class SmartcutCoreSettings:
     purge_days: int
     batch_size: int
     use_cuda: bool
-    seed: int
     initial_threshold: int
     min_threshold: int
     threshold_step: int
     min_duration: float
     max_duration: float
-    frame_per_segment: int
-    auto_frames: bool
-    vcodec_cpu: str
-    vcodec_gpu: str
-    crf: int
-    preset_cpu: str
-    preset_gpu: str
 
 
 @dataclass
@@ -41,11 +33,13 @@ class FFSmartcutSettings:
     pix_fmt: str
     crf: int
     profile: str
+    profile_v: str
     color_primaries: str
     color_trc: str
     colorspace: str
     vsync: str
     tag: str
+    tag_v: str
     movflags: str
     acodec: str
     audio_bitrate: str
@@ -111,13 +105,6 @@ class KeywordNormalizerSettings:
 
 
 @dataclass
-class MergeSettings:
-    threshold: float
-    gap_confidence: float
-    rattrapage: bool
-
-
-@dataclass
 class AnalyseConfidenceSettings:
     model_confidence: str
     device: str
@@ -130,7 +117,6 @@ class AnalyseConfidenceSettings:
 
 @dataclass
 class OrchestratorSettings:
-    ratio_smartcut: float
     forbidden_hours: list[int]
 
 
@@ -172,27 +158,27 @@ class AuditSettings:
     end: str
 
 
-@dataclass(slots=True)
-class SegmentStatusRule:
-    all: list[str] | None = None
-    any: list[str] | None = None
-    allowed: list[str] | None = None
-    expected: list[str] | None = None
+# @dataclass(slots=True)
+# class SegmentStatusRule:
+#     all: list[str] | None = None
+#     any: list[str] | None = None
+#     allowed: list[str] | None = None
+#     expected: list[str] | None = None
 
 
-@dataclass(slots=True)
-class VideoStatusRule:
-    segments: SegmentStatusRule
+# @dataclass(slots=True)
+# class VideoStatusRule:
+#     segments: SegmentStatusRule
 
 
-@dataclass(slots=True)
-class StatusConsistencyRulesV2:
-    rules: dict[str, VideoStatusRule]
+# @dataclass(slots=True)
+# class StatusConsistencyRulesV2:
+#     rules: dict[str, VideoStatusRule]
 
 
-@dataclass(slots=True)
-class VideoStatusPriority:
-    order: list[str]
+# @dataclass(slots=True)
+# class VideoStatusPriority:
+#     order: list[str]
 
 
 # ==========================================================
@@ -207,7 +193,6 @@ class Settings:
     analyse_segment: AnalyseSegmentSettings
     generate_keywords: GenerateKeywordsSettings
     keyword_normalizer: KeywordNormalizerSettings
-    merge: MergeSettings
     analyse_confidence: AnalyseConfidenceSettings
 
     router_orchestrator: OrchestratorSettings
@@ -217,8 +202,8 @@ class Settings:
 
     cutmind_validation: ValidationSettings
     cutmind_audit: AuditSettings
-    cutmind_status_consistency: StatusConsistencyRulesV2
-    cutmind_video_status_priority: VideoStatusPriority
+    # cutmind_status_consistency: StatusConsistencyRulesV2
+    # cutmind_video_status_priority: VideoStatusPriority
 
     # IMPORTANT :
     # adaptive_batch reste un dict car le code actuel utilise .get() et accès dynamiques
@@ -249,19 +234,11 @@ def init_settings(config: Any) -> None:
             purge_days=sc["smartcut"]["purge_days"],
             batch_size=sc["smartcut"]["batch_size"],
             use_cuda=sc["smartcut"]["use_cuda"],
-            seed=sc["smartcut"]["seed"],
             initial_threshold=sc["smartcut"]["initial_threshold"],
             min_threshold=sc["smartcut"]["min_threshold"],
             threshold_step=sc["smartcut"]["threshold_step"],
             min_duration=sc["smartcut"]["min_duration"],
             max_duration=sc["smartcut"]["max_duration"],
-            frame_per_segment=sc["smartcut"]["frame_per_segment"],
-            auto_frames=sc["smartcut"]["auto_frames"],
-            vcodec_cpu=sc["smartcut"]["vcodec_cpu"],
-            vcodec_gpu=sc["smartcut"]["vcodec_gpu"],
-            crf=sc["smartcut"]["crf"],
-            preset_cpu=sc["smartcut"]["preset_cpu"],
-            preset_gpu=sc["smartcut"]["preset_gpu"],
         ),
         ffsmartcut=FFSmartcutSettings(**sc["ffsmartcut"]),
         analyse_segment=AnalyseSegmentSettings(
@@ -278,10 +255,8 @@ def init_settings(config: Any) -> None:
         ),
         generate_keywords=GenerateKeywordsSettings(**sc["generate_keywords"]),
         keyword_normalizer=KeywordNormalizerSettings(**sc["keyword_normalizer"]),
-        merge=MergeSettings(**sc["merge"]),
         analyse_confidence=AnalyseConfidenceSettings(**sc["analyse_confidence"]),
         router_orchestrator=OrchestratorSettings(
-            ratio_smartcut=rt["orchestrator"]["ratio_smartcut"],
             forbidden_hours=rt["orchestrator"]["router_forbidden_hours"],
         ),
         router_optimal_batch_size=OptimalBatchSizeSettings(min_size=rt["optimal_batch_size"]["min_size"]),
@@ -296,13 +271,13 @@ def init_settings(config: Any) -> None:
             end=cm["audit_window"]["end"],
         ),
         adaptive_batch=rt["adaptive_batch"],  # ← laissé en dict volontairement
-        cutmind_status_consistency=StatusConsistencyRulesV2(
-            rules={
-                video_status: VideoStatusRule(segments=SegmentStatusRule(**rule["segments"]))
-                for video_status, rule in cm["status_consistency_rules"]["rules"].items()
-            }
-        ),
-        cutmind_video_status_priority=VideoStatusPriority(order=cm["video_status_priority"]["order"]),
+        # cutmind_status_consistency=StatusConsistencyRulesV2(
+        #     rules={
+        #         video_status: VideoStatusRule(segments=SegmentStatusRule(**rule["segments"]))
+        #         for video_status, rule in cm["status_consistency_rules"]["rules"].items()
+        #     }
+        # ),
+        # cutmind_video_status_priority=VideoStatusPriority(order=cm["video_status_priority"]["order"]),
     )
 
 

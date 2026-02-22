@@ -22,6 +22,8 @@ class VideoStatus(str, Enum):
     READY_FOR_ENHANCEMENT = "ready_for_enhancement"
     READY_FOR_CONFIDENCE = "ready_for_confidence"
     POST_CUT_MOVE = "post_cut_move"
+    READY_FOR_CHECK = "ready_for_check"
+    VALIDATED_CHECK = "validated_check"
 
 
 class SegmentStatus(str, Enum):
@@ -40,6 +42,7 @@ class SegmentStatus(str, Enum):
     IN_CONFIDENCE = "in_confidence"
     TO_MOVE = "to_move"
     TO_IA = "IA"
+    VALIDATED_CHECK = "validated_check"
 
 
 class OrchestratorStatus:
@@ -84,3 +87,7 @@ class OrchestratorStatus:
     VIDEO_VALIDATED = VideoStatus.VALIDATED
     SEGMENT_PENDING_CHECK = SegmentStatus.PENDING_CHECK_VALIDATION
     VIDEO_PENDING_CHECK = VideoStatus.PENDING_CHECK
+
+    VIDEO_READY_FOR_CHECK = VideoStatus.VALIDATED
+    VIDEO_VALIDATED_CHECK = VideoStatus.VALIDATED_CHECK
+    SEGMENT_VALIDATED_CHECK = SegmentStatus.VALIDATED_CHECK

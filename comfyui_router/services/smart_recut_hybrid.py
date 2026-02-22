@@ -46,7 +46,7 @@ def smart_recut_hybrid(
             return video_path
 
         cuts = auto_threshold_pass(video_path, threshold)
-        logger.info("Cuts détectés: %s", [(round(t, 3), round(s, 3)) for (t, s) in cuts])
+        # logger.info("Cuts détectés: %s", [(round(t, 3), round(s, 3)) for (t, s) in cuts])
 
         cut_start, cut_end = choose_best_cuts(cuts, duration)
 
@@ -63,8 +63,8 @@ def smart_recut_hybrid(
             logger.warning("Durée recoupée incohérente → pas de recut.")
             return video_path
 
-        output_path = video_path.with_name(video_path.stem + "_smart_trimmed.mp4")
-        executor.cut(str(video_path), start_time, end_time, str(output_path))
+        output_path = video_path.with_name(f"{video_path.stem}_smart_trimmed.mp4")
+        executor.cut(str(video_path), start_time, end_time, str(output_path), logger=logger)
 
         logger.info(
             "Découpage : début %.3fs / fin %.3fs (durée originale %.3fs) → %s",

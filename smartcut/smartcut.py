@@ -240,8 +240,10 @@ def multi_stage_cut(
         return
 
     except CutMindError as err:
+        logger.exception("💥 Erreur Smartcut")
         raise err.with_context(get_step_ctx({"video_path": video_path})) from err
     except Exception as exc:
+        logger.exception("💥 Erreur Smartcut")
         raise CutMindError(
             "❌ Erreur lors du traitement Smartcut.",
             code=ErrCode.UNEXPECTED,

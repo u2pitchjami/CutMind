@@ -8,27 +8,29 @@ from shared.executors.ffprobe_utils import (
 )
 from shared.models.exceptions import CutMindError, ErrCode
 from shared.models.videoprep import VideoPrepared
+from shared.utils.logger import LoggerProtocol, ensure_logger
 
 # ============================================================
 # 🔧 Étape 1 : Normalisation du format
 # ============================================================
 
 
-def normalize_format(video_path: Path) -> Path:
+def normalize_format(video_path: Path, logger: LoggerProtocol | None = None) -> Path:
     """
     Si le format n'est pas supporté → convertit vers MP4.
     Lève CutMindError en cas d'échec.
     """
+    logger = ensure_logger(logger, __name__)
     # ext = video_path.suffix.lower()
 
     # if ext in SAFE_FORMATS:
     #     return video_path  # rien à faire
 
     # format non supporté → conversion
-    safe_path = video_path.with_suffix("_conv.mp4")
+    safe_path = video_path.with_name(f"{video_path.stem}_conv.mp4")
 
     try:
-        convert_safe_video_format(str(video_path), str(safe_path))
+        convert_safe_video_format(str(video_path), str(safe_path), logger=logger)
     except CutMindError as err:
         # on enrichit seulement
         raise err.with_context({"step": "normalize_format"}) from err
@@ -86,22 +88,23 @@ def validate_video(prep: VideoPrepared) -> None:
 # ============================================================
 
 
-def prepare_video(video_path: Path, normalize: bool = False) -> VideoPrepared:
+def prepare_video(video_path: Path, normalize: bool = False, logger: LoggerProtocol | None = None) -> VideoPrepared:
     """
     Pipeline complet en version optimisée :
     - 1 seul ffprobe
     - validation basée sur VideoMetadata
     - retour d’un dict directement
     """
+    logger = ensure_logger(logger, __name__)
     if normalize:
         try:
-            normalized_path = normalize_format(video_path)
+            video_path = normalize_format(video_path, logger=logger)
         except CutMindError as err:
             raise err.with_context({"pipeline_step": "prepare_video"}) from err
 
     # 1 seul ffprobe
     try:
-        meta = get_metadata_all(normalized_path)
+        meta = get_metadata_all(video_path)
     except CutMindError as err:
         raise err.with_context({"pipeline_step": "metadata_extraction"}) from err
 

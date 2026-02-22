@@ -5,7 +5,6 @@ paramètres que le node ComfyUI.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from qwen_vl_utils import process_vision_info
@@ -104,19 +103,15 @@ def generate_keywords_from_frames(
             messages, tokenize=TOKENIZE, add_generation_prompt=ADD_GENERATION_PROMPT
         )
 
-        os.environ["FORCE_QWENVL_VIDEO_READER"] = "torchvision"
-
         # 2️⃣ Préparation des entrées visuelles
-        image_inputs, video_inputs, video_kwargs = process_vision_info(messages, return_video_kwargs=True)
+        image_inputs, _ = process_vision_info(messages, return_video_kwargs=False)
 
         # 3️⃣ Construction finale des inputs tensors
         inputs = processor(
             text=[model_text],
             images=image_inputs,
-            videos=video_inputs,
             padding=PADDING,
             return_tensors=RETURN_TENSORS,
-            **video_kwargs,
         ).to(model.device)
 
         # Génération identique à ComfyUI
@@ -131,6 +126,9 @@ def generate_keywords_from_frames(
             pad_token_id=processor.tokenizer.pad_token_id,
         )
 
+        logger.info("EOS: %s", processor.tokenizer.eos_token_id)
+        logger.info("PAD: %s", processor.tokenizer.pad_token_id)
+
         # Retrait du prompt d'entrée (comme dans le node)
         trimmed_ids = [out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids, strict=False)]
 
@@ -140,6 +138,8 @@ def generate_keywords_from_frames(
             clean_up_tokenization_spaces=CLEAN_UP_TOKENIZATION_SPACES,
         )[0]
 
+        logger.debug(f"decoded_text: {decoded_text}")
+        # time.sleep(60)
         ai_result: AIResult = parse_json_ai_output(decoded_text, output_type)
 
         logger.debug(f"ai_result: {ai_result}")

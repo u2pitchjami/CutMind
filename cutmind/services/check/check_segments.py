@@ -12,15 +12,21 @@ Envoie automatiquement les segments 'validated' mais hors standard
 
 from pathlib import Path
 
+from cutmind.db.repository import CutMindRepository
+from cutmind.executors.check.processing_checks import evaluate_video_compliance
 from cutmind.executors.check.processing_log import processing_step
 from cutmind.executors.check.segments import inspect_video, is_video_compliant
 from cutmind.models_cm.db_models import Segment, Video
 from cutmind.process.file_mover import FileMover
+from cutmind.services.check.business_rules import BusinessAction, evaluate_segment_business_rules
 from shared.executors.ffmpeg_convert import convert_safe_video_format
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
-from shared.utils.config import WORKDIR_CM
+from shared.services.video_preparation import prepare_video
+from shared.status_orchestrator.statuses import OrchestratorStatus, SegmentStatus
+from shared.utils.config import TRASH_DIR_SC, WORKDIR_CM
 from shared.utils.logger import LoggerProtocol, ensure_logger
+from shared.utils.trash import move_to_trash
 
 
 class CheckSegments:
@@ -31,6 +37,7 @@ class CheckSegments:
         self.video = vid
         self.segments = segments
         self.file_mover = FileMover()
+        self.repo = CutMindRepository()
 
     # ---------------------------------------------------------
     # 🚀 Main Entry Point
@@ -56,15 +63,54 @@ class CheckSegments:
                 # delete_files(path=INPUT_DIR, ext="*.mp4")
 
                 for seg in self.segments:
-                    with processing_step(self.video, seg, action="Check Segments"):
-                        if not seg.output_path:
+                    with processing_step(self.video, seg, action="Check Segments") as history:
+                        if not seg.output_path or not seg.id:
                             raise Exception("Impossible de récupérer le segment.")
 
                         with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
+                            metadata_prep = prepare_video(Path(seg.output_path))
+                            biz_status, biz_message, biz_action = evaluate_segment_business_rules(
+                                segment=seg,
+                                metadata=metadata_prep,
+                            )
+
+                            if biz_action == BusinessAction.TRASH:
+                                self.logger.warning("🗑️ Segment %s déplacé en corbeille", seg.id)
+
+                                move_to_trash(file_path=Path(seg.output_path), trash_root=TRASH_DIR_SC)
+                                self.repo.delete_segment(int(seg.id))
+                                history.status = "trashed"
+                                history.message = biz_message
+                                continue
+
+                            if biz_action == BusinessAction.SEND_TO_IA:
+                                self.logger.info("🔁 Segment %s renvoyé vers IA", seg.id)
+
+                                seg.pipeline_target = OrchestratorStatus.SEGMENT_TO_IA
+                                self.repo.update_segment_validation(seg)
+
+                                history.status = "to_ia"
+                                history.message = biz_message
+                                continue
+
+                            if biz_action == BusinessAction.FIX_METADATA:
+                                self.logger.info("🔧 Correction metadata segment %s", seg.id)
+
+                                self.repo.update_segment_from_metadata(seg.id, metadata_prep)
+
+                                history.status = "fixed_metadata"
+                                history.message = biz_message
+
+                            if biz_action == BusinessAction.WARNING_ONLY:
+                                history.status = "warning"
+                                history.message = biz_message
+
                             metadata = inspect_video(Path(seg.output_path))
 
                             if is_video_compliant(metadata):
                                 self.logger.info(f"Video {seg.filename_predicted} est conforme.")
+                                seg.status = SegmentStatus.VALIDATED_CHECK
+                                self.repo.update_segment_validation(seg)
                                 continue
 
                             self.logger.info(f"Video {seg.filename_predicted} n'est pas conforme.")
@@ -113,8 +159,19 @@ class CheckSegments:
                                     ),
                                 )
 
+                            metadata = inspect_video(Path(seg.output_path))
+                            tech_status, tech_message = evaluate_video_compliance(metadata)
+                            final_status, final_message = merge_check_results(
+                                tech_status,
+                                tech_message,
+                                biz_status,
+                                biz_message,
+                            )
+                            history.status = final_status
+                            history.message = final_message
+                            seg.status = SegmentStatus.VALIDATED_CHECK
+                            self.repo.update_segment_validation(seg)
                             processed_count += 1
-                        return processed_count
 
             except CutMindError as err:
                 raise err.with_context(
@@ -135,3 +192,36 @@ class CheckSegments:
 
         self.logger.info("🏁 Cycle Check Segments terminé.")
         return processed_count
+
+
+def merge_check_results(
+    tech_status: str,
+    tech_message: str,
+    biz_status: str,
+    biz_message: str,
+) -> tuple[str, str]:
+    """
+    Fusionne résultats technique + métier.
+    Priorité : error > warning > ok
+    """
+
+    statuses = [tech_status, biz_status]
+
+    if "error" in statuses:
+        final_status = "error"
+    elif "warning" in statuses:
+        final_status = "warning"
+    else:
+        final_status = "ok"
+
+    messages = []
+
+    if tech_message:
+        messages.append(f"[TECH] {tech_message}")
+
+    if biz_message:
+        messages.append(f"[BIZ] {biz_message}")
+
+    final_message = " | ".join(messages)
+
+    return final_status, final_message

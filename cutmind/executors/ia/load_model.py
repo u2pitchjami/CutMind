@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import time
+
 import torch
 from torch import dtype as TorchDType
 from transformers import (
@@ -20,6 +23,7 @@ from cutmind.executors.analyze.analyze_utils import (
     estimate_safe_batch_size,
 )
 from shared.models.exceptions import CutMindError, ErrCode
+from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
 
 
@@ -35,12 +39,15 @@ def resolve_dtype(dtype_str: str) -> TorchDType:
     return mapping.get(dtype_str, torch.float16)
 
 
-def load_qwen_model(force_reload: bool = False, free_vram: float = 0.00) -> tuple[ProcessorMixin, PreTrainedModel, str]:
+def load_qwen_model(
+    force_reload: bool = False, free_vram: float = 0.00, logger: LoggerProtocol | None = None
+) -> tuple[ProcessorMixin, PreTrainedModel, str]:
     """
     Charge dynamiquement le modèle Qwen3-VL (4B ou 8B) en fonction de la VRAM disponible.
 
     Gère automatiquement la quantization via BitsAndBytesConfig uniquement si activée.
     """
+    logger = ensure_logger(logger, __name__)
     settings = get_settings()
 
     FREE_VRAM_8B = settings.generate_keywords.free_vram_8b
@@ -59,6 +66,8 @@ def load_qwen_model(force_reload: bool = False, free_vram: float = 0.00) -> tupl
     BNB_4BIT_COMPUTE_DTYPE_4B = resolve_dtype(settings.generate_keywords.bnb_4bit_compute_dtype_4b)
     DEVICE_MAP_CPU = settings.generate_keywords.device_map_cpu
     ATTN_IMPLEMENTATION = settings.generate_keywords.attn_implementation
+    logger.warning("🚀 Loading model in PID: %s", os.getpid())
+
     # global _MODEL_CACHE, _PROCESSOR_CACHE, _MODEL_NAME_CACHE
     try:
         model_name = None
@@ -94,7 +103,9 @@ def load_qwen_model(force_reload: bool = False, free_vram: float = 0.00) -> tupl
         else:
             model_name = MODEL_4B
             quant_config = None
-
+        logger.debug(f"📍 Model  : {model_name}")
+        logger.debug(f"📍 quant_config  : {quant_config}")
+        logger.warning("🚀 Loading model in PID: %s", os.getpid())
         # --- Chargement du modèle --- #
         model: PreTrainedModel = Qwen3VLForConditionalGeneration.from_pretrained(
             model_name,
@@ -103,6 +114,12 @@ def load_qwen_model(force_reload: bool = False, free_vram: float = 0.00) -> tupl
             attn_implementation=ATTN_IMPLEMENTATION,
             quantization_config=quant_config,  # ← None si non quantisé
         )
+        logger.debug(f"📍 model_name   : {model_name}")
+        logger.debug(f"📍 torch_dtype   : {TORCH_DTYPE}")
+        logger.debug(f"📍 device_map    :  {DEVICE_MAP if torch.cuda.is_available() else DEVICE_MAP_CPU}")
+        logger.debug(f"📍 attn_implementation    :  {ATTN_IMPLEMENTATION}")
+        logger.debug(f"📍 quantization_config    :  {quant_config}")
+        logger.warning("🚀 Loading model in PID: %s", os.getpid())
 
         processor: ProcessorMixin = AutoProcessor.from_pretrained(model_name)
         model.eval()
@@ -123,14 +140,24 @@ def load_qwen_model(force_reload: bool = False, free_vram: float = 0.00) -> tupl
         ) from exc
 
 
-def load_and_batches(free_gb: float = 0.00) -> tuple[ProcessorMixin, PreTrainedModel, str, int, str]:
+def load_and_batches(
+    free_gb: float = 0.00, logger: LoggerProtocol | None = None
+) -> tuple[ProcessorMixin, PreTrainedModel, str, int, str]:
     """
     lance le modèle et définit la taille du batches
     """
+    logger = ensure_logger(logger, __name__)
     settings = get_settings()
     SAFETY_MARGIN = settings.analyse_segment.safety_margin_gb
+    logger.debug(f"💡 SSAFETY_MARGIN {SAFETY_MARGIN}")
+    logger.debug(f"💡 free_gb {free_gb}")
     try:
-        processor, model, model_name = load_qwen_model(free_vram=free_gb)
+        processor, model, model_name = load_qwen_model(free_vram=free_gb, logger=logger)
+        # 🔥 Stabilisation mémoire GPU
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            time.sleep(10)
         free_gb, total_gb = vram_gpu()
         precision = get_model_precision(model)
         batch_size = estimate_safe_batch_size(free_gb, total_gb, precision, SAFETY_MARGIN)

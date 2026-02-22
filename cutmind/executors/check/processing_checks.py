@@ -1,8 +1,57 @@
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 from cutmind.models_cm.db_models import Segment  # adapte l'import à ton projet
 
 CONFIDENCE_THRESHOLD = 0.35
+
+
+def evaluate_video_compliance(metadata: Mapping[str, Any]) -> tuple[str, str]:
+    """
+    Évalue si un segment respecte la norme interne CutMind.
+    Critères :
+    - codec_name = hevc
+    - profile = Main
+    - pix_fmt = yuv420p
+    - r_frame_rate = 60/1
+    - color_space = bt709
+    - color_transfer = bt709
+    - color_primaries = bt709
+    - codec_tag_string = hvc1
+    """
+    errors: list[str] = []
+
+    if metadata.get("codec_name") != "hevc":
+        errors.append(f"codec incorrect ({metadata.get('codec_name')})")
+
+    if metadata.get("profile") != "Main":
+        errors.append(f"profile incorrect ({metadata.get('profile')})")
+
+    if metadata.get("pix_fmt") != "yuv420p":
+        errors.append(f"pix_fmt incorrect ({metadata.get('pix_fmt')})")
+
+    if metadata.get("r_frame_rate") != "60/1":
+        errors.append(f"fps incorrect ({metadata.get('r_frame_rate')})")
+
+    if metadata.get("color_space") != "bt709":
+        errors.append(f"color_space incorrect ({metadata.get('color_space')})")
+
+    color_transfer = metadata.get("color_transfer")
+    if color_transfer not in ("bt709", None):
+        errors.append(f"color_transfer incorrect ({color_transfer})")
+
+    color_primaries = metadata.get("color_primaries")
+    if color_primaries not in ("bt709", None):
+        errors.append(f"color_primaries incorrect ({color_primaries})")
+
+    if metadata.get("codec_tag_string") != "hvc1":
+        errors.append(f"tag incorrect ({metadata.get('codec_tag_string')})")
+
+    if errors:
+        return "error", "Compliance KO : " + ", ".join(errors)
+
+    return "ok", "Segment conforme à la norme CutMind"
 
 
 def evaluate_scene_detection_output(success: bool, nb_scenes: int) -> tuple[str, str]:

@@ -95,10 +95,12 @@ class RouterWorker:
                             return processed_count
 
             except CutMindError as err:
+                self.logger.exception("💥 Erreur Comfyui Router")
                 raise err.with_context(
                     get_step_ctx({"video.name": self.video.name, "video.status": self.video.status})
                 ) from err
             except Exception as exc:
+                self.logger.exception("💥 Erreur Comfyui Router")
                 raise CutMindError(
                     "❌ Erreur inatendue durant l'envoi à Processor Comfyui.",
                     code=ErrCode.UNEXPECTED,

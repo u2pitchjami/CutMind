@@ -38,7 +38,7 @@ class IAWorker:
         self.repo = CutMindRepository()
         self.free_gb, self.total_gb = vram_gpu()
         self.processor, self.model, self.model_name, self.batch_size, self.model_precision = load_and_batches(
-            free_gb=self.free_gb
+            free_gb=self.free_gb, logger=self.logger
         )
 
     # ---------------------------------------------------------

@@ -5,6 +5,7 @@ from pathlib import Path
 import ffmpeg  # type: ignore
 
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
 
 
@@ -20,19 +21,21 @@ class FfmpegCutExecutor:
         start: float,
         end: float,
         output_path: str,
+        logger: LoggerProtocol | None = None,
     ) -> None:
+        logger = ensure_logger(logger, __name__)
         settings = get_settings()
 
         PRESET: str = settings.ffsmartcut.preset
         PIX_FMT: str = settings.ffsmartcut.pix_fmt
         VCODEC: str = settings.ffsmartcut.vcodec
         CRF: int = settings.ffsmartcut.crf
-        PROFILE: str = settings.ffsmartcut.profile
+        PROFILE_V: str = settings.ffsmartcut.profile_v
         COLOR_PRIMARIES: str = settings.ffsmartcut.color_primaries
         COLOR_TRC: str = settings.ffsmartcut.color_trc
         COLORSPACE: str = settings.ffsmartcut.colorspace
         VSYNC: str = settings.ffsmartcut.vsync
-        TAG: str = settings.ffsmartcut.tag
+        TAG_V: str = settings.ffsmartcut.tag_v
         MOVFLAGS: str = settings.ffsmartcut.movflags
         ACODEC: str = settings.ffsmartcut.acodec
         AUDIO_BITRATE: str = settings.ffsmartcut.audio_bitrate
@@ -56,24 +59,26 @@ class FfmpegCutExecutor:
                     preset=PRESET,
                     crf=CRF,
                     pix_fmt=PIX_FMT,
-                    profile=PROFILE,
                     color_primaries=COLOR_PRIMARIES,
                     color_trc=COLOR_TRC,
                     colorspace=COLORSPACE,
                     vsync=VSYNC,
-                    tag=TAG,
                     movflags=MOVFLAGS,
                     acodec=ACODEC,
                     audio_bitrate=AUDIO_BITRATE,
                     ar=AR,
                     ac=AC,
                     loglevel="error",
+                    **{"profile:v": PROFILE_V},
+                    **{"tag:v": TAG_V},
                 )
                 .overwrite_output()
                 .run(quiet=True)
             )
 
         except ffmpeg.Error as exc:
+            stderr = exc.stderr.decode("utf-8", errors="replace") if exc.stderr else ""
+            logger.error("FFmpeg failed. stderr:\n%s", stderr)
             raise CutMindError(
                 "❌ Erreur technique pendant le cut de la vidéo.",
                 code=ErrCode.FFMPEG,

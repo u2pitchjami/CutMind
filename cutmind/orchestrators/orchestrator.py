@@ -8,6 +8,7 @@ from cutmind.executors.check.processing_log import processing_step
 from cutmind.models_cm.db_models import Segment, Video
 from cutmind.process.file_mover import CUTMIND_BASEDIR, FileMover, sanitize
 from cutmind.process.router_worker import RouterWorker
+from cutmind.services.check.check_segments import CheckSegments
 from cutmind.services.check.check_status import compute_video_status
 from cutmind.services.ia.ia_worker_process import run_ia_for_video
 from cutmind.services.main_validation import validation
@@ -58,6 +59,9 @@ class CutMindOrchestratorV2:
 
         # 4️⃣ Validation finale
         self._maybe_run_validation(video)
+
+        # 4️⃣ Validation finale
+        self._maybe_run_final_check(video)
 
         # 5️⃣ Recalcul statut vidéo (projection)
         vid, _seg = self._reload_video_and_segments(video.id)
@@ -218,6 +222,26 @@ class CutMindOrchestratorV2:
         # - mettre SEGMENT_VALIDATED
         # - ou poser pipeline_target="IA" pour rework
         # self.repo.update_segments(segments)
+
+    # ------------------------------------------------------------------
+    # Final_Check
+    # ------------------------------------------------------------------
+
+    def _maybe_run_final_check(self, video: Video) -> None:
+        vid_seg = self._reload_video_with_segments(video)
+        segments = [s for s in vid_seg if s.status == SegmentStatus.VALIDATED]
+        self.logger.debug("🔍 Segments à checker : %s", [s.id for s in segments])
+        if not segments:
+            return
+
+        self.logger.info(
+            "🏁 Check Final pour Validation (%s segments) pour video %s",
+            len(segments),
+            video.id,
+        )
+
+        checker = CheckSegments(vid=video, segments=segments)
+        checker.run()
 
     def _reload_video_with_segments(self, video: Video) -> list[Segment]:
         """

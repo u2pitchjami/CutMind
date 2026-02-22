@@ -2,15 +2,15 @@ import time
 
 from cutmind.executors.analyze.analyze_torch_utils import auto_clean_gpu
 from cutmind.process.launcher import VideoFlowLauncherV2
-from shared.utils.logger import LoggerProtocol, ensure_logger
+from shared.utils.logger import get_logger
 
 
-def cutmind_loop(logger: LoggerProtocol | None = None) -> None:
-    logger = ensure_logger(logger, __name__)
+def cutmind_loop() -> None:
+    logger = get_logger("CutMind_Orchestrator")
     from shared.models.config_manager import bootstrap_process
 
     bootstrap_process(logger=logger)
-    launcher = VideoFlowLauncherV2(logger=logger)
+    launcher = VideoFlowLauncherV2()
 
     while True:
         try:
