@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import time
 
 import torch
 from torch import dtype as TorchDType
@@ -15,10 +14,7 @@ from transformers import (
     Qwen3VLForConditionalGeneration,
 )
 
-from cutmind.executors.analyze.analyze_torch_utils import (
-    get_model_precision,
-    vram_gpu,
-)
+from cutmind.executors.analyze.analyze_torch_utils import get_model_precision, vram_gpu, wait_for_vram_stable
 from cutmind.executors.analyze.analyze_utils import (
     estimate_safe_batch_size,
 )
@@ -157,7 +153,7 @@ def load_and_batches(
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
-            time.sleep(10)
+            wait_for_vram_stable(target_free_gb=2.0, logger=logger)
         free_gb, total_gb = vram_gpu()
         precision = get_model_precision(model)
         batch_size = estimate_safe_batch_size(free_gb, total_gb, precision, SAFETY_MARGIN)

@@ -130,3 +130,16 @@ def auto_clean_gpu(max_wait_sec: int = 30, logger: LoggerProtocol | None = None)
             ctx=get_step_ctx(),
             original_exception=exc,
         ) from exc
+
+
+def wait_for_vram_stable(target_free_gb: float, timeout: int = 30, logger: LoggerProtocol | None = None) -> None:
+    logger = ensure_logger(logger, __name__)
+    start = time.time()
+    while time.time() - start < timeout:
+        free, _ = torch.cuda.mem_get_info()
+        free_gb = free / 1024**3
+        logger.debug("Waiting VRAM... free=%.2f GB", free_gb)
+        if free_gb >= target_free_gb:
+            return
+        time.sleep(0.5)
+    raise RuntimeError("VRAM did not stabilize in time")
