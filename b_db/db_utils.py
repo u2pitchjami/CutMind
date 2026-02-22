@@ -32,7 +32,9 @@ def safe_execute_dict(
     *,
     many: bool = False,
 ) -> DictCursorProtocol:
-    """Exécute une requête SQL sur un curseur dict avec gestion des erreurs."""
+    """
+    Exécute une requête SQL sur un curseur dict avec gestion des erreurs.
+    """
     try:
         flush_dict_cursor(cursor)
 
@@ -72,7 +74,9 @@ def safe_execute_dict(
 def safe_execute_tuple(
     cursor: TupleCursorProtocol, query: str, params: ParamsType | None = None
 ) -> TupleCursorProtocol:
-    """Exécute une requête SQL sur un curseur tuple avec gestion des erreurs."""
+    """
+    Exécute une requête SQL sur un curseur tuple avec gestion des erreurs.
+    """
     try:
         flush_tuple_cursor(cursor)
         cursor.execute(query, params or ())
@@ -91,7 +95,9 @@ def safe_execute_tuple(
 
 
 def flush_tuple_cursor(cursor: TupleCursorProtocol) -> None:
-    """Vide proprement un curseur tuple (pour éviter 'Unread result found')."""
+    """
+    Vide proprement un curseur tuple (pour éviter 'Unread result found').
+    """
     try:
         while cursor.nextset():
             pass
@@ -104,7 +110,9 @@ def flush_tuple_cursor(cursor: TupleCursorProtocol) -> None:
 
 
 def flush_dict_cursor(cursor: DictCursorProtocol) -> None:
-    """Vide proprement un curseur dict (pour éviter 'Unread result found')."""
+    """
+    Vide proprement un curseur dict (pour éviter 'Unread result found').
+    """
     try:
         while cursor.nextset():
             pass

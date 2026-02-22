@@ -17,6 +17,7 @@ from shared.utils.settings import get_settings
 def extract_keywords_from_filename(filename: str | Path) -> list[str]:
     """
     Extrait automatiquement des mots-clés à partir du nom de fichier.
+
     Exemple :
         'voyage_-_New_York_-_chouette.mp4' → ['voyage', 'New York', 'chouette']
     """

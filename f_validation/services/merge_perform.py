@@ -20,8 +20,8 @@ def perform_merge(
     logger: LoggerProtocol | None = None,
 ) -> None:
     """
-    Merge un segment courant avec d'autres segments listés via CSV.
-    Le segment courant est implicitement inclus en premier.
+    Merge un segment courant avec d'autres segments listés via CSV. Le segment courant est implicitement inclus en
+    premier.
 
     Résultat :
     - création d'un nouveau segment

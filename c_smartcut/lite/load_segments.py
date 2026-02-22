@@ -27,8 +27,8 @@ from shared.utils.trash import move_to_trash
 
 def load_segments_from_directory(video: Video, directory_path: Path, logger: LoggerProtocol | None = None) -> None:
     """
-    Crée un Segment() pour chaque fichier vidéo du dossier,
-    en passant chaque fichier par prepare_video() pour normalisation + métadonnées.
+    Crée un Segment() pour chaque fichier vidéo du dossier, en passant chaque fichier par prepare_video() pour
+    normalisation + métadonnées.
     """
     logger = ensure_logger(logger, __name__)
     repo = CutMindRepository()

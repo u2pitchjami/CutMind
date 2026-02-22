@@ -18,6 +18,7 @@ from shared.utils.logger import LoggerProtocol, ensure_logger
 def normalize_format(video_path: Path, logger: LoggerProtocol | None = None) -> Path:
     """
     Si le format n'est pas supporté → convertit vers MP4.
+
     Lève CutMindError en cas d'échec.
     """
     logger = ensure_logger(logger, __name__)
@@ -46,6 +47,7 @@ def normalize_format(video_path: Path, logger: LoggerProtocol | None = None) -> 
 def validate_video(prep: VideoPrepared) -> None:
     """
     Règles métier bas niveau :
+
     - durée > 0
     - fps cohérent
     - résolution présente
@@ -91,6 +93,7 @@ def validate_video(prep: VideoPrepared) -> None:
 def prepare_video(video_path: Path, normalize: bool = False, logger: LoggerProtocol | None = None) -> VideoPrepared:
     """
     Pipeline complet en version optimisée :
+
     - 1 seul ffprobe
     - validation basée sur VideoMetadata
     - retour d’un dict directement

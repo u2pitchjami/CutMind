@@ -160,6 +160,7 @@ def set_config(cfg: ConfigManager) -> None:
 def reload_and_apply(logger: LoggerProtocol | None = None) -> None:
     """
     Recharge les YAML et met à jour SETTINGS d’un seul coup.
+
     Fonction utilitaire destinée aux modules haut-niveau.
     """
     logger = ensure_logger(logger, __name__)

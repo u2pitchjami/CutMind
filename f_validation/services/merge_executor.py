@@ -43,6 +43,7 @@ def keyword_similarity(a: list[str], b: list[str]) -> float:
 class MergeExecutor:
     """
     Exécuteur pur : fusionne les segments adjacents selon des règles :
+
     - distance temporelle
     - similarité sémantique
     - différence de confiance

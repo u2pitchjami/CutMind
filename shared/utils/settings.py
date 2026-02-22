@@ -1,5 +1,6 @@
 """
 settings.py — Centralisation typée des paramètres YAML via dataclasses.
+
 Doit être initialisé UNE seule fois via init_settings(config) dans main().
 """
 

@@ -105,7 +105,9 @@ def estimate_visual_tokens(num_images: int, model_name: str = "qwen3-vl-instruct
 
 
 def auto_clean_gpu(max_wait_sec: int = 30, logger: LoggerProtocol | None = None) -> None:
-    """Nettoie la VRAM GPU et synchronise CUDA."""
+    """
+    Nettoie la VRAM GPU et synchronise CUDA.
+    """
     logger = ensure_logger(logger, __name__)
     waited = 0
     while not torch.cuda.is_available():

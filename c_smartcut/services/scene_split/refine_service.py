@@ -13,6 +13,7 @@ def refine_long_segments(
 ) -> list[tuple[float, float]]:
     """
     Raffinage récursif des segments trop longs.
+
     Version pure, sans logs.
     """
     refined: list[tuple[float, float]] = []

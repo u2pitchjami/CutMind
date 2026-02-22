@@ -15,7 +15,7 @@ KeywordsBatches = list[AIResult]
 
 def cleanup_temp() -> None:
     """
-    Nettoyage répertoires temporaires
+    Nettoyage répertoires temporaires.
     """
     try:
         for path in [TMP_FRAMES_DIR_SC, MULTIPLE_FRAMES_DIR_SC, BATCH_FRAMES_DIR_SC]:

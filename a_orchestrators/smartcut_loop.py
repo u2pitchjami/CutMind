@@ -56,7 +56,11 @@ def list_videos_and_dirs(directory: Path) -> tuple[list[Path], list[Path]]:
 def process_smartcut_batch(
     videos: list[Path], dirs: list[Path], max_items: int, logger: LoggerProtocol | None = None
 ) -> int:
-    """Traite un lot limité de vidéos/dossiers SmartCut. Retourne le nombre total traités."""
+    """
+    Traite un lot limité de vidéos/dossiers SmartCut.
+
+    Retourne le nombre total traités.
+    """
     logger = ensure_logger(logger, __name__)
     try:
         count = 0
@@ -106,7 +110,9 @@ def process_smartcut_video(video_path: Path) -> None:
 
 
 def process_smartcut_folder(folder_path: Path) -> None:
-    """Flow SmartCut Lite (segments déjà présents dans un dossier)."""
+    """
+    Flow SmartCut Lite (segments déjà présents dans un dossier).
+    """
     logger = get_logger("CutMind-SmartCutLite")
     try:
         logger.info(f"🚀 SmartCut Lite : dossier {folder_path.name}")

@@ -24,6 +24,7 @@ from shared.utils.logger import LoggerProtocol, ensure_logger
 def lite_cut(directory_path: Path, logger: LoggerProtocol | None = None) -> None:
     """
     Pipeline simplifié SmartCut pour segments déjà coupés.
+
     Args:
         directory_path: Dossier contenant les segments vidéo (.mp4/.mkv)
     """

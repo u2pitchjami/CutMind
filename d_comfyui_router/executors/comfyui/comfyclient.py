@@ -98,8 +98,8 @@ class ComfyClientREST:
     def poll_history_once(self, prompt_id: str) -> None:
         """
         Lecture NON BLOQUANTE de /history/<id> :
-        utilisée uniquement pour générer un log de type "progress".
-        Ne sert pas à déterminer la fin réelle du workflow.
+
+        utilisée uniquement pour générer un log de type "progress". Ne sert pas à déterminer la fin réelle du workflow.
         """
         url = f"{self.base_url}/history/{prompt_id}"
 

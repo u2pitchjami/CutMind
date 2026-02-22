@@ -20,6 +20,7 @@ def evaluate_segment_business_rules(
 ) -> tuple[str, str, BusinessAction]:
     """
     Vérifie les règles métier sur un segment.
+
     Retourne: (status, message, action)
     """
 

@@ -139,7 +139,7 @@ def load_and_batches(
     free_gb: float = 0.00, logger: LoggerProtocol | None = None
 ) -> tuple[ProcessorMixin, PreTrainedModel, str, int, str]:
     """
-    lance le modèle et définit la taille du batches
+    Lance le modèle et définit la taille du batches.
     """
     logger = ensure_logger(logger, __name__)
     settings = get_settings()

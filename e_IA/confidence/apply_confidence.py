@@ -21,8 +21,7 @@ def apply_confidence_to_session(
     model_name: str,
 ) -> None:
     """
-    Applique le calcul de confiance via ConfidenceService
-    et fusionne les mots-clés automatiques.
+    Applique le calcul de confiance via ConfidenceService et fusionne les mots-clés automatiques.
 
     Compatible FULL et LITE.
     """

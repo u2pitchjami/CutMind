@@ -12,6 +12,7 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 def processing_step(video: Video, segment: Segment | None, action: str) -> Generator[ProcessingHistory, None, None]:
     """
     Context manager pour gérer un cycle complet de logging dans processing_history.
+
     - insert automatique en début de step
     - update automatique en fin avec ended_at
     - capture automatique des exceptions

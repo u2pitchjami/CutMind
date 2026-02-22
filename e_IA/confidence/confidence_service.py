@@ -19,6 +19,7 @@ class ConfidenceResult:
 class ConfidenceService:
     """
     Service qui applique le calcul de confiance aux segments IA done.
+
     Ne touche pas à la session, ne fait pas de logs métier importants.
     """
 

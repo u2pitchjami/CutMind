@@ -29,7 +29,9 @@ class IAWorker:
     model_name: str
     batch_size: int
     model_precision: str
-    """Gère l'envoi automatique des segments non conformes vers ComfyUI Router."""
+    """
+    Gère l'envoi automatique des segments non conformes vers ComfyUI Router.
+    """
 
     def __init__(self, vid: Video, segments: list[Segment]):
         self.logger = get_logger("CutMind-Analyse_IA")
@@ -47,6 +49,7 @@ class IAWorker:
     def run(self) -> int:
         """
         Exécute un cycle complet d'envoi vers Router.
+
         Retourne le nombre total de segments envoyés pour traitement.
         """
         settings = get_settings()
@@ -167,6 +170,7 @@ class IAWorker:
     ) -> None:
         """
         Gère une erreur IA en centralisant la logique de tag, statut et contexte enrichi.
+
         Lève toujours une CutMindError enrichie du contexte vidéo.
         """
 

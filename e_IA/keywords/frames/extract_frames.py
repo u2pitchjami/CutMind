@@ -79,6 +79,7 @@ def extract_segment_frames(
 def compute_phash_from_frame(frame_path: Path) -> bytes:
     """
     Calcule un pHash (64 bits) à partir d'une frame image.
+
     Retourne un BINARY(8) prêt à être stocké en DB.
     """
     try:

@@ -37,7 +37,9 @@ logger = get_logger("CutMind")
 # CORE TOOLBOX
 # ---------------------------------------------------------------------------
 class PathMigrationTool:
-    """Toolbox pour mise à jour sécurisée de chemins SQL en utilisant l'infra Cutmind."""
+    """
+    Toolbox pour mise à jour sécurisée de chemins SQL en utilisant l'infra Cutmind.
+    """
 
     def __init__(self, table: str, column: str, replacements: dict[str, str]):
         self.table = table
@@ -46,7 +48,9 @@ class PathMigrationTool:
 
     # ---------------------------- BACKUP ----------------------------
     def create_backup(self) -> None:
-        """Crée une table de sauvegarde (si inexistante)."""
+        """
+        Crée une table de sauvegarde (si inexistante).
+        """
         query = f"CREATE TABLE IF NOT EXISTS backup_{self.table}_paths AS SELECT id, {self.column} FROM {self.table};"
 
         try:
@@ -60,7 +64,9 @@ class PathMigrationTool:
 
     # ---------------------------- DRY RUN ---------------------------
     def dry_run(self) -> None:
-        """Affiche un aperçu des modifications sans rien modifier."""
+        """
+        Affiche un aperçu des modifications sans rien modifier.
+        """
         logger.info("🔎 DRY-RUN : aperçu des remplacements")
 
         for old, new in self.replacements.items():
@@ -93,7 +99,9 @@ class PathMigrationTool:
         # ---------------------------- DETECT ----------------------------
 
     def detect_invalid(self) -> None:
-        """Détecte les chemins incorrects ou ne correspondant à aucun des préfixes attendus."""
+        """
+        Détecte les chemins incorrects ou ne correspondant à aucun des préfixes attendus.
+        """
         logger.info("🔍 Détection des chemins invalides…")
 
         expected_prefixes = list(self.replacements.keys())
@@ -123,7 +131,9 @@ class PathMigrationTool:
 
     # ---------------------------- APPLY -----------------------------
     def apply(self) -> None:
-        """Applique les remplacements en masse, après backup automatique."""
+        """
+        Applique les remplacements en masse, après backup automatique.
+        """
         logger.info("🚀 Application des remplacements…")
 
         for old, new in self.replacements.items():
@@ -143,7 +153,9 @@ class PathMigrationTool:
 
     # ---------------------------- ROLLBACK --------------------------
     def rollback(self) -> None:
-        """Restaure toutes les valeurs depuis la table de sauvegarde."""
+        """
+        Restaure toutes les valeurs depuis la table de sauvegarde.
+        """
         logger.warning("⚠ ROLLBACK demandé — restauration en cours…")
 
         query = (

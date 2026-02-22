@@ -12,7 +12,9 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 
 
 def get_downscale_factor(video_path: str) -> int:
-    """Détermine dynamiquement le facteur de downscale selon la hauteur vidéo."""
+    """
+    Détermine dynamiquement le facteur de downscale selon la hauteur vidéo.
+    """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         return 1  # fallback sans erreur

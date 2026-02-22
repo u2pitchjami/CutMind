@@ -6,8 +6,8 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 
 class PostMergeRattrapage:
     """
-    Rattrape les segments trop courts en tentant de les fusionner
-    avec leurs voisins (avant ou après) si les règles le permettent.
+    Rattrape les segments trop courts en tentant de les fusionner avec leurs voisins (avant ou après) si les règles le
+    permettent.
     """
 
     def __init__(self, min_duration: float, max_duration: float, threshold: float = 0.5):

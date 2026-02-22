@@ -25,7 +25,9 @@ def sanitize(name: str) -> str:
 
 
 class FileMover:
-    """Gère uniquement le déplacement des fichiers validés (sans mise à jour DB)."""
+    """
+    Gère uniquement le déplacement des fichiers validés (sans mise à jour DB).
+    """
 
     def __init__(self) -> None:
         pass
@@ -163,6 +165,7 @@ class FileMover:
     def safe_replace(src: Path, dst: Path, logger: LoggerProtocol | None = None) -> None:
         """
         Remplace un fichier même entre FS différents.
+
         Copie → fsync → rename atomique.
         """
         logger = ensure_logger(logger, __name__)

@@ -14,6 +14,7 @@ def detect_initial_scenes(
 ) -> list[tuple[float, float]]:
     """
     Détection PySceneDetect avec filtrage start/end.
+
     Version propre : aucune dépendance, aucun logger.
     """
     try:

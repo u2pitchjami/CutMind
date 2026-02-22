@@ -11,8 +11,7 @@ from shared.utils.settings import get_settings
 
 class FfmpegCutExecutor:
     """
-    Exécuteur technique pur : coupe une vidéo avec paramètres
-    centralisés dans les settings.
+    Exécuteur technique pur : coupe une vidéo avec paramètres centralisés dans les settings.
     """
 
     def cut(

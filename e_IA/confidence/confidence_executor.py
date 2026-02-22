@@ -9,6 +9,7 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 class ConfidenceExecutor:
     """
     Exécuteur spécialisé : calcule un score de similarité entre description et keywords.
+
     Ne fait aucun log métier, aucune mise à jour session.
     """
 
@@ -18,7 +19,9 @@ class ConfidenceExecutor:
         self._model: SentenceTransformer | None = None
 
     def _load(self) -> SentenceTransformer:
-        """Chargement lazy du modèle."""
+        """
+        Chargement lazy du modèle.
+        """
         if self._model is not None:
             return self._model
 

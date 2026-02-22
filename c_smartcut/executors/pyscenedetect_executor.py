@@ -15,6 +15,7 @@ def run_pyscenedetect(
 ) -> list[tuple[float, float]]:
     """
     Exécute PySceneDetect en mode brut (pas de filtrage, pas de logging).
+
     Retourne une liste [(start_sec, end_sec)].
     """
     try:

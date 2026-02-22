@@ -30,7 +30,9 @@ from shared.utils.trash import delete_files, move_to_trash
 
 
 class CheckSegments:
-    """Gère l'envoi automatique des segments non conformes vers ComfyUI Router."""
+    """
+    Gère l'envoi automatique des segments non conformes vers ComfyUI Router.
+    """
 
     def __init__(self, vid: Video, segments: list[Segment], logger: LoggerProtocol | None = None):
         self.logger = ensure_logger(logger, __name__)
@@ -45,6 +47,7 @@ class CheckSegments:
     def run(self) -> int:
         """
         Exécute un cycle complet d'envoi vers Router.
+
         Retourne le nombre total de segments envoyés pour traitement.
         """
 
@@ -200,6 +203,7 @@ def merge_check_results(
 ) -> tuple[str, str]:
     """
     Fusionne résultats technique + métier.
+
     Priorité : error > warning > ok
     """
 

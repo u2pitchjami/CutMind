@@ -21,7 +21,9 @@ def perform_recut(
     recut_points: list[float],
     logger: LoggerProtocol | None = None,
 ) -> None:
-    """Recoupe un segment déjà extrait — sécurisé avec validations strictes."""
+    """
+    Recoupe un segment déjà extrait — sécurisé avec validations strictes.
+    """
     logger = ensure_logger(logger, __name__)
     repo = CutMindRepository()
 
@@ -153,6 +155,7 @@ def perform_recut(
 def parse_recut_points(status: str) -> list[float]:
     """
     Extrait les points de découpe à partir du champ 'status'.
+
     Exemples :
         "recut:45,120" → [45.0, 120.0]
         "recut : 110"  → [110.0]

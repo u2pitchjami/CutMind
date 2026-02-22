@@ -9,6 +9,7 @@ from e_IA.keywords.utils.ai_result import AIOutputType
 class IASegmentInput:
     """
     Ce que le pipeline IA reçoit pour chaque segment à analyser.
+
     - mode complet : source_path = vidéo originale, start/end = timing du segment
     - mode lite    : source_path = fichier du segment découpé, start/end = timing relatif à ce fichier
     """

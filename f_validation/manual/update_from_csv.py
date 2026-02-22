@@ -37,7 +37,9 @@ def update_segments_csv(
     csv_log: Path = Path(CSV_LOG_PATH),
     logger: LoggerProtocol | None = None,
 ) -> None:
-    """Import principal des segments CSV vers la base."""
+    """
+    Import principal des segments CSV vers la base.
+    """
     logger = ensure_logger(logger, __name__)
     stats = {"checked": 0, "updated": 0, "deleted": 0, "unchanged": 0, "errors": 0}
     log_rows: list[dict[str, str]] = []

@@ -21,8 +21,8 @@ def log_metadata_diff(
     logger: LoggerProtocol,
 ) -> None:
     """
-    Log les différences techniques entre le Segment en DB
-    et les métadonnées réelles (VideoPrepared).
+    Log les différences techniques entre le Segment en DB et les métadonnées réelles (VideoPrepared).
+
     Seuls les champs modifiés sont affichés.
     """
 
@@ -42,7 +42,9 @@ def log_metadata_diff(
     }
 
     def fmt(v: Any) -> str:
-        """Formatage simple avec arrondi si float."""
+        """
+        Formatage simple avec arrondi si float.
+        """
         if isinstance(v, float):
             return f"{v:.2f}"
         if v is None:

@@ -1,5 +1,5 @@
 """
-main projet cutmind
+Main projet cutmind.
 """
 
 from __future__ import annotations

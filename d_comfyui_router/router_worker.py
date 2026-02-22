@@ -28,7 +28,9 @@ from shared.utils.trash import delete_files
 
 
 class RouterWorker:
-    """Gère l'envoi automatique des segments non conformes vers ComfyUI Router."""
+    """
+    Gère l'envoi automatique des segments non conformes vers ComfyUI Router.
+    """
 
     def __init__(self, vid: Video, segments: list[Segment]):
         self.logger = get_logger("CutMind-Comfyui_Router")
@@ -42,6 +44,7 @@ class RouterWorker:
     def run(self) -> int:
         """
         Exécute un cycle complet d'envoi vers Router.
+
         Retourne le nombre total de segments envoyés pour traitement.
         """
         settings = get_settings()
@@ -115,7 +118,9 @@ class RouterWorker:
     # ---------------------------------------------------------
 
     def _prepare_segments(self) -> list[tuple[Segment, Path, Path]]:
-        """Construit la liste des segments à déplacer pour Router."""
+        """
+        Construit la liste des segments à déplacer pour Router.
+        """
         prepared: list[tuple[Segment, Path, Path]] = []
 
         for seg in self.segments:

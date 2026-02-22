@@ -10,11 +10,15 @@ from shared.utils.settings import get_settings
 
 
 class FFprobeError(RuntimeError):
-    """Raised when ffprobe output is missing expected fields."""
+    """
+    Raised when ffprobe output is missing expected fields.
+    """
 
 
 def inspect_video(video_path: Path) -> dict[str, Any]:
-    """Return first video stream metadata using ffprobe (JSON)."""
+    """
+    Return first video stream metadata using ffprobe (JSON).
+    """
     cmd = [
         "ffprobe",
         "-v",
@@ -59,7 +63,9 @@ def inspect_video(video_path: Path) -> dict[str, Any]:
 
 
 def is_video_compliant(metadata: dict[str, Any]) -> bool:
-    """Check if video matches CutMind internal standard."""
+    """
+    Check if video matches CutMind internal standard.
+    """
     settings = get_settings()
 
     expected_codec = settings.ffsmartcut.vcodec.replace("libx265", "hevc")

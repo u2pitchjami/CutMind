@@ -45,8 +45,7 @@ def is_interlaced(video_path: Path) -> str:
 
 def deinterlace_video(input_path: Path, output_path: Path) -> bool:
     """
-    Désentrelace une vidéo en utilisant yadif CPU,
-    avec normalisation cohérente CutMind.
+    Désentrelace une vidéo en utilisant yadif CPU, avec normalisation cohérente CutMind.
     """
     settings = get_settings()
 

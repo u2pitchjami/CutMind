@@ -9,6 +9,7 @@ def fill_missing_segments(
 ) -> list[tuple[float, float]]:
     """
     Ajoute des segments "gaps".
+
     Version pure (pas de logger).
     """
     try:

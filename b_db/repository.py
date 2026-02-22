@@ -34,7 +34,9 @@ from shared.utils.logger import get_logger
 # 🎯 Repository principal
 # =====================================================================
 class CutMindRepository:
-    """Gestion centralisée des accès à la base de données CutMind."""
+    """
+    Gestion centralisée des accès à la base de données CutMind.
+    """
 
     def __init__(self) -> None:
         self.logger = get_logger("CutMind-DB")
@@ -50,6 +52,7 @@ class CutMindRepository:
     ) -> None:
         """
         Exécute une requête SQL (INSERT/UPDATE/DELETE) sans retourner de lignes.
+
         Gère automatiquement la connexion lorsque conn est None.
         """
         try:
@@ -153,7 +156,9 @@ class CutMindRepository:
     # -------------------------------------------------------------
 
     def insert_video_with_segments(self, video: Video) -> int:
-        """Insère une vidéo et ses segments associés."""
+        """
+        Insère une vidéo et ses segments associés.
+        """
         video_id: int | None = None
         try:
             with db_conn(logger=self.logger) as conn:
@@ -307,7 +312,9 @@ class CutMindRepository:
         segment_id: int,
         keywords: list[str],
     ) -> None:
-        """Insère les mots-clés d’un segment (en évitant les doublons)."""
+        """
+        Insère les mots-clés d’un segment (en évitant les doublons).
+        """
         try:
             # 🔥 DELETE UNE SEULE FOIS
             safe_execute_dict(
@@ -378,6 +385,7 @@ class CutMindRepository:
     ) -> None:
         """
         Supprime puis insère les hashes perceptuels d'un segment.
+
         Opération idempotente (safe pour re-run IA).
         """
         try:
@@ -518,6 +526,7 @@ class CutMindRepository:
     ) -> Video | None:
         """
         Retourne un objet Video complet (avec ses segments et mots-clés).
+
         Peut recevoir soit video_uid, soit video_id.
         """
         ctx_base: dict[str, Any] = {}
@@ -574,8 +583,7 @@ class CutMindRepository:
 
     def get_videos_by_status(self, status: str) -> list[Video]:
         """
-        Retourne toutes les vidéos (avec leurs segments et mots-clés)
-        correspondant à un statut donné.
+        Retourne toutes les vidéos (avec leurs segments et mots-clés) correspondant à un statut donné.
         """
         try:
             videos: list[Video] = []
@@ -631,7 +639,9 @@ class CutMindRepository:
             ) from exc
 
     def get_segments_by_status(self, status: str) -> list[Segment]:
-        """Retourne tous les segments d’un statut donné."""
+        """
+        Retourne tous les segments d’un statut donné.
+        """
         try:
             rows = self._fetch_all(
                 "SELECT * FROM segments WHERE status=%s",
@@ -648,7 +658,9 @@ class CutMindRepository:
             ) from exc
 
     def get_segments_pending_review(self) -> list[Segment]:
-        """Retourne tous les segments en attente de validation manuelle."""
+        """
+        Retourne tous les segments en attente de validation manuelle.
+        """
         statuses = ("manual_review", "pending_check", "manual_review_pending")
         try:
             placeholders = ",".join(["%s"] * len(statuses))
@@ -665,7 +677,9 @@ class CutMindRepository:
             ) from exc
 
     def get_segments_by_ids(self, segment_ids: list[int]) -> list[Segment]:
-        """Retourne les segments correspondant exactement aux IDs fournis."""
+        """
+        Retourne les segments correspondant exactement aux IDs fournis.
+        """
         if not segment_ids:
             return []
 
@@ -702,7 +716,9 @@ class CutMindRepository:
             ) from exc
 
     def get_segment_by_uid(self, uid: str) -> Segment | None:
-        """Retourne un segment spécifique par son UID."""
+        """
+        Retourne un segment spécifique par son UID.
+        """
         try:
             row = self._fetch_one(
                 "SELECT * FROM segments WHERE uid=%s",
@@ -785,8 +801,8 @@ class CutMindRepository:
 
     def get_nonstandard_videos(self, limit_videos: int = 10) -> list[str]:
         """
-        Retourne les UID de vidéos 'validated' contenant au moins un segment
-        dont la résolution ou les FPS sont inférieurs aux standards (1920x1080, 60fps).
+        Retourne les UID de vidéos 'validated' contenant au moins un segment dont la résolution ou les FPS sont
+        inférieurs aux standards (1920x1080, 60fps).
         """
         try:
             rows = self._fetch_all(
@@ -858,6 +874,7 @@ class CutMindRepository:
     def get_active_videos(self) -> list[Video]:
         """
         Retourne les vidéos pouvant avancer automatiquement :
+
         - au moins un segment
         - aucun segment en attente de validation humaine
         """
@@ -939,6 +956,7 @@ class CutMindRepository:
     ) -> list[dict[str, Any]]:
         """
         Retourne les segments dont le statut est incohérent avec celui de leur vidéo.
+
         Ex: vidéo.status = 'validated' mais segment.status = 'pending_check'
         """
         try:
@@ -964,7 +982,9 @@ class CutMindRepository:
     # 🔄 Mise à jour d’un segment
     # -------------------------------------------------------------
     def update_segment_validation(self, seg: Segment, conn: Connection | None = None) -> None:
-        """Mise à jour suite à validation automatique ou manuelle."""
+        """
+        Mise à jour suite à validation automatique ou manuelle.
+        """
         try:
             self._exec_sql(
                 """
@@ -1011,7 +1031,9 @@ class CutMindRepository:
             ) from exc
 
     def update_segment_postprocess(self, seg: ProcessedSegment, conn: Connection | None = None) -> None:
-        """Mise à jour après traitement ComfyUI."""
+        """
+        Mise à jour après traitement ComfyUI.
+        """
         try:
             self._exec_sql(
                 """
@@ -1063,6 +1085,7 @@ class CutMindRepository:
     ) -> None:
         """
         Met à jour les métadonnées techniques d'un segment à partir d'un VideoPrepared.
+
         Utilise _exec_sql() pour respecter l'architecture Repository.
         """
 
@@ -1119,7 +1142,9 @@ class CutMindRepository:
             ) from exc
 
     def update_segment_from_csv(self, segment: Segment, new_data: dict[str, Any], diffs: list[str]) -> None:
-        """Compare et met à jour les champs d’un segment depuis CSV."""
+        """
+        Compare et met à jour les champs d’un segment depuis CSV.
+        """
         try:
             with db_conn(logger=self.logger) as conn:
                 with get_dict_cursor(conn) as cur:
@@ -1181,7 +1206,9 @@ class CutMindRepository:
     # 🔄 Mise à jour d’une vidéo
     # -------------------------------------------------------------
     def update_video(self, video: Video, conn: Connection | None = None) -> None:
-        """Met à jour le statut ou autres champs d’une vidéo."""
+        """
+        Met à jour le statut ou autres champs d’une vidéo.
+        """
         try:
             self._exec_sql(
                 """
@@ -1213,7 +1240,9 @@ class CutMindRepository:
     # 🔹 SUPPRESSION
     # ------------------------------------------------------------------
     def delete_segment_by_uid(self, seg_uid: str) -> bool:
-        """Supprime un segment spécifique."""
+        """
+        Supprime un segment spécifique.
+        """
         try:
             self._exec_sql(
                 "DELETE FROM segments WHERE uid=%s",
@@ -1230,7 +1259,9 @@ class CutMindRepository:
             ) from exc
 
     def delete_segment(self, seg_id: int) -> None:
-        """Supprime un segment et ses mots-clés."""
+        """
+        Supprime un segment et ses mots-clés.
+        """
         try:
             with db_conn(logger=self.logger) as conn:
                 with get_dict_cursor(conn) as cur:
@@ -1252,9 +1283,8 @@ class CutMindRepository:
     @contextmanager
     def transaction(self) -> Iterator[Connection]:
         """
-        Contexte transactionnel global basé sur db_conn(logger=self.logger).
-        Permet d'exécuter plusieurs opérations du repository
-        dans une seule et même transaction SQL.
+        Contexte transactionnel global basé sur db_conn(logger=self.logger). Permet d'exécuter plusieurs opérations du
+        repository dans une seule et même transaction SQL.
 
         Exemple :
             with repo.transaction() as conn:

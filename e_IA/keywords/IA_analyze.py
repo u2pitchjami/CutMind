@@ -50,6 +50,7 @@ def analyze_IA(
 ) -> tuple[str, str | None, list[str], float | None, float | None, list[SegmentFrameHash]]:
     """
     Extrait des frames pour chaque segment et génère les mots-clés IA.
+
     Retourne un mapping {segment_uid: keywords}.
     """
     logger = ensure_logger(logger, __name__)
@@ -299,8 +300,7 @@ def merge_category(batches: list[AIResult]) -> str | None:
 
 def merge_dual_ratings(batches: list[AIResult]) -> tuple[float | None, float | None]:
     """
-    Calcule la moyenne des quality_rating et interest_rating
-    à partir des résultats IA par batch.
+    Calcule la moyenne des quality_rating et interest_rating à partir des résultats IA par batch.
     """
     qualities: list[float] = []
     interests: list[float] = []

@@ -25,8 +25,8 @@ def fix_segment_resolution(
 ) -> tuple[int, int]:
     """
     Fixe une résolution non standard en ciblant 1920x1080 ou 3840x2160.
-    Garantit une résolution finale paire (codec-safe).
-    Respecte le profil interne CutMind.
+
+    Garantit une résolution finale paire (codec-safe). Respecte le profil interne CutMind.
     """
     settings = get_settings()
 

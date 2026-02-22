@@ -10,6 +10,7 @@ from shared.services.video_preparation import VideoPrepared
 def check_segments(seg: Segment, metadata: VideoPrepared, path: Path) -> bool:
     """
     Compare les métadonnées stockées dans le Segment avec celles du fichier réel.
+
     Si des différences sont détectées → mise à jour du segment → return True.
     """
     updated = False

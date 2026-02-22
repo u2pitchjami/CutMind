@@ -51,6 +51,7 @@ def _match_any(values: Iterable[str], allowed: set[str]) -> bool:
 def compute_video_status(video: Video) -> VideoStatus:
     """
     Calcule le statut vidéo à partir des segments (V2).
+
     - aucune IO
     - aucune écriture
     - aucune règle YAML

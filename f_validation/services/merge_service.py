@@ -21,8 +21,7 @@ class MergeResult:
 
 class MergeService:
     """
-    Service métier : prépare les données, appelle l'executor,
-    applique un post-traitement (rattrapage), filtre la durée.
+    Service métier : prépare les données, appelle l'executor, applique un post-traitement (rattrapage), filtre la durée.
     """
 
     def __init__(

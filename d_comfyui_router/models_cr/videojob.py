@@ -41,6 +41,7 @@ class VideoJob:
     def compute_optimal_batch(self, min_size: int, max_size: int) -> None:
         """
         Calcule le nombre de frames par batch selon les limites données.
+
         Appelé après que le workflow soit connu (donc après adaptation dynamique).
         """
         try:
@@ -57,8 +58,7 @@ class VideoJob:
     @with_child_logger
     def apply_adaptive_batch(self, wf_path: Path, logger: LoggerProtocol | None = None) -> None:
         """
-        Calcule dynamiquement la taille de batch optimale
-        en fonction du workflow et de la mémoire disponible.
+        Calcule dynamiquement la taille de batch optimale en fonction du workflow et de la mémoire disponible.
         """
         settings = get_settings()
         adaptive_cfg = settings.adaptive_batch

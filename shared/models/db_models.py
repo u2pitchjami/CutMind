@@ -124,13 +124,16 @@ class Segment:
         return tag in self.tags
 
     def compute_duration(self) -> None:
-        """Calcule et met à jour la durée du segment."""
+        """
+        Calcule et met à jour la durée du segment.
+        """
         self.duration = round(self.end - self.start, 3)
         self.last_updated = datetime.now().isoformat()
 
     def predict_filename(self, base_dir: str | Path = "./outputs", folder_name: str = "folder") -> None:
         """
         Génère un nom de fichier prédictif stable et unique.
+
         Exemple : seg_0001_a1b2c3d4.mp4
         """
         base = Path(base_dir) / folder_name
@@ -218,7 +221,9 @@ class Video:
         self.last_updated = datetime.now().isoformat()
 
     def get_pending_segments(self) -> list[Segment]:
-        """Retourne les segments non traités par l'IA."""
+        """
+        Retourne les segments non traités par l'IA.
+        """
         return [s for s in self.segments if s.status != "ai_done"]
 
     def add_tag_vid(self, tag: str) -> None:

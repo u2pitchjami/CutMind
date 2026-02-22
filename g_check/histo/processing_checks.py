@@ -10,6 +10,7 @@ CONFIDENCE_THRESHOLD = 0.35
 def evaluate_video_compliance(metadata: Mapping[str, Any]) -> tuple[str, str]:
     """
     Évalue si un segment respecte la norme interne CutMind.
+
     Critères :
     - codec_name = hevc
     - profile = Main
@@ -80,6 +81,7 @@ def evaluate_segment_move(output_path: str, basedir: str) -> tuple[str, str]:
 def evaluate_comfyui_output(fps: float | None, resolution: str | None) -> tuple[str, str]:
     """
     Évalue si le segment est passé correctement par le flow ComfyUI.
+
     Critères :
     - fps doit être exactement 60
     - résolution doit être '1920x1080' ou '3840x2160'

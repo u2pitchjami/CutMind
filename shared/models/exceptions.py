@@ -25,6 +25,7 @@ class ErrCode(str, Enum):
 class CutMindError(RuntimeError):
     """
     Erreur métier structurée avec code + contexte.
+
     L'exception d'origine est propagée via `raise ... from exc`.
     """
 
@@ -42,13 +43,17 @@ class CutMindError(RuntimeError):
         self.ctx: dict[str, Any] = ctx or {}
 
     def with_context(self, extra: dict[str, Any]) -> CutMindError:
-        """Ajoute du contexte sans écraser les clés existantes."""
+        """
+        Ajoute du contexte sans écraser les clés existantes.
+        """
         for key, value in extra.items():
             self.ctx.setdefault(key, value)
         return self
 
     def to_dict(self) -> dict[str, Any]:
-        """Représentation structurée utile pour logs JSON."""
+        """
+        Représentation structurée utile pour logs JSON.
+        """
         return {
             "code": self.code.value,
             "message": str(super()),

@@ -247,8 +247,7 @@ class CutMindOrchestratorV2:
         """
         Recharge la vidéo et ses segments depuis la base de données.
 
-        À utiliser après une étape pouvant modifier la DB hors process
-        (IA, worker async, etc.).
+        À utiliser après une étape pouvant modifier la DB hors process (IA, worker async, etc.).
         """
         fetched = self.repo.get_video_with_segments(video_id=video.id)
         if fetched is None:

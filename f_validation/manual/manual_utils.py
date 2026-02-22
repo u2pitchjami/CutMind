@@ -29,7 +29,9 @@ NULL_EQUIVALENTS = {"", "null", "none", "nan", "n/a"}
 
 
 def safe_to_float(value: object) -> float:
-    """Convertit proprement en float, sinon 0.0"""
+    """
+    Convertit proprement en float, sinon 0.0.
+    """
     if isinstance(value, (int | float)):
         return float(value)
     if isinstance(value, str):
@@ -143,7 +145,9 @@ def compare_segment(
 
 
 def write_csv_log(path: Path, rows: list[dict[str, str]]) -> None:
-    """Écrit le log CSV récapitulatif."""
+    """
+    Écrit le log CSV récapitulatif.
+    """
     with open(path, "w", newline="", encoding="utf-8") as lf:
         writer = csv.DictWriter(lf, fieldnames=["timestamp", "segment_id", "action", "differences"])
         writer.writeheader()
@@ -153,7 +157,9 @@ def write_csv_log(path: Path, rows: list[dict[str, str]]) -> None:
 
 
 def summarize_import(stats: dict[str, int], csv_log: Path, logger: LoggerProtocol | None = None) -> None:
-    """Affiche le résumé du traitement."""
+    """
+    Affiche le résumé du traitement.
+    """
     logger = ensure_logger(logger, __name__)
     logger.info(
         "🏁 Import — %d lues, %d MAJ, %d supprimées, %d inchangées, %d erreurs",
