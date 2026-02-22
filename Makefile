@@ -46,6 +46,9 @@ check:
 # Lint alias
 lint: check
 
+vulture:
+	vulture --exclude z_old .
+
 # ------- Types -------
 types:
 	mypy $(PKG)

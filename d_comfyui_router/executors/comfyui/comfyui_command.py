@@ -8,7 +8,7 @@ from typing import Any
 import requests
 
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
-from shared.utils.config import HOST_ROOT, VISIBLE_ROOT
+from shared.utils.config import COMFY_URL, HOST_ROOT, VISIBLE_ROOT
 
 
 def comfyui_path(full_path: Path) -> Path:
@@ -37,7 +37,7 @@ def run_comfy(workflow: dict[str, Any]) -> str:
 
     # Envoi à l’API ComfyUI
     try:
-        response = requests.post("http://192.168.50.12:8188/prompt", json=payload, timeout=60)
+        response = requests.post(COMFY_URL, json=payload, timeout=60)
         response.raise_for_status()
         data = response.json()
         prompt_id = data.get("prompt_id")

@@ -57,6 +57,8 @@ class IAWorker:
         MODEL_NAME = settings.keyword_normalizer.model_name_key
         MODE = settings.keyword_normalizer.mode
         SIMILARITY_THRESHOLD = settings.keyword_normalizer.similarity_threshold
+        MIN_FRAMES = settings.analyse_segment.min_frames_per_batch
+        MAX_FRAMES = settings.analyse_segment.max_frames_per_batch
         self.logger.info("🚀 Démarrage IAWorkerr : %s)", self.video.name)
         if not self.video:
             self.logger.warning("⚠️ Vidéo introuvable")
@@ -96,6 +98,8 @@ class IAWorker:
                                     model_precision=self.model_precision,
                                     model_name=self.model_name,
                                     batch_size=self.batch_size,
+                                    min_frames=MIN_FRAMES,
+                                    mAn_frames=MAX_FRAMES,
                                     force=False,
                                     logger=self.logger,
                                 )

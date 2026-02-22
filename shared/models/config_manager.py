@@ -55,7 +55,6 @@ class ConfigManager:
         logger = ensure_logger(logger, __name__)
         self.smartcut: YamlDict = self._load_yaml("smartcut.yaml", logger=logger)
         self.comfyui_router: YamlDict = self._load_yaml("comfyui_router.yaml", logger=logger)
-        self.cutmind: YamlDict = self._load_yaml("cutmind.yaml", logger=logger)
         # self.paths: YamlDict = self._load_yaml("paths.yaml")
         # self.keywords: YamlDict = self._load_yaml("keywords.yaml")
         self._ensure_defaults(logger=logger)

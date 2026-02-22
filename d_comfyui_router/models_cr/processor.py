@@ -6,6 +6,7 @@ from pathlib import Path
 
 from d_comfyui_router.executors.comfyui.comfyclient import ComfyClientREST
 from d_comfyui_router.executors.comfyui.comfyui_command import comfyui_path
+from d_comfyui_router.executors.comfyui.wait_for_comfyui import wait_for_comfyui
 from d_comfyui_router.executors.output import cleanup_outputs
 from d_comfyui_router.ffmpeg.ffmpeg_command import convert_to_60fps
 from d_comfyui_router.models_cr.comfy_workflow_manager import ComfyWorkflowManager
@@ -62,6 +63,9 @@ class VideoProcessor:
         PURGE_DAYS = settings.router_processor.purge_days
         DELTA_DURATION = settings.router_processor.delta_duration
         RATIO_DURATION = settings.router_processor.ratio_duration
+        STABLE_TIME = settings.router_wait_output.stable_time
+        CHECK_INTERVAL = settings.router_wait_output.check_interval
+        TIMEOUT = settings.router_wait_output.timeout
         if not self.segment or not self.segment.output_path or not self.segment.id or not self.segment.uid:
             raise CutMindError(
                 "❌ Erreur inattendue : Vidéo inconnue.",
@@ -101,6 +105,13 @@ class VideoProcessor:
             else:
                 cuda = False
 
+            if not wait_for_comfyui(logger):
+                raise CutMindError(
+                    "❌ Comfyui injoignable.",
+                    code=ErrCode.VIDEO,
+                    ctx=get_step_ctx({"video_path": str(video_path)}),
+                )
+
             # 🧩 Étape 2 : détection / désentrelacement
             job.path = ensure_deinterlaced(video_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
             job.comfyui_path = comfyui_path(full_path=job.path)
@@ -128,7 +139,9 @@ class VideoProcessor:
                 logger.info("📡 ComfyUI REST OK → surveillance réelle par OutputManager...")
 
                 # 🟥 Étape 3 : attente basée sur le vrai fichier généré
-                output_path = self.output_mgr.wait_for_output(video_job=job, logger=logger)
+                output_path = self.output_mgr.wait_for_output(
+                    video_job=job, stable_time=STABLE_TIME, poll_interval=CHECK_INTERVAL, timeout=TIMEOUT, logger=logger
+                )
 
                 if output_path is None:
                     raise CutMindError(

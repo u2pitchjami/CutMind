@@ -49,6 +49,7 @@ class RouterWorker:
         """
         settings = get_settings()
         forbidden_hours = settings.router_orchestrator.forbidden_hours
+        FORCE_DEINTERLACE = settings.router_processor.force_deinterlace
         self.logger.info("🚀 Démarrage Router Worker")
         if not self.video:
             self.logger.warning("⚠️ Vidéo introuvable")
@@ -81,7 +82,7 @@ class RouterWorker:
                                 delete_files(path=OUTPUT_DIR, ext="*.png")
                                 delete_files(path=OUTPUT_DIR, ext="*.mp4")
                                 processor = VideoProcessor(segment=seg, logger=self.logger)
-                                new_seg = processor.process(Path(dst), logger=self.logger)
+                                new_seg = processor.process(Path(dst), FORCE_DEINTERLACE, logger=self.logger)
                                 repo.update_segment_postprocess(new_seg)
                                 self.logger.debug(f"new_seg {new_seg}")
                                 processed_count += 1

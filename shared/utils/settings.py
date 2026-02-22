@@ -50,6 +50,7 @@ class FFSmartcutSettings:
 
 @dataclass
 class AnalyseSegmentSettings:
+    min_frames_per_batch: int
     max_frames_per_batch: int
     safety_margin_gb: float
     limit_tokens: int
@@ -147,41 +148,6 @@ class WaitOutputSettings:
 # ==========================================================
 
 
-@dataclass
-class ValidationSettings:
-    normal: str
-    manual: str
-
-
-@dataclass
-class AuditSettings:
-    start: str
-    end: str
-
-
-# @dataclass(slots=True)
-# class SegmentStatusRule:
-#     all: list[str] | None = None
-#     any: list[str] | None = None
-#     allowed: list[str] | None = None
-#     expected: list[str] | None = None
-
-
-# @dataclass(slots=True)
-# class VideoStatusRule:
-#     segments: SegmentStatusRule
-
-
-# @dataclass(slots=True)
-# class StatusConsistencyRulesV2:
-#     rules: dict[str, VideoStatusRule]
-
-
-# @dataclass(slots=True)
-# class VideoStatusPriority:
-#     order: list[str]
-
-
 # ==========================================================
 #                 SETTINGS ROOT OBJECT
 # ==========================================================
@@ -200,11 +166,6 @@ class Settings:
     router_optimal_batch_size: OptimalBatchSizeSettings
     router_processor: ProcessorSettings
     router_wait_output: WaitOutputSettings
-
-    cutmind_validation: ValidationSettings
-    cutmind_audit: AuditSettings
-    # cutmind_status_consistency: StatusConsistencyRulesV2
-    # cutmind_video_status_priority: VideoStatusPriority
 
     # IMPORTANT :
     # adaptive_batch reste un dict car le code actuel utilise .get() et accès dynamiques
@@ -227,7 +188,6 @@ def init_settings(config: Any) -> None:
 
     sc = config.smartcut
     rt = config.comfyui_router
-    cm = config.cutmind
 
     SETTINGS = Settings(
         smartcut=SmartcutCoreSettings(
@@ -243,6 +203,7 @@ def init_settings(config: Any) -> None:
         ),
         ffsmartcut=FFSmartcutSettings(**sc["ffsmartcut"]),
         analyse_segment=AnalyseSegmentSettings(
+            min_frames_per_batch=sc["analyse_segment"]["min_frames_per_batch"],
             max_frames_per_batch=sc["analyse_segment"]["max_frames_per_batch"],
             safety_margin_gb=sc["analyse_segment"]["safety_margin_gb"],
             limit_tokens=sc["analyse_segment"]["limit_tokens"],
@@ -263,22 +224,7 @@ def init_settings(config: Any) -> None:
         router_optimal_batch_size=OptimalBatchSizeSettings(min_size=rt["optimal_batch_size"]["min_size"]),
         router_processor=ProcessorSettings(**rt["processor"]),
         router_wait_output=WaitOutputSettings(**rt["wait_for_output"]),
-        cutmind_validation=ValidationSettings(
-            normal=cm["validation"]["normal"],
-            manual=cm["validation"]["manual"],
-        ),
-        cutmind_audit=AuditSettings(
-            start=cm["audit_window"]["start"],
-            end=cm["audit_window"]["end"],
-        ),
         adaptive_batch=rt["adaptive_batch"],  # ← laissé en dict volontairement
-        # cutmind_status_consistency=StatusConsistencyRulesV2(
-        #     rules={
-        #         video_status: VideoStatusRule(segments=SegmentStatusRule(**rule["segments"]))
-        #         for video_status, rule in cm["status_consistency_rules"]["rules"].items()
-        #     }
-        # ),
-        # cutmind_video_status_priority=VideoStatusPriority(order=cm["video_status_priority"]["order"]),
     )
 
 
