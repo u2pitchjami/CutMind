@@ -1,10 +1,9 @@
 import os
 from pathlib import Path
 
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
 
 
-@with_child_logger
 def remove_empty_dirs(root_path: str | Path, dry_run: bool = False, logger: LoggerProtocol | None = None) -> int:
     """
     Supprime récursivement les sous-dossiers vides dans un dossier donné.

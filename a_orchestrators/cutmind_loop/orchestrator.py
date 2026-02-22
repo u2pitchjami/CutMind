@@ -108,7 +108,7 @@ class CutMindOrchestratorV2:
             dst_rel = dst_final
             planned_targets[seg.uid] = dst_rel
 
-        moved_ok = self.mover.move_video_files(vid, planned_targets)
+        moved_ok = self.mover.move_video_files(vid, planned_targets, self.logger)
         self.logger.debug("🔍 Résultat du déplacement des fichiers : %s", moved_ok)
 
         if not moved_ok:
@@ -240,7 +240,7 @@ class CutMindOrchestratorV2:
             video.id,
         )
 
-        checker = CheckSegments(vid=video, segments=segments)
+        checker = CheckSegments(vid=video, segments=segments, logger=self.logger)
         checker.run()
 
     def _reload_video_with_segments(self, video: Video) -> list[Segment]:

@@ -68,7 +68,7 @@ class CheckSegments:
                             raise Exception("Impossible de récupérer le segment.")
 
                         with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
-                            metadata_prep = prepare_video(Path(seg.output_path))
+                            metadata_prep = prepare_video(Path(seg.output_path), logger=self.logger)
                             biz_status, biz_message, biz_action = evaluate_segment_business_rules(
                                 segment=seg,
                                 metadata=metadata_prep,

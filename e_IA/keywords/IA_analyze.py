@@ -265,7 +265,7 @@ def run_prompt_on_batches(
         all_batches.append(batch_result)
         free, total = vram_gpu()
         logger.info(f"📊 VRAM avant release cache only : {free:.2f} Go / {total:.2f} Go")
-        release_gpu_memory(cache_only=True, extra_objects=[batch_result])
+        release_gpu_memory(cache_only=True, extra_objects=[batch_result], logger=logger)
         free, total = vram_gpu()
         logger.debug(f"🧹 all_batches : {all_batches}")
         logger.info(

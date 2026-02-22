@@ -12,7 +12,7 @@ from transformers import (
 from e_IA.keywords.analyze.generate_keywords import generate_keywords_from_frames
 from e_IA.keywords.utils.ai_result import AIOutputType, AIResult
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
-from shared.utils.logger import LoggerProtocol
+from shared.utils.logger import LoggerProtocol, ensure_logger
 
 
 def generate_keywords_for_segment(
@@ -30,6 +30,7 @@ def generate_keywords_for_segment(
     Génère et fusionne les mots-clés à partir de plusieurs frames d'un segment.
     """
     try:
+        logger = ensure_logger(logger, __name__)
         response: AIResult = generate_keywords_from_frames(
             frame_dir,
             processor,
@@ -39,6 +40,7 @@ def generate_keywords_for_segment(
             prompt_name=prompt_name,
             system_prompt=system_prompt,
             output_type=output_type,
+            logger=logger,
         )
         return response
     except CutMindError as err:

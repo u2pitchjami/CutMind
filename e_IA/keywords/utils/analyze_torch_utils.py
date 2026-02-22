@@ -9,7 +9,7 @@ import torch
 from transformers import PreTrainedModel, ProcessorMixin
 
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
 
 
@@ -102,7 +102,8 @@ def estimate_visual_tokens(num_images: int, model_name: str = "qwen3-vl-instruct
 # ============================================================
 # 🧹 Outils GPU
 # ============================================================
-@with_child_logger
+
+
 def auto_clean_gpu(max_wait_sec: int = 30, logger: LoggerProtocol | None = None) -> None:
     """Nettoie la VRAM GPU et synchronise CUDA."""
     logger = ensure_logger(logger, __name__)

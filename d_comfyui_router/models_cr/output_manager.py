@@ -8,7 +8,7 @@ import time
 from d_comfyui_router.executors.output import _is_stable
 from d_comfyui_router.models_cr.videojob import VideoJob
 from shared.utils.config import OUTPUT_DIR
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
 
 
 class OutputManager:
@@ -29,7 +29,6 @@ class OutputManager:
     - Si freeze trop long → crash probable.
     """
 
-    @with_child_logger
     def wait_for_output(
         self,
         video_job: VideoJob,
@@ -119,7 +118,7 @@ class OutputManager:
 
                 if audio_file.exists():
                     logger.info(f"🎧 Audio final détecté : {audio_file.name}")
-                    if _is_stable(audio_file, 30, poll_interval):
+                    if _is_stable(audio_file, 30, poll_interval, logger):
                         logger.info("✅ Audio stable → workflow terminé")
                         video_job.output_file = audio_file
                         return audio_file
@@ -128,7 +127,7 @@ class OutputManager:
             # 4) Pas d’audio → stabilisation de la vidéo
             # ------------------------------------------
             if not expect_audio:
-                if _is_stable(video_file, stable_time, poll_interval):
+                if _is_stable(video_file, stable_time, poll_interval, logger):
                     logger.info("✅ Vidéo stable → workflow terminé")
                     video_job.output_file = video_file
                     return video_file

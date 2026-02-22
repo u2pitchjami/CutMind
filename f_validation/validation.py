@@ -94,7 +94,7 @@ def validation_db(
                     seg.pipeline_target = None
                     repo.update_segment_validation(seg)
 
-        remove_empty_dirs(root_path=OUTPUT_DIR_SC)
+        remove_empty_dirs(root_path=OUTPUT_DIR_SC, logger=logger)
 
         return {
             "uid": video.uid,
@@ -168,7 +168,7 @@ def validation_cut(
             planned_targets[seg.uid] = dst_rel
             logger.debug("🔍 Segment %s → Destination planifiée : %s", seg.uid, dst_rel)
 
-        moved_ok = mover.move_video_files(video, planned_targets)
+        moved_ok = mover.move_video_files(video, planned_targets, logger)
         logger.debug("🔍 Résultat du déplacement des fichiers : %s", moved_ok)
 
         if not moved_ok:
@@ -186,7 +186,7 @@ def validation_cut(
                 logger.debug("🔍 Mise à jour du chemin de sortie pour le segment %s : %s", seg.uid, seg.output_path)
                 repo.update_segment_validation(seg)
 
-        remove_empty_dirs(root_path=OUTPUT_DIR_SC)
+        remove_empty_dirs(root_path=OUTPUT_DIR_SC, logger=logger)
 
         return {
             "uid": video.uid,

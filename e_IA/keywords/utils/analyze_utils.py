@@ -10,6 +10,7 @@ from e_IA.keywords.utils.ai_result import AIResult
 from e_IA.keywords.utils.keyword_normalizer import KeywordNormalizer
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import TMP_FRAMES_DIR_SC
+from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
 
 
@@ -102,11 +103,13 @@ def compute_num_frames(segment_duration: float, base_rate: int = 5) -> int:
 def merge_keywords_across_batches(
     batch_outputs: list[AIResult],
     normalizer: KeywordNormalizer | None = None,
+    logger: LoggerProtocol | None = None,
 ) -> tuple[str, list[str]]:
     """
     Fusionne plusieurs sorties AI : descriptions et mots-clés.
     Applique la normalisation si elle est fournie.
     """
+    logger = ensure_logger(logger, __name__)
     all_keywords: list[str] = []
     all_descriptions: list[str] = []
     try:
@@ -124,7 +127,7 @@ def merge_keywords_across_batches(
 
         # ✨ Application de la normalisation (si fourni)
         if normalizer:
-            normalized_keywords = normalizer.normalize_keywords(raw_keywords)
+            normalized_keywords = normalizer.normalize_keywords(raw_keywords, logger)
         else:
             normalized_keywords = raw_keywords
 

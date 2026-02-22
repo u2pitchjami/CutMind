@@ -51,7 +51,7 @@ def load_segments_from_directory(video: Video, directory_path: Path, logger: Log
 
     for _, file_path in enumerate(video_files, start=1):
         try:
-            prepared = prepare_video(file_path, normalize=True)
+            prepared = prepare_video(file_path, normalize=True, logger=logger)
             orig = Path(file_path).resolve()
             safe = Path(prepared.path).resolve()
 

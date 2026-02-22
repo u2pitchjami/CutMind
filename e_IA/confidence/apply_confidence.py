@@ -55,7 +55,7 @@ def apply_confidence_to_session(
             auto_keywords=auto_keywords,
         )
         logger.debug(f"result : {results}")
-        release_gpu_memory(model_name, cache_only=True)
+        release_gpu_memory(model_name, cache_only=True, logger=logger)
         free, total = vram_gpu()
         logger.info(
             "🧹 VRAM nettoyée ('cache_only') → VRAM libre : %.2f Go / %.2f Go",

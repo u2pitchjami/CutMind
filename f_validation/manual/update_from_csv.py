@@ -27,11 +27,10 @@ from f_validation.services.recut_segment import parse_recut_points, perform_recu
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import CSV_ARCHIVE_PATH, CSV_LOG_PATH, MANUAL_CSV_PATH, TRASH_DIR_SC
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.trash import move_to_trash, purge_old_trash
 
 
-@with_child_logger
 def update_segments_csv(
     status_csv: str = "manual_review",
     manual_csv: Path = Path(MANUAL_CSV_PATH),
@@ -153,7 +152,7 @@ def update_segments_csv(
                         log_rows.append({"segment_id": seg_id or "", "action": "error", "differences": str(exc)})
 
                 conn.commit()
-                archived_path = archive_csv(Path(manual_csv), CSV_ARCHIVE_PATH)
+                archived_path = archive_csv(Path(manual_csv), CSV_ARCHIVE_PATH, logger)
                 logger.info("🗄️ Fichier CSV archivé vers %s", archived_path)
                 purge_old_trash(CSV_ARCHIVE_PATH, days=60, logger=logger)
 

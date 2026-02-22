@@ -91,7 +91,9 @@ class VideoProcessor:
                 if self.segment.filesize_mb
                 else round(video_path.stat().st_size / (1024 * 1024), 2)
             )
-            job.duration_in = self.segment.duration if self.segment.duration else prepare_video(video_path).duration
+            job.duration_in = (
+                self.segment.duration if self.segment.duration else prepare_video(video_path, logger=logger).duration
+            )
 
             use_nvenc = detect_nvenc_available()
             if use_nvenc:
@@ -148,7 +150,7 @@ class VideoProcessor:
             # 🔧 Définition officielle du fichier final
             logger.info(f"📦 Fichier final détecté : {job.path}")
 
-            meta = prepare_video(job.path)
+            meta = prepare_video(job.path, logger=logger)
             job.fps_out = meta.fps
             job.resolution_out = resolution_str_to_tuple(meta.resolution)
             # job.path = OK_DIR / job.path.name

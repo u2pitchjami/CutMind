@@ -166,19 +166,17 @@ def summarize_import(stats: dict[str, int], csv_log: Path, logger: LoggerProtoco
     logger.info("🧾 Log CSV → %s", csv_log)
 
 
-def archive_csv(csv_path: Path, archive_root: Path) -> Path:
+def archive_csv(csv_path: Path, archive_root: Path, logger: LoggerProtocol | None = None) -> Path:
     """
     Archive un CSV traité et retourne le chemin archivé.
     """
+    logger = ensure_logger(logger, __name__)
     date_dir = datetime.utcnow().strftime("%Y-%m-%d")
     archive_dir = archive_root / date_dir
 
     archived_name = f"{csv_path.stem}_{datetime.utcnow():%H%M%S}{csv_path.suffix}"
     archived_path = archive_dir / archived_name
 
-    FileMover.safe_replace(
-        src=csv_path,
-        dst=archived_path,
-    )
+    FileMover.safe_replace(src=csv_path, dst=archived_path, logger=logger)
 
     return archived_path

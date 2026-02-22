@@ -116,7 +116,7 @@ class IAWorker:
                                     normalizer = KeywordNormalizer(
                                         model_name=MODEL_NAME, threshold=SIMILARITY_THRESHOLD, mode=MODE
                                     )
-                                    seg.keywords = normalizer.normalize_keywords(seg.keywords)
+                                    seg.keywords = normalizer.normalize_keywords(seg.keywords, logger=self.logger)
                                     self.logger.debug(f"keywords : {seg.keywords}")
                                     self.repo.insert_keywords_standalone(segment_id=seg.id, keywords=seg.keywords)
 
