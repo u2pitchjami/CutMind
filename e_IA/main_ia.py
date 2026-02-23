@@ -99,7 +99,7 @@ class IAWorker:
                                     model_name=self.model_name,
                                     batch_size=self.batch_size,
                                     min_frames=MIN_FRAMES,
-                                    mAn_frames=MAX_FRAMES,
+                                    max_frames=MAX_FRAMES,
                                     force=False,
                                     logger=self.logger,
                                 )

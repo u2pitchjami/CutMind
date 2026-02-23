@@ -152,7 +152,7 @@ def load_and_batches(
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
-            wait_for_vram_stable(target_free_gb=2.0, logger=logger)
+        wait_for_vram_stable(target_free_gb=2.0, logger=logger)
         free_gb, total_gb = vram_gpu()
         precision = get_model_precision(model)
         batch_size = estimate_safe_batch_size(free_gb, total_gb, precision, SAFETY_MARGIN)

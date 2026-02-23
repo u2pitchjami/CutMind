@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 
-from a_orchestrators.cutmind_loop.orchestrator import CutMindOrchestratorV2
+from a_orchestrators.cutmind_or.orchestrator import CutMindOrchestratorV2
 from b_db.repository import CutMindRepository
 from e_IA.ia_worker_process import run_ia_for_video
 from shared.models.db_models import Segment, Video

@@ -1,6 +1,6 @@
 import time
 
-from a_orchestrators.cutmind_loop.launcher import VideoFlowLauncherV2
+from a_orchestrators.cutmind_or.launcher import VideoFlowLauncherV2
 from e_IA.keywords.utils.analyze_torch_utils import auto_clean_gpu
 from shared.utils.logger import get_logger
 
