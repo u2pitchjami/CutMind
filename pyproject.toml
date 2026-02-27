@@ -3,8 +3,8 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "SmartComfyUIVideoRouter"
-version = "1.0.0"
+name = "Cutmindr"
+version = "2.5.1"
 description = "SmartComfyUIVideoRouter"
 requires-python = ">=3.11"  # cohérent avec mypy/ruff
 
@@ -38,6 +38,11 @@ warn_no_return = true
 files = ["."]
 explicit_package_bases = true
 exclude = "^(z_old|docker)/"  # regex unique (mypy attend une regex, pas une liste)
+
+[[tool.mypy.overrides]]
+module = "imagehash.*"
+ignore_missing_imports = true
+follow_imports = "skip"
 
 [[tool.mypy.overrides]]
 module = "psutil.*"

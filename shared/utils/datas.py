@@ -1,5 +1,5 @@
 """
-conversion de data pour insertion en base
+Conversion de data pour insertion en base.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 def format_resolution(res: tuple[int, int] | None) -> str | None:
     """
     Convertit une résolution (tuple) en chaîne 'WxH'.
+
     Retourne None si invalide ou vide.
     """
     try:

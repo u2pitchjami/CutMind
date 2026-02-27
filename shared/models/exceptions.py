@@ -1,7 +1,6 @@
-# /exceptions.py
+# exceptions.py
 from __future__ import annotations
 
-from collections.abc import Mapping
 from enum import Enum
 import inspect
 from typing import Any
@@ -25,36 +24,58 @@ class ErrCode(str, Enum):
 
 class CutMindError(RuntimeError):
     """
-    Erreur métier avec code + contexte structuré.
+    Erreur métier structurée avec code + contexte.
+
+    L'exception d'origine est propagée via `raise ... from exc`.
     """
 
     __slots__ = ("code", "ctx")
 
-    def __init__(self, message: str, *, code: ErrCode, ctx: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: ErrCode,
+        ctx: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
-        self.code = code
-        self.ctx: dict[str, Any] = dict(ctx or {})
+        self.code: ErrCode = code
+        self.ctx: dict[str, Any] = ctx or {}
 
     def with_context(self, extra: dict[str, Any]) -> CutMindError:
-        # N’écrase pas ce qui existe déjà
-        for k, v in extra.items():
-            self.ctx.setdefault(k, v)
+        """
+        Ajoute du contexte sans écraser les clés existantes.
+        """
+        for key, value in extra.items():
+            self.ctx.setdefault(key, value)
         return self
 
-    def __str__(self) -> str:  # utile dans les logs
-        return f"{self.code}: {super().__str__()}"
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Représentation structurée utile pour logs JSON.
+        """
+        return {
+            "code": self.code.value,
+            "message": str(super()),
+            "ctx": self.ctx,
+        }
+
+    def __str__(self) -> str:
+        return f"{self.code}: {super().__str__()} | ctx: {self.ctx}"
 
 
-def get_step_ctx(extra: dict[str, Any] | None = None, depth: int = 1) -> dict[str, Any]:
-    """
-    Génère un contexte enrichi avec le nom de la fonction appelante ('step').
+def get_step_ctx(
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    frame = inspect.currentframe()
+    func_name = "unknown"
 
-    :param extra: autres clés à fusionner dans le contexte
-    :param depth: niveau d'appel dans la stack (1 par défaut)
-    :return: dict compatible pour ctx=...
-    """
-    func_name = inspect.stack()[depth][3]
-    base = {"step": func_name}
+    if frame and frame.f_back:
+        func_name = frame.f_back.f_code.co_name
+
+    ctx: dict[str, Any] = {"step": func_name}
+
     if extra:
-        base.update(extra)
-    return base
+        ctx.update(extra)
+
+    return ctx

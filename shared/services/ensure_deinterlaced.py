@@ -24,7 +24,7 @@ def ensure_deinterlaced(
     try:
         field_order = is_interlaced(video_path)
         logger.debug(f"Analyse entrelacement ({video_path.name}) → {field_order or 'inconnu'}")
-        if field_order not in ("progressive", "", "unknown"):
+        if field_order in ("progressive"):
             logger.debug(f"✅ Vidéo progressive : {video_path.name}")
             return video_path
 

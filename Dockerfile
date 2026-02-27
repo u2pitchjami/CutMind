@@ -19,6 +19,9 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     libgl1 \
     python3 python3-pip python3-dev \
+    tzdata \
+ && ln -snf /usr/share/zoneinfo/Europe/Paris /etc/localtime \
+ && echo "Europe/Paris" > /etc/timezone \
  && add-apt-repository -y ppa:ubuntuhandbook1/ffmpeg8 \
  && apt-get update \
  && apt-get install -y ffmpeg \

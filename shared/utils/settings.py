@@ -1,5 +1,6 @@
 """
 settings.py — Centralisation typée des paramètres YAML via dataclasses.
+
 Doit être initialisé UNE seule fois via init_settings(config) dans main().
 """
 
@@ -19,32 +20,37 @@ class SmartcutCoreSettings:
     purge_days: int
     batch_size: int
     use_cuda: bool
-    seed: int
     initial_threshold: int
     min_threshold: int
     threshold_step: int
     min_duration: float
     max_duration: float
-    frame_per_segment: int
-    auto_frames: bool
-    vcodec_cpu: str
-    vcodec_gpu: str
-    crf: int
-    preset_cpu: str
-    preset_gpu: str
 
 
 @dataclass
 class FFSmartcutSettings:
     vcodec: str
     preset: str
-    rc: str
-    cq: int
     pix_fmt: str
+    crf: int
+    profile: str
+    profile_v: str
+    color_primaries: str
+    color_trc: str
+    colorspace: str
+    vsync: str
+    tag: str
+    tag_v: str
+    movflags: str
+    acodec: str
+    audio_bitrate: str
+    ar: int
+    ac: int
 
 
 @dataclass
 class AnalyseSegmentSettings:
+    min_frames_per_batch: int
     max_frames_per_batch: int
     safety_margin_gb: float
     limit_tokens: int
@@ -101,13 +107,6 @@ class KeywordNormalizerSettings:
 
 
 @dataclass
-class MergeSettings:
-    threshold: float
-    gap_confidence: float
-    rattrapage: bool
-
-
-@dataclass
 class AnalyseConfidenceSettings:
     model_confidence: str
     device: str
@@ -120,7 +119,6 @@ class AnalyseConfidenceSettings:
 
 @dataclass
 class OrchestratorSettings:
-    ratio_smartcut: float
     forbidden_hours: list[int]
 
 
@@ -150,31 +148,6 @@ class WaitOutputSettings:
 # ==========================================================
 
 
-@dataclass
-class ValidationSettings:
-    normal: str
-    manual: str
-
-
-@dataclass
-class AuditSettings:
-    start: str
-    end: str
-
-
-@dataclass
-class StatusConsistencyRules:
-    scenes_done: list[str]
-    ia_done: list[str]
-    confidence_done: list[str]
-    merged: list[str]
-    smartcut_done: list[str]
-    manual_review: list[str]
-    validated: list[str]
-    processing_router: list[str]
-    enhanced: list[str]
-
-
 # ==========================================================
 #                 SETTINGS ROOT OBJECT
 # ==========================================================
@@ -187,17 +160,12 @@ class Settings:
     analyse_segment: AnalyseSegmentSettings
     generate_keywords: GenerateKeywordsSettings
     keyword_normalizer: KeywordNormalizerSettings
-    merge: MergeSettings
     analyse_confidence: AnalyseConfidenceSettings
 
     router_orchestrator: OrchestratorSettings
     router_optimal_batch_size: OptimalBatchSizeSettings
     router_processor: ProcessorSettings
     router_wait_output: WaitOutputSettings
-
-    cutmind_validation: ValidationSettings
-    cutmind_audit: AuditSettings
-    cutmind_status_consistency: StatusConsistencyRules
 
     # IMPORTANT :
     # adaptive_batch reste un dict car le code actuel utilise .get() et accès dynamiques
@@ -220,7 +188,6 @@ def init_settings(config: Any) -> None:
 
     sc = config.smartcut
     rt = config.comfyui_router
-    cm = config.cutmind
 
     SETTINGS = Settings(
         smartcut=SmartcutCoreSettings(
@@ -228,22 +195,15 @@ def init_settings(config: Any) -> None:
             purge_days=sc["smartcut"]["purge_days"],
             batch_size=sc["smartcut"]["batch_size"],
             use_cuda=sc["smartcut"]["use_cuda"],
-            seed=sc["smartcut"]["seed"],
             initial_threshold=sc["smartcut"]["initial_threshold"],
             min_threshold=sc["smartcut"]["min_threshold"],
             threshold_step=sc["smartcut"]["threshold_step"],
             min_duration=sc["smartcut"]["min_duration"],
             max_duration=sc["smartcut"]["max_duration"],
-            frame_per_segment=sc["smartcut"]["frame_per_segment"],
-            auto_frames=sc["smartcut"]["auto_frames"],
-            vcodec_cpu=sc["smartcut"]["vcodec_cpu"],
-            vcodec_gpu=sc["smartcut"]["vcodec_gpu"],
-            crf=sc["smartcut"]["crf"],
-            preset_cpu=sc["smartcut"]["preset_cpu"],
-            preset_gpu=sc["smartcut"]["preset_gpu"],
         ),
         ffsmartcut=FFSmartcutSettings(**sc["ffsmartcut"]),
         analyse_segment=AnalyseSegmentSettings(
+            min_frames_per_batch=sc["analyse_segment"]["min_frames_per_batch"],
             max_frames_per_batch=sc["analyse_segment"]["max_frames_per_batch"],
             safety_margin_gb=sc["analyse_segment"]["safety_margin_gb"],
             limit_tokens=sc["analyse_segment"]["limit_tokens"],
@@ -257,24 +217,13 @@ def init_settings(config: Any) -> None:
         ),
         generate_keywords=GenerateKeywordsSettings(**sc["generate_keywords"]),
         keyword_normalizer=KeywordNormalizerSettings(**sc["keyword_normalizer"]),
-        merge=MergeSettings(**sc["merge"]),
         analyse_confidence=AnalyseConfidenceSettings(**sc["analyse_confidence"]),
         router_orchestrator=OrchestratorSettings(
-            ratio_smartcut=rt["orchestrator"]["ratio_smartcut"],
             forbidden_hours=rt["orchestrator"]["router_forbidden_hours"],
         ),
         router_optimal_batch_size=OptimalBatchSizeSettings(min_size=rt["optimal_batch_size"]["min_size"]),
         router_processor=ProcessorSettings(**rt["processor"]),
         router_wait_output=WaitOutputSettings(**rt["wait_for_output"]),
-        cutmind_validation=ValidationSettings(
-            normal=cm["validation"]["normal"],
-            manual=cm["validation"]["manual"],
-        ),
-        cutmind_audit=AuditSettings(
-            start=cm["audit_window"]["start"],
-            end=cm["audit_window"]["end"],
-        ),
-        cutmind_status_consistency=StatusConsistencyRules(**cm["status_consistency_rules"]),
         adaptive_batch=rt["adaptive_batch"],  # ← laissé en dict volontairement
     )
 

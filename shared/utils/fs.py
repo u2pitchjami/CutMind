@@ -2,13 +2,13 @@
 
 from pathlib import Path
 
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
 
 
-@with_child_logger
 def safe_file_check(path: Path, logger: LoggerProtocol | None = None) -> None:
     """
     Vérifie qu'un fichier est valide, lisible et non vide.
+
     Utilisable dans TOUT le projet.
     """
     logger = ensure_logger(logger, __name__)

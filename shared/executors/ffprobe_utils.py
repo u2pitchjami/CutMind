@@ -14,7 +14,9 @@ from shared.models.videoprep import VideoPrepared
 
 
 def _get_probe_or_load(probe: FFprobeData | None, video_path: Path) -> FFprobeData:
-    """Retourne `probe` si fourni, sinon charge via ffprobe."""
+    """
+    Retourne `probe` si fourni, sinon charge via ffprobe.
+    """
     return probe if probe is not None else _ffprobe_json(video_path)
 
 
@@ -26,6 +28,7 @@ def _get_probe_or_load(probe: FFprobeData | None, video_path: Path) -> FFprobeDa
 def _ffprobe_json(video_path: Path) -> FFprobeData:
     """
     Exécute ffprobe (JSON complet) et renvoie le dictionnaire typé.
+
     Ne doit pas être utilisé hors module : utilises `_get_probe_or_load()`.
     """
     cmd = [
@@ -70,7 +73,9 @@ def _ffprobe_json(video_path: Path) -> FFprobeData:
 
 
 def _get_video_stream(probe: FFprobeData, video_path: Path) -> FFprobeStream:
-    """Retourne le premier flux vidéo ou lève CutMindError."""
+    """
+    Retourne le premier flux vidéo ou lève CutMindError.
+    """
     for stream in probe.get("streams", []):
         if stream.get("codec_type") == "video":
             return stream
@@ -83,7 +88,9 @@ def _get_video_stream(probe: FFprobeData, video_path: Path) -> FFprobeStream:
 
 
 def _get_audio_stream(probe: FFprobeData) -> FFprobeStream | None:
-    """Retourne le premier flux audio, ou None."""
+    """
+    Retourne le premier flux audio, ou None.
+    """
     for stream in probe.get("streams", []):
         if stream.get("codec_type") == "audio":
             return stream
@@ -260,7 +267,9 @@ def get_audio_duration(video_path: Path, probe: FFprobeData | None = None) -> fl
 
 
 def get_metadata_all(video_path: Path) -> VideoPrepared:
-    """Analyse complète des métadonnées vidéo + audio."""
+    """
+    Analyse complète des métadonnées vidéo + audio.
+    """
     probe = _ffprobe_json(video_path)
 
     return VideoPrepared(

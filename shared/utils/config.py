@@ -144,16 +144,12 @@ DB_NAME = str(get_required("DB_NAME"))
 
 CUTMIND_BASEDIR = Path(get_path_required("CUTMIND_BASEDIR"))
 MANUAL_CSV_PATH = get_str("MANUAL_CSV_PATH")
+MANUAL_CSV_CUT_PATH = get_str("MANUAL_CSV_CUT_PATH")
 CSV_LOG_PATH = get_str("CSV_LOG_PATH")
-JSON_STATES = get_str("JSON_STATES", "/basedir/SmartCut/states")
-JSON_IMPORTED = get_str("JSON_IMPORTED", "/basedir/SmartCut/states/imported")
-JSON_PYSCENE = get_str("JSON_PYSCENE", "/basedir/SmartCut/states/pyscene")
+CSV_ARCHIVE_PATH: Path = Path(get_str("CSV_ARCHIVE_PATH", ".csv_archive"))
 WORKDIR_CM = get_str("WORKDIR_CM", "/basedir/_work")
 
-CATEGORIES_RULES = Path(get_path_required("CATEGORIES_RULES"))
-
 MIN_CONFIDENCE = get_float("MIN_CONFIDENCE", 0.6)
-CM_NB_VID_ROUTER = get_int("CM_NB_VID_ROUTER", 1)
 
 # SMARTCUT
 IMPORT_DIR_SC: Path = Path(get_path_required("IMPORT_DIR_SC"))
@@ -167,13 +163,22 @@ MULTIPLE_FRAMES_DIR_SC: Path = Path(get_str("MULTIPLE_FRAMES_DIR_SC", ".multiple
 KW_CACHE_FILE_SC = Path(get_str("KW_CACHE_FILE_SC"))
 KW_MAPPING_FILE_SC = Path(get_path_required("KW_MAPPING_FILE_SC"))
 KW_FORBIDDEN_FILE_SC = Path(get_str("KW_FORBIDDEN_FILE_SC"))
-SAFE_FORMATS = [".mp4", ".mkv"]
 
+IMPORT_DIR_SC.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR_SC.mkdir(parents=True, exist_ok=True)
+JSON_STATES_DIR_SC.mkdir(parents=True, exist_ok=True)
+TMP_FRAMES_DIR_SC.mkdir(parents=True, exist_ok=True)
+BATCH_FRAMES_DIR_SC.mkdir(parents=True, exist_ok=True)
+MULTIPLE_FRAMES_DIR_SC.mkdir(parents=True, exist_ok=True)
+KW_CACHE_FILE_SC.touch(exist_ok=True)
+KW_MAPPING_FILE_SC.touch(exist_ok=True)
+KW_FORBIDDEN_FILE_SC.touch(exist_ok=True)
 OK_DIR.mkdir(parents=True, exist_ok=True)
 TRASH_DIR.mkdir(parents=True, exist_ok=True)
 TRASH_DIR_SC.mkdir(parents=True, exist_ok=True)
 ERROR_DIR_SC.mkdir(parents=True, exist_ok=True)
 Path(LOG_FILE_PATH).mkdir(parents=True, exist_ok=True)
+CSV_ARCHIVE_PATH.mkdir(parents=True, exist_ok=True)
 
 TEMP_COMPIL = Path(get_str("TEMP_COMPIL", ".temp_compil"))
 TEMPLATES_COMPIL = Path(get_str("TEMPLATES_COMPIL", ".templates"))

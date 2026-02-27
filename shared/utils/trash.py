@@ -28,8 +28,7 @@ def move_to_trash(file_path: Path, trash_root: Path) -> Path:
     """
     Déplace un fichier vers la corbeille (trash/YYYY-MM-DD/).
 
-    Renvoie le chemin final.
-    Lève CutMindError en cas d'échec.
+    Renvoie le chemin final. Lève CutMindError en cas d'échec.
     """
     if not file_path.exists():
         raise CutMindError(

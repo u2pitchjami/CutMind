@@ -3,7 +3,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
-from cutmind.models_cm.db_models import Segment, Video
+from shared.models.db_models import Segment, Video
 from shared.utils.fs import safe_file_check
 from shared.utils.logger import LoggerProtocol, ensure_logger
 
@@ -29,7 +29,7 @@ def safe_segments(func: Callable[..., Any]) -> Callable[..., Any]:
             if isinstance(item, Segment):
                 if not item.output_path:
                     raise RuntimeError(f"Segment sans output_path : {item.uid}")
-                safe_file_check(Path(item.output_path))
+                safe_file_check(Path(item.output_path), logger)
             elif isinstance(item, Video):
                 for seg in item.segments:
                     validate_item(seg)

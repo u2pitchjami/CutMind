@@ -55,7 +55,6 @@ class ConfigManager:
         logger = ensure_logger(logger, __name__)
         self.smartcut: YamlDict = self._load_yaml("smartcut.yaml", logger=logger)
         self.comfyui_router: YamlDict = self._load_yaml("comfyui_router.yaml", logger=logger)
-        self.cutmind: YamlDict = self._load_yaml("cutmind.yaml", logger=logger)
         # self.paths: YamlDict = self._load_yaml("paths.yaml")
         # self.keywords: YamlDict = self._load_yaml("keywords.yaml")
         self._ensure_defaults(logger=logger)
@@ -160,9 +159,16 @@ def set_config(cfg: ConfigManager) -> None:
 def reload_and_apply(logger: LoggerProtocol | None = None) -> None:
     """
     Recharge les YAML et met à jour SETTINGS d’un seul coup.
+
     Fonction utilitaire destinée aux modules haut-niveau.
     """
     logger = ensure_logger(logger, __name__)
     cfg = get_config()
     cfg.reload(logger=logger)
     init_settings(cfg)
+
+
+def bootstrap_process(logger: LoggerProtocol | None = None) -> None:
+    config = ConfigManager(logger=logger)
+    set_config(config)
+    init_settings(config)
