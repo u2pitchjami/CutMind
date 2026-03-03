@@ -3,8 +3,8 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "Cutmindr"
-version = "2.5.1"
+name = "Cutmind"
+version = "2.5.2"
 description = "SmartComfyUIVideoRouter"
 requires-python = ">=3.11"  # cohérent avec mypy/ruff
 
@@ -17,7 +17,7 @@ exclude = ["tests*", "z_old*", "docker*"]
 
 # --- Pylint (si tu le gardes ponctuellement, pas en pre-commit) -------------
 [tool.pylint.MASTER]
-ignore = ["z_old", "docker"]
+ignore = ["tests*", "z_old", "docker"]
 
 # --- Mypy -------------------------------------------------------------------
 [tool.mypy]
