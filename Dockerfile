@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # ---- 4️⃣ Vérification de ffmpeg ---
-
+RUN python3 -m pip install --upgrade pip setuptools wheel
 
 # ---- 5️⃣ Installation des dépendances Python ----
 COPY requirements.txt .

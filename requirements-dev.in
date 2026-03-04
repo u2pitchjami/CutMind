@@ -5,3 +5,5 @@ ruff
 pytest
 vulture
 pre-commit
+pip-tools
+pip-audit

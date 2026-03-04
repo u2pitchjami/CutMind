@@ -33,14 +33,15 @@ check_outdated() {
 
 compile_all() {
     echo "🛠 Compiling runtime (hash strict)..."
-    pip-compile \
+    python -m piptools compile \
         --generate-hashes \
         --allow-unsafe \
         --output-file requirements.txt \
         requirements.in
 
     echo "🛠 Compiling dev (no hash)..."
-    pip-compile \
+    python -m piptools compile \
+        --allow-unsafe \
         --output-file requirements-dev.txt \
         requirements-dev.in
 }
@@ -49,14 +50,15 @@ upgrade_package() {
     PACKAGE="$1"
     echo "⬆ Upgrading package: $PACKAGE"
 
-    pip-compile \
+    python -m piptools compile \
         --generate-hashes \
         --allow-unsafe \
         --upgrade-package "$PACKAGE" \
         --output-file requirements.txt \
         requirements.in
 
-    pip-compile \
+    python -m piptools compile \
+        --allow-unsafe \
         --upgrade-package "$PACKAGE" \
         --output-file requirements-dev.txt \
         requirements-dev.in
@@ -71,14 +73,15 @@ upgrade_all() {
         exit 0
     fi
 
-    pip-compile \
+    python -m piptools compile \
         --generate-hashes \
         --allow-unsafe \
         --upgrade \
         --output-file requirements.txt \
         requirements.in
 
-    pip-compile \
+    python -m piptools compile \
+        --allow-unsafe \
         --upgrade \
         --output-file requirements-dev.txt \
         requirements-dev.in
