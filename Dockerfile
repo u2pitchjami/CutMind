@@ -3,7 +3,7 @@
 # ============================================================
 
 # ---- 1️⃣ Base : Ubuntu + CUDA 12.4 runtime ----
-FROM nvidia/cuda:13.0.1-cudnn-runtime-ubuntu22.04
+FROM nvidia/cuda:13.1.1-cudnn-runtime-ubuntu24.04
 
 
 # --- 1️⃣ Configuration de base ---
