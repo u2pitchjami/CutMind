@@ -27,8 +27,9 @@ RUN apt-get update && apt-get install -y \
  && apt-get install -y ffmpeg \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 # ---- 4️⃣ Vérification de ffmpeg ---
-RUN python3 -m pip install --upgrade pip setuptools wheel
+#RUN python3 -m pip install --upgrade pip setuptools wheel
 
 # ---- 5️⃣ Installation des dépendances Python ----
 COPY requirements.txt .
