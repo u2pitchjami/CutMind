@@ -1,6 +1,6 @@
 PYTHON ?= python3.10
 PIP    ?= $(PYTHON) -m pip
-PKG    ?= src
+PKG    ?= .
 
 .PHONY: init fmt check types qa clean patch compile help
 
@@ -23,7 +23,8 @@ fmt:
 
 check:
 	ruff check $(PKG)
-	ruff format $(PKG) --check
+	ruff format $(PKG)
+	ruff fix --check $(PKG)
 
 types:
 	mypy $(PKG)

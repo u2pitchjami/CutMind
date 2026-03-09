@@ -14,7 +14,7 @@ def validation(
     segments: list[Segment],
     status: str = SegmentStatus.CONFIDENCE_DONE,
 ) -> None:
-    logger = get_logger("CutMind-Analyse_Confidence")
+    logger = get_logger("CutMind-Validation")
     logger.info("🚀 Démarrage de la Validation")
     logger.info("🎞️ Vidéo '%s' nb segments: %i", vid.name, len(segments))
     try:
