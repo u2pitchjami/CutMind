@@ -114,11 +114,21 @@ def update_segments_csv(
                             )
                             continue
 
+                        logger.debug(
+                            f"🔍 Segment {seg_id} | has_category : {has_category} | status : {status} \
+                            | has_description : {has_description} | has_keywords : {has_keywords} \
+                                | has_confidence : {has_confidence}"
+                        )
                         if (
                             has_category
-                            and status == OrchestratorStatus.VIDEO_READY_FOR_VALIDATION
+                            and status == OrchestratorStatus.SEGMENT_CONFIDENCE_DONE
                             and not (has_description or has_keywords or has_confidence)
                         ):
+                            logger.debug(
+                                f"🔍 2 - Segment {seg_id} | has_category : {has_category} | status : {status} \
+                                    | has_description : {has_description} | has_keywords : {has_keywords} \
+                                        | has_confidence : {has_confidence}"
+                            )
                             new_data["pipeline_target"] = OrchestratorStatus.SEGMENT_TO_IA
 
                             stats["updated"] += 1

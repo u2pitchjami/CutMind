@@ -49,6 +49,7 @@ def validation_db(
     total = len(segments)
     valid_segments = []
     decisions = []
+    ia_return = []
 
     # --- Analyse en mémoire ---
     try:
@@ -64,7 +65,10 @@ def validation_db(
                     history.status = "ok"
                     history.message = f"Validation (confiance = {seg.confidence:.2f})"
                 else:
-                    decisions.append(seg)
+                    if not (desc_ok or cat_ok or kw_ok):
+                        ia_return.append(seg)
+                    else:
+                        decisions.append(seg)
                     history.status = "ko"
                     problems = []
                     if not desc_ok:
@@ -82,6 +86,11 @@ def validation_db(
         # auto_valid = valid_count == total
 
         # --- Si pas auto-validée : mise à jour simple ---
+        if ia_return:
+            with repo.transaction():
+                for seg in ia_return:
+                    seg.pipeline_target = OrchestratorStatus.SEGMENT_TO_IA
+                    repo.update_segment_validation(seg)
         if decisions:
             with repo.transaction():
                 for seg in decisions:
