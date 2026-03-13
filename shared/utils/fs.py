@@ -34,4 +34,4 @@ def safe_file_check(path: Path, logger: LoggerProtocol | None = None) -> None:
         logger.error("❌ Lecture impossible %s : %s", path, exc)
         raise RuntimeError(f"Lecture impossible : {path}") from exc
 
-    logger.debug("🟢 Fichier validé : %s", path)
+    logger.debug("🟢 Fichier valide : %s", path)

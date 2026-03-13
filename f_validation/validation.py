@@ -59,13 +59,21 @@ def validation_db(
                 cat_ok = bool(seg.category and seg.category.strip().lower() not in ("none", ""))
                 conf_ok = (seg.confidence or 0.0) >= min_confidence
                 kw_ok = bool(seg.keywords and len(seg.keywords) > 0)
+                logger.debug(
+                    "🔍 Segment %s : desc_ok=%s, cat_ok=%s, conf_ok=%s, kw_ok=%s",
+                    seg.uid,
+                    desc_ok,
+                    cat_ok,
+                    conf_ok,
+                    kw_ok,
+                )
 
                 if desc_ok and cat_ok and conf_ok and kw_ok:
                     valid_segments.append(seg)
                     history.status = "ok"
                     history.message = f"Validation (confiance = {seg.confidence:.2f})"
                 else:
-                    if not (desc_ok or cat_ok or kw_ok):
+                    if not desc_ok or not cat_ok or not kw_ok:
                         ia_return.append(seg)
                     else:
                         decisions.append(seg)
@@ -89,11 +97,13 @@ def validation_db(
         if ia_return:
             with repo.transaction():
                 for seg in ia_return:
+                    logger.debug("🔍 Segment %s nécessite une validation manuelle (IA)", seg.uid)
                     seg.pipeline_target = OrchestratorStatus.SEGMENT_TO_IA
                     repo.update_segment_validation(seg)
         if decisions:
             with repo.transaction():
                 for seg in decisions:
+                    logger.debug("🔍 Segment %s nécessite une validation manuelle (décision)", seg.uid)
                     seg.pipeline_target = OrchestratorStatus.SEGMENT_PENDING_CHECK
                     repo.update_segment_validation(seg)
         if valid_segments:
@@ -108,6 +118,7 @@ def validation_db(
         return {
             "uid": video.uid,
             "valid": valid_count,
+            "ia_return": len(ia_return),
             "total": total,
             "moved": False,
         }

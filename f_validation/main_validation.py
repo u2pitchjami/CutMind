@@ -18,8 +18,6 @@ def validation(
     logger.info("🚀 Démarrage de la Validation")
     logger.info("🎞️ Vidéo '%s' nb segments: %i", vid.name, len(segments))
     try:
-        valid_count = 0
-        manual_valid_count = 0
         logger.info("⭐ Lancement de la Validation pour %d segment de : %s", len(segments), vid.name)
         # --- Validation automatique ---
         try:
@@ -30,13 +28,13 @@ def validation(
                     result = validation_cut(video=vid, segments=segments, min_confidence=MIN_CONFIDENCE, logger=logger)
 
                 valid = result["valid"]
+                ia_return = result["ia_return"]
                 total = result["total"]
                 # moved = result["moved"]
-                no_valid = result["total"] - valid
+                manual_valid = result["total"] - valid - ia_return
 
             if valid:
                 logger.info("🎯 Auto-validation (%d/%d segments)", valid, total)
-                valid_count += 1
                 # if moved:
                 #     logger.info("🔀 %d Segments déplacés pour %s", len(moved))
                 #     valid_count += 1
@@ -48,15 +46,17 @@ def validation(
                 #     code=ErrCode.UNEXPECTED,
                 #     ctx=get_step_ctx({"name": video.name}),
                 # )
-            if no_valid:
-                logger.info("🕵️ Validation manuelle requise (%d/%d segments)", no_valid, total)
-                manual_valid_count += 1
+            if manual_valid:
+                logger.info("🕵️ Validation manuelle requise (%d/%d segments)", manual_valid, total)
+            if ia_return:
+                logger.info("🤖 Validation IA requise (%d/%d segments)", ia_return, total)
         except Exception as exc:
             logger.error("❌ Erreur sur %s : %s", vid.name, exc)
 
         logger.info(
-            f"✔️ Validation terminée : {valid} segments validés, {no_valid}\
-                à valider manuellement"
+            f"✔️ Validation terminée : {valid} segments validés,\
+{ia_return} segments à valider par l'IA,\
+{manual_valid} à valider manuellement"
         )
     except CutMindError as err:
         raise err.with_context(get_step_ctx({"name": vid.name, "status": status})) from err
