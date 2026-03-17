@@ -1,10 +1,10 @@
-from enum import Enum
+from enum import StrEnum
 
 from shared.models.db_models import Segment
 from shared.models.videoprep import VideoPrepared
 
 
-class BusinessAction(str, Enum):
+class BusinessAction(StrEnum):
     NONE = "none"
     TRASH = "trash"
     SEND_TO_IA = "send_to_ia"

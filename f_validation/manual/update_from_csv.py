@@ -92,6 +92,10 @@ def update_segments_csv(
                                 {"segment_id": seg_id, "action": "Cut Validation OK", "differences": "status"}
                             )
 
+                        if status in (OrchestratorStatus.SEGMENT_CUT_VALIDATED):
+                            new_data["status"] = OrchestratorStatus.SEGMENT_CUT_VALIDATED
+                            new_data["pipeline_target"] = OrchestratorStatus.SEGMENT_IN_CUT_VALIDATION
+
                         recut_points = parse_recut_points(status)
                         if recut_points:
                             perform_recut(segment, recut_points, logger=logger)

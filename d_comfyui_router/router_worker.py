@@ -22,6 +22,7 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
 from shared.services.file_mover import FileMover
 from shared.utils.config import COLOR_RED, COLOR_RESET, INPUT_DIR, OUTPUT_DIR
+from shared.utils.error import log_exception
 from shared.utils.logger import get_logger
 from shared.utils.settings import get_settings
 from shared.utils.trash import delete_files
@@ -100,6 +101,7 @@ class RouterWorker:
 
             except Exception as exc:
                 self.logger.exception("💥 Erreur Comfyui Router")
+                log_exception(self.logger, exc)
                 raise CutMindError(
                     "❌ Erreur inatendue durant l'envoi à Processor Comfyui.",
                     code=ErrCode.UNEXPECTED,

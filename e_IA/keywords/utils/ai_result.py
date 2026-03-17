@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import StrEnum
 from typing import TypedDict
 
 
@@ -9,6 +9,6 @@ class AIResult(TypedDict, total=False):
     interest_rating: float | None
 
 
-class AIOutputType(str, Enum):
+class AIOutputType(StrEnum):
     SCENE_ANALYSIS = "scene_analysis"
     SCENE_RATING = "scene_rating"

@@ -33,10 +33,11 @@ def detect_scene_changes_with_scores(video_path: Path, threshold: float = 0.005)
         scores = [float(m.group(1)) for m in RE_SCENE_SCORE.finditer(result.stderr)]
         return list(zip(times, scores, strict=False))
     except subprocess.CalledProcessError as err:
+        stderr = err.stderr.decode("utf-8", errors="replace") if err.stderr else "NO STDERR"
         raise CutMindError(
             "❌ Erreur FFMPEG lors de la détection de changements de scènes.",
             code=ErrCode.FFMPEG,
-            ctx=get_step_ctx({"video_path": video_path}),
+            ctx=get_step_ctx({"video_path": video_path, "stderr": stderr}),
         ) from err
     except Exception as exc:
         raise CutMindError(

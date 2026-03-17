@@ -28,6 +28,7 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.services.video_preparation import prepare_video
 from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import ERROR_DIR_SC, OUTPUT_DIR_SC, TRASH_DIR_SC
+from shared.utils.error import log_exception
 from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
 from shared.utils.trash import move_to_trash, purge_old_trash
@@ -214,6 +215,7 @@ def multi_stage_cut(
                     logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
                 repo.update_video(vid)
                 logger.error(f"Erreur durant le cut : {err}")
+                log_exception(logger, err)
                 raise CutMindError(
                     f"❌ Erreur lors cut Smartcut {vid.name}",
                     code=ErrCode.UNEXPECTED,

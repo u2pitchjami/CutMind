@@ -54,7 +54,10 @@ def convert_safe_video_format(video_path: str, output_path: str, logger: LoggerP
                 **{"tag:v": TAG_V},
             )
             .overwrite_output()
-            .run(quiet=True)
+            .run(
+                capture_stdout=True,
+                capture_stderr=True,
+            )
         )
 
     except ffmpeg.Error as exc:
@@ -63,5 +66,5 @@ def convert_safe_video_format(video_path: str, output_path: str, logger: LoggerP
         raise CutMindError(
             "[FFMPEG] ❌ Erreur dans la normalisation vidéo",
             code=ErrCode.FFMPEG,
-            ctx={"step": "convert_safe_video_format", "video_path": video_path},
+            ctx={"step": "convert_safe_video_format", "video_path": video_path, "stderr": stderr},
         ) from exc

@@ -238,8 +238,8 @@ class VideoProcessor:
             logger.info(f"✅ Terminé : {job.path.name}")
             return new_seg
 
-        except CutMindError as err:
-            raise err.with_context(get_step_ctx({"segment": self.segment.filename_predicted})) from err
+        except CutMindError:
+            raise
         except Exception as exc:
             raise CutMindError(
                 "❌ Erreur innatendue Processor Comfyui.",

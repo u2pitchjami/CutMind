@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class VideoStatus(str, Enum):
+class VideoStatus(StrEnum):
     INIT = "init"
     SCENES_DONE = "scenes_done"
     CUT_OK = "cut_ok"
@@ -26,7 +26,7 @@ class VideoStatus(str, Enum):
     VALIDATED_CHECK = "validated_check"
 
 
-class SegmentStatus(str, Enum):
+class SegmentStatus(StrEnum):
     RAW = "raw"
     CUT_OK = "cut_ok"
     CUT_VALIDATED = "cut_validated"

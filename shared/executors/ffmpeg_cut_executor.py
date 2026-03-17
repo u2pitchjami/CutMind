@@ -52,7 +52,7 @@ class FfmpegCutExecutor:
                 ffmpeg.input(str(input_file))
                 .output(
                     str(output_file),
-                    ss=start,  # seek précis (après -i)
+                    ss=start,
                     to=end,
                     vcodec=VCODEC,
                     preset=PRESET,
@@ -72,12 +72,15 @@ class FfmpegCutExecutor:
                     **{"tag:v": TAG_V},
                 )
                 .overwrite_output()
-                .run(quiet=True)
+                .run(
+                    capture_stdout=True,
+                    capture_stderr=True,
+                )
             )
 
         except ffmpeg.Error as exc:
-            stderr = exc.stderr.decode("utf-8", errors="replace") if exc.stderr else ""
-            logger.error("FFmpeg failed. stderr:\n%s", stderr)
+            stderr = exc.stderr.decode("utf-8", errors="replace") if exc.stderr else "NO STDERR"
+
             raise CutMindError(
                 "❌ Erreur technique pendant le cut de la vidéo.",
                 code=ErrCode.FFMPEG,
@@ -87,13 +90,7 @@ class FfmpegCutExecutor:
                         "start": start,
                         "end": end,
                         "output_path": output_path,
+                        "stderr": stderr,
                     }
                 ),
             ) from exc
-
-        if not output_file.exists():
-            raise CutMindError(
-                "❌ Le segment n'a pas été généré.",
-                code=ErrCode.FFMPEG,
-                ctx=get_step_ctx({"output_path": output_path}),
-            )

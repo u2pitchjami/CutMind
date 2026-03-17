@@ -1,12 +1,12 @@
 # exceptions.py
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 import inspect
 from typing import Any
 
 
-class ErrCode(str, Enum):
+class ErrCode(StrEnum):
     FFMPEG = "FFMPEG"
     BADFORMAT = "BADFORMAT"
     FILE_ERROR = "FILE_ERROR"

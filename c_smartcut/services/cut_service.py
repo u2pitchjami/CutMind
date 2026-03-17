@@ -8,6 +8,8 @@ from g_check.histo.processing_log import processing_step
 from shared.executors.ffmpeg_cut_executor import FfmpegCutExecutor
 from shared.models.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.utils.error import log_exception
+from shared.utils.logger import ensure_logger
 
 
 @dataclass
@@ -58,6 +60,8 @@ class CutService:
                         history.message = message
 
                     except Exception as exc:
+                        logger = ensure_logger(None, __name__)
+                        log_exception(logger, exc)
                         raise CutMindError(
                             "Erreur ffmpeg pendant le cut",
                             code=ErrCode.FFMPEG,
