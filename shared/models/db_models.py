@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 import uuid
 
-from e_IA.keywords.frames.frames_hash import SegmentFrameHash
+from IA.keywords.frames.frames_hash import SegmentFrameHash
 from shared.models.exceptions import CutMindError, ErrCode
 from shared.status_orchestrator.statuses import OrchestratorStatus
 

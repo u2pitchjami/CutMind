@@ -42,6 +42,7 @@ class SegmentStatus(StrEnum):
     IN_CONFIDENCE = "in_confidence"
     TO_MOVE = "to_move"
     TO_IA = "IA"
+    TO_CUT = "to_cut"
     VALIDATED_CHECK = "validated_check"
 
 
@@ -55,6 +56,7 @@ class OrchestratorStatus:
     VIDEO_CUT_DONE = VideoStatus.CUT_OK
 
     SEGMENT_INIT = SegmentStatus.RAW
+    SEGMENT_READY_FOR_CUT = SegmentStatus.TO_CUT
     SEGMENT_CUT_DONE = SegmentStatus.CUT_OK
 
     # --- Validation cuts ---

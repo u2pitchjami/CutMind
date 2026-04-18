@@ -23,6 +23,7 @@ class FfmpegCutExecutor:
         logger: LoggerProtocol | None = None,
     ) -> None:
         logger = ensure_logger(logger, __name__)
+        logger.debug(f"Cut FFMPEG : {input_path} [{start} - {end}] -> {output_path}")
         settings = get_settings()
 
         PRESET: str = settings.ffsmartcut.preset
@@ -43,8 +44,9 @@ class FfmpegCutExecutor:
 
         input_file = Path(input_path)
         output_file = Path(output_path)
-
+        logger.debug(f"Cut FFMPEG - input file: {input_file}, output file: {output_file}")
         if not input_file.exists():
+            logger.debug(f"Input video not found: {input_file}")
             raise FileNotFoundError(f"Input video not found: {input_path}")
 
         try:
@@ -77,9 +79,10 @@ class FfmpegCutExecutor:
                     capture_stderr=True,
                 )
             )
-
+            logger.debug(f"Cut FFMPEG succeeded: {output_path}")
         except ffmpeg.Error as exc:
             stderr = exc.stderr.decode("utf-8", errors="replace") if exc.stderr else "NO STDERR"
+            logger.debug("FFmpeg cut failed. stderr:\n%s", stderr)
 
             raise CutMindError(
                 "❌ Erreur technique pendant le cut de la vidéo.",

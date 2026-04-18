@@ -20,7 +20,7 @@ def main() -> None:
 
     bootstrap_process(logger=logger)
 
-    from a_orchestrators.master import run_master
+    from orchestrators.master import run_master
 
     run_master(logger=logger)
     # launcher = VideoFlowLauncherV2()

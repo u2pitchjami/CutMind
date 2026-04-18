@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import random
 
-from a_orchestrators.cutmind_or.orchestrator import CutMindOrchestratorV2
-from b_db.repository import CutMindRepository
-from e_IA.ia_worker_process import run_ia_for_video
+from db.repository import CutMindRepository
+from IA.ia_worker_process import run_ia_for_video
+from orchestrators.cutmind_or.orchestrator import CutMindOrchestratorV2
 from shared.models.db_models import Segment, Video
 from shared.status_orchestrator.statuses import SegmentStatus
 from shared.utils.logger import get_logger
