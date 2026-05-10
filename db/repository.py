@@ -886,15 +886,21 @@ class CutMindRepository:
                     SELECT 1
                     FROM segments s
                     WHERE s.video_id = v.id
+                    AND s.status != %s
                 )
                 AND NOT EXISTS (
                     SELECT 1
                     FROM segments s
                     WHERE s.video_id = v.id
+                    AND s.status != %s
                     AND s.pipeline_target IN ('VALIDATION', 'VALIDATION_CUT')
-                )
-            """
-            rows = self._fetch_all(query)
+                )"""
+            params = (
+                OrchestratorStatus.SEGMENT_VALIDATED_CHECK,
+                OrchestratorStatus.SEGMENT_VALIDATED_CHECK,
+            )
+
+            rows = self._fetch_all(query, params)
             return [Video.from_row(row) for row in rows]
 
         except CutMindError as err:
