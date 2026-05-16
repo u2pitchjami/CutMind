@@ -58,6 +58,7 @@ class CutWorker:
                     output_path=seg.output_path,
                 )
             )
+            Path(seg.output_path).parent.mkdir(parents=True, exist_ok=True)
         self.logger.info("🚀 Démarrage CutWorker : %s)", self.video.name)
         if not self.video or not self.video.video_path:
             self.logger.warning("⚠️ Vidéo introuvable")
