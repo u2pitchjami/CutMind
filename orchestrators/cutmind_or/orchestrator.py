@@ -47,25 +47,25 @@ class CutMindOrchestratorV2:
         self.logger.info("🎛️ Orchestration V2 démarrée pour video %s", video.id)
 
         # 1️⃣ Move post-cut
-        # self._maybe_run_cut(video)
+        self._maybe_run_cut(video)
 
         # 1️⃣ Move post-cut
-        # self._maybe_run_move(video)
+        self._maybe_run_move(video)
 
         # 1️⃣ Enhancement
         self._maybe_run_enhancement(video)
 
         # 2️⃣ IA
-        # self._maybe_run_ia(video)
+        self._maybe_run_ia(video)
 
         # 3️⃣ Confidence
-        # self._maybe_run_confidence(video)
+        self._maybe_run_confidence(video)
 
         # 4️⃣ Validation finale
-        # self._maybe_run_validation(video)
+        self._maybe_run_validation(video)
 
         # 4️⃣ Validation finale
-        # self._maybe_run_final_check(video)
+        self._maybe_run_final_check(video)
 
         # 5️⃣ Recalcul statut vidéo (projection)
         vid, _seg = self._reload_video_and_segments(video.id)
