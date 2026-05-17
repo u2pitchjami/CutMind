@@ -7,7 +7,53 @@ from pathlib import Path
 import shutil
 
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
+
+
+def cleanup_processing_dirs(
+    temp_dirs: list[Path],
+    keep_temp_files: bool = False,
+    logger: LoggerProtocol | None = None,
+) -> None:
+    """Clean processing directories content."""
+
+    logger = ensure_logger(
+        logger,
+        __name__,
+    )
+
+    if keep_temp_files:
+        logger.info("KEEP_TEMP_FILES=true → nettoyage ignoré")
+        return
+
+    for temp_dir in temp_dirs:
+        if not temp_dir.exists():
+            continue
+
+        logger.info(
+            "Nettoyage : %s",
+            temp_dir,
+        )
+
+        try:
+            for item in temp_dir.iterdir():
+                if item.is_dir():
+                    shutil.rmtree(item)
+
+                else:
+                    item.unlink()
+
+            logger.info(
+                "✅ Nettoyage terminé : %s",
+                temp_dir,
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "Erreur nettoyage %s : %s",
+                temp_dir,
+                exc,
+            )
 
 
 def delete_files(path: Path, ext: str = "*.jpg") -> None:
@@ -51,7 +97,6 @@ def move_to_trash(file_path: Path, trash_root: Path) -> Path:
         ) from exc
 
 
-@with_child_logger
 def purge_old_trash(trash_root: Path, days: int = 7, logger: LoggerProtocol | None = None) -> None:
     logger = ensure_logger(logger, __name__)
     now = datetime.now()

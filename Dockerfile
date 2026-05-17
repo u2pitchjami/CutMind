@@ -3,7 +3,7 @@
 # ============================================================
 
 # ---- 1️⃣ Base : Ubuntu + CUDA 12.4 runtime ----
-FROM nvidia/cuda:13.1.1-cudnn-runtime-ubuntu24.04
+FROM nvidia/cuda:13.1.2-cudnn-runtime-ubuntu24.04
 
 
 # --- 1️⃣ Configuration de base ---
@@ -17,15 +17,23 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     gnupg \
-    libgl1 \
     python3 python3-pip python3-dev \
     tzdata \
- && ln -snf /usr/share/zoneinfo/Europe/Paris /etc/localtime \
- && echo "Europe/Paris" > /etc/timezone \
- && add-apt-repository -y ppa:ubuntuhandbook1/ffmpeg8 \
- && apt-get update \
- && apt-get install -y ffmpeg \
- && apt-get clean && rm -rf /var/lib/apt/lists/*
+    libvulkan1 \
+    vulkan-tools \
+    pciutils \
+    mesa-utils \
+    && ln -snf /usr/share/zoneinfo/Europe/Paris /etc/localtime \
+    && echo "Europe/Paris" > /etc/timezone \
+    && add-apt-repository -y ppa:ubuntuhandbook1/ffmpeg8 \
+    && apt-get update \
+    && apt-get install -y ffmpeg \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+    # WARNING:
+        # Do not install mesa-vulkan-drivers or libvulkan-dev.
+        # These packages caused Vulkan/NVIDIA ICD issues in Docker
+        # and broke GPU detection for RIFE/Real-ESRGAN.
 
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 # ---- 4️⃣ Vérification de ffmpeg ---

@@ -103,12 +103,22 @@ def load_prompts() -> dict[str, str]:
 
 INPUT_DIR: Path = Path(get_path_required("INPUT_DIR"))
 OUTPUT_DIR: Path = Path(get_path_required("OUTPUT_DIR"))
+TEMP_DIR: Path = Path(get_path_required("TEMP_DIR"))
 WORKFLOW_DIR: Path = Path(get_path_required("WORKFLOW_DIR"))
 TRASH_DIR: Path = Path(get_str("TRASH_DIR", ".trash"))
 OK_DIR: Path = Path(get_str("OK_DIR", "truc"))
 COMFY_URL: str = get_required("COMFY_URL")
 HOST_ROOT: Path = Path(get_path_required("HOST_ROOT"))
 VISIBLE_ROOT: Path = Path(get_path_required("VISIBLE_ROOT"))
+REALESRGAN_MODEL_DIR: Path = Path(get_path_required("REALESRGAN_MODEL_DIR"))
+RIFE_MODEL_DIR: Path = Path(get_path_required("RIFE_MODEL_DIR"))
+REALESRGAN_BIN: Path = Path(get_path_required("REALESRGAN_BIN"))
+RIFE_BIN: Path = Path(get_path_required("RIFE_BIN"))
+TEMP_AUDIO_DIR: Path = Path(get_path_required("TEMP_AUDIO_DIR"))
+TEMP_FRAMES_INPUT_DIR: Path = Path(get_path_required("TEMP_FRAMES_INPUT_DIR"))
+TEMP_FRAMES_RIFE_DIR: Path = Path(get_path_required("TEMP_FRAMES_RIFE_DIR"))
+TEMP_FRAMES_UPSCALED_DIR: Path = Path(get_path_required("TEMP_FRAMES_UPSCALED_DIR"))
+
 
 WORKFLOW_MAP: dict[str, Path] = {
     "1080p": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 1080p.json",

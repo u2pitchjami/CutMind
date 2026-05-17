@@ -18,7 +18,6 @@ from typing import Any
 from pymysql.connections import Connection
 
 from check.histo.processing_histo import ProcessingHistory
-from comfyui_router.models_cr.processed_segment import ProcessedSegment
 from db.db_connection import db_conn, get_dict_cursor
 from db.db_utils import safe_execute_dict, to_db_json
 from db.models.cursor_protocol import DictCursorProtocol
@@ -28,6 +27,7 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.services.video_preparation import VideoPrepared
 from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.logger import get_logger
+from video_enhancer.models_cr.processed_segment import ProcessedSegment
 
 
 # =====================================================================

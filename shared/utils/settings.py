@@ -134,6 +134,11 @@ class ProcessorSettings:
     cleanup: bool
     delta_duration: int
     ratio_duration: float
+    keep_temp_files: bool
+    realesrgan_model: str
+    rife_model: str
+    g_param: int
+    j_param: str
 
 
 @dataclass
@@ -188,6 +193,7 @@ def init_settings(config: Any) -> None:
 
     sc = config.smartcut
     rt = config.comfyui_router
+    er = config.enhancer_router
 
     SETTINGS = Settings(
         smartcut=SmartcutCoreSettings(
@@ -222,7 +228,7 @@ def init_settings(config: Any) -> None:
             forbidden_hours=rt["orchestrator"]["router_forbidden_hours"],
         ),
         router_optimal_batch_size=OptimalBatchSizeSettings(min_size=rt["optimal_batch_size"]["min_size"]),
-        router_processor=ProcessorSettings(**rt["processor"]),
+        router_processor=ProcessorSettings(**er["processor"]),
         router_wait_output=WaitOutputSettings(**rt["wait_for_output"]),
         adaptive_batch=rt["adaptive_batch"],  # ← laissé en dict volontairement
     )

@@ -8,7 +8,7 @@ class ProcessedSegment:
 
     # --- Nouveau statut après traitement ---
     status: str
-    source_flow: str = "comfyui_router"
+    source_flow: str = "enhancer_router"
 
     # --- Métadonnées modifiées par ComfyUI ---
     fps: float | None = None

@@ -15,26 +15,34 @@ from pathlib import Path
 
 from check.histo.processing_checks import evaluate_comfyui_output
 from check.histo.processing_log import processing_step
-from comfyui_router.models_cr.processor import VideoProcessor
 from db.repository import CutMindRepository
 from shared.models.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
 from shared.services.file_mover import FileMover
-from shared.utils.config import COLOR_RED, COLOR_RESET, INPUT_DIR, OUTPUT_DIR
+from shared.utils.config import (
+    COLOR_RED,
+    COLOR_RESET,
+    INPUT_DIR,
+    TEMP_AUDIO_DIR,
+    TEMP_FRAMES_INPUT_DIR,
+    TEMP_FRAMES_RIFE_DIR,
+    TEMP_FRAMES_UPSCALED_DIR,
+)
 from shared.utils.error import log_exception
 from shared.utils.logger import get_logger
 from shared.utils.settings import get_settings
-from shared.utils.trash import delete_files
+from shared.utils.trash import cleanup_processing_dirs, delete_files
+from video_enhancer.models_cr.processor import VideoProcessor
 
 
-class RouterWorker:
+class EnhancerWorker:
     """
     Gère l'envoi automatique des segments non conformes vers ComfyUI Router.
     """
 
     def __init__(self, vid: Video, segments: list[Segment]):
-        self.logger = get_logger("CutMind-Comfyui_Router")
+        self.logger = get_logger("CutMind-Enhancement")
         self.video = vid
         self.segments = segments
         self.file_mover = FileMover()
@@ -51,7 +59,8 @@ class RouterWorker:
         settings = get_settings()
         forbidden_hours = settings.router_orchestrator.forbidden_hours
         FORCE_DEINTERLACE = settings.router_processor.force_deinterlace
-        self.logger.info("🚀 Démarrage Router Worker")
+        KEEP_TEMP_FILES = settings.router_processor.keep_temp_files
+        self.logger.info("🚀 Démarrage Enhancer Worker")
         if not self.video:
             self.logger.warning("⚠️ Vidéo introuvable")
             return 0
@@ -61,18 +70,29 @@ class RouterWorker:
 
         # 1️⃣ Sélectionner les vidéos concernées
         repo = CutMindRepository()
-
         self.logger.info("🎞️ Vidéo '%s' nb segments: %i", self.video.name, len(self.segments))
+
+        delete_files(path=INPUT_DIR, ext="*.mp4")
+        processing_dirs = [
+            TEMP_AUDIO_DIR,
+            TEMP_FRAMES_INPUT_DIR,
+            TEMP_FRAMES_RIFE_DIR,
+            TEMP_FRAMES_UPSCALED_DIR,
+        ]
+
+        cleanup_processing_dirs(
+            processing_dirs,
+            KEEP_TEMP_FILES,
+            self.logger,
+        )
 
         # 3️⃣ Transaction : copie + maj DB
         with Timer(f"Traitement Comfyui pour la vidéo : {self.video.name}", self.logger):
             try:
-                delete_files(path=INPUT_DIR, ext="*.mp4")
-
                 for seg, src, dst in prepared:
-                    with processing_step(self.video, seg, action="Comfyui Router") as history:
+                    with processing_step(self.video, seg, action="Enhancer Router") as history:
                         self.file_mover.safe_copy(src, dst)
-                        seg.source_flow = "comfyui_router"
+                        seg.source_flow = "enhancer_router"
                         repo.update_segment_validation(seg)
 
                         # --- DÉCISION INTELLIGENTE ---
@@ -80,8 +100,6 @@ class RouterWorker:
                         router_allowed = current_hour not in forbidden_hours
                         if router_allowed:
                             with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
-                                delete_files(path=OUTPUT_DIR, ext="*.png")
-                                delete_files(path=OUTPUT_DIR, ext="*.mp4")
                                 processor = VideoProcessor(segment=seg, logger=self.logger)
                                 new_seg = processor.process(Path(dst), FORCE_DEINTERLACE, logger=self.logger)
                                 repo.update_segment_postprocess(new_seg)
@@ -98,7 +116,6 @@ class RouterWorker:
                             history.status = "ko"
                             history.message = "Plage horaire silencieuse — Analyse IA désactivé"
                             return processed_count
-
             except Exception as exc:
                 self.logger.exception("💥 Erreur Comfyui Router")
                 log_exception(self.logger, exc)
@@ -113,6 +130,13 @@ class RouterWorker:
         else:
             self.logger.info("✅ %d segments envoyés et traités via Router.", processed_count)
 
+        cleanup_processing_dirs(
+            processing_dirs,
+            KEEP_TEMP_FILES,
+            self.logger,
+        )
+
+        self.logger.info("🚚  %d fichiers temporaires supprimés.", len(processing_dirs))
         self.logger.info("🏁 Cycle RouterWorker terminé.")
         return processed_count
 

@@ -4,17 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from comfyui_router.executors.comfyui.comfyclient import ComfyClientREST
-from comfyui_router.executors.comfyui.comfyui_command import comfyui_path
-from comfyui_router.executors.comfyui.wait_for_comfyui import wait_for_comfyui
-from comfyui_router.executors.output import cleanup_outputs
-from comfyui_router.ffmpeg.ffmpeg_command import convert_to_60fps
-from comfyui_router.models_cr.comfy_workflow_manager import ComfyWorkflowManager
-from comfyui_router.models_cr.output_manager import OutputManager
-from comfyui_router.models_cr.processed_segment import ProcessedSegment
-from comfyui_router.models_cr.videojob import VideoJob
 from shared.executors.ffmpeg_utils import detect_nvenc_available
-from shared.executors.ffprobe_utils import get_fps, get_resolution, get_total_frames, has_audio
+from shared.executors.ffprobe_utils import (
+    get_fps,
+    get_resolution,
+    get_total_frames,
+    has_audio,
+)
 from shared.models.db_models import Segment
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.services.ensure_deinterlaced import ensure_deinterlaced
@@ -31,14 +27,28 @@ from shared.utils.config import (
     COLOR_RED,
     COLOR_RESET,
     COLOR_YELLOW,
-    OK_DIR,
     OUTPUT_DIR,
+    REALESRGAN_BIN,
+    REALESRGAN_MODEL_DIR,
+    RIFE_BIN,
+    RIFE_MODEL_DIR,
+    TEMP_AUDIO_DIR,
+    TEMP_FRAMES_INPUT_DIR,
+    TEMP_FRAMES_RIFE_DIR,
+    TEMP_FRAMES_UPSCALED_DIR,
     TRASH_DIR,
 )
 from shared.utils.datas import resolution_str_to_tuple
 from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 from shared.utils.settings import get_settings
 from shared.utils.trash import purge_old_trash
+from video_enhancer.executors.interpolator import interpolate_frames_with_rife
+from video_enhancer.executors.upscaler import upscale_frames_with_realesrgan
+from video_enhancer.ffmpeg.ffmpeg_command import convert_to_60fps
+from video_enhancer.ffmpeg.frames_extract import extract_all_frames
+from video_enhancer.ffmpeg.rebuilder import rebuild_video_from_frames
+from video_enhancer.models_cr.processed_segment import ProcessedSegment
+from video_enhancer.models_cr.videojob import VideoJob
 
 
 class VideoProcessor:
@@ -49,23 +59,23 @@ class VideoProcessor:
         logger: LoggerProtocol | None = None,
     ) -> None:
         logger = ensure_logger(logger, __name__)
-        self.workflow_mgr = ComfyWorkflowManager()
-        self.output_mgr = OutputManager()
         self.segment = segment
 
     @with_child_logger
     def process(
-        self, video_path: Path, force_deinterlace: bool = False, logger: LoggerProtocol | None = None
+        self,
+        video_path: Path,
+        force_deinterlace: bool = False,
+        logger: LoggerProtocol | None = None,
     ) -> ProcessedSegment:
         logger = ensure_logger(logger, __name__)
         settings = get_settings()
+        RIFE_MODEL = settings.router_processor.rife_model
+        REALESRGAN_MODEL = settings.router_processor.realesrgan_model
         CLEANUP = settings.router_processor.cleanup
         PURGE_DAYS = settings.router_processor.purge_days
         DELTA_DURATION = settings.router_processor.delta_duration
         RATIO_DURATION = settings.router_processor.ratio_duration
-        STABLE_TIME = settings.router_wait_output.stable_time
-        CHECK_INTERVAL = settings.router_wait_output.check_interval
-        TIMEOUT = settings.router_wait_output.timeout
         if not self.segment or not self.segment.output_path or not self.segment.id or not self.segment.uid:
             raise CutMindError(
                 "❌ Erreur inattendue : Vidéo inconnue.",
@@ -78,25 +88,35 @@ class VideoProcessor:
         )
 
         try:
-            output_path: Path | None = None
-            job = VideoJob(video_path)
-            job.fps_in = self.segment.fps or get_fps(video_path)
-            job.resolution = (
-                resolution_str_to_tuple(self.segment.resolution)
-                if self.segment.resolution
-                else resolution_str_to_tuple(get_resolution(video_path))
+            job = VideoJob(
+                path=video_path,
+                work_key=f"seg_{self.segment.id}_{self.segment.uid}",
+                fps_in=self.segment.fps or get_fps(video_path),
+                resolution=(
+                    resolution_str_to_tuple(self.segment.resolution)
+                    if self.segment.resolution
+                    else resolution_str_to_tuple(get_resolution(video_path))
+                ),
+                has_audio=self.segment.has_audio or has_audio(video_path),
+                nb_frames=self.segment.nb_frames or get_total_frames(video_path),
+                codec_in=self.segment.codec,
+                bitrate_in=self.segment.bitrate,
+                filesize_mb_in=(
+                    self.segment.filesize_mb
+                    if self.segment.filesize_mb
+                    else round(video_path.stat().st_size / (1024 * 1024), 2)
+                ),
+                duration_in=(
+                    self.segment.duration
+                    if self.segment.duration
+                    else prepare_video(video_path, logger=logger).duration
+                ),
             )
-            job.has_audio = self.segment.has_audio or has_audio(video_path)
-            job.nb_frames = self.segment.nb_frames or get_total_frames(video_path)
-            job.codec_in = self.segment.codec
-            job.bitrate_in = self.segment.bitrate
-            job.filesize_mb_in = (
-                self.segment.filesize_mb
-                if self.segment.filesize_mb
-                else round(video_path.stat().st_size / (1024 * 1024), 2)
-            )
-            job.duration_in = (
-                self.segment.duration if self.segment.duration else prepare_video(video_path, logger=logger).duration
+
+            logger.info(
+                "Processing plan | upscale=%s | rife_passes=%s",
+                job.upscale_factor,
+                job.rife_passes,
             )
 
             use_nvenc = detect_nvenc_available()
@@ -105,52 +125,77 @@ class VideoProcessor:
             else:
                 cuda = False
 
-            if not wait_for_comfyui(logger):
-                raise CutMindError(
-                    "❌ Comfyui injoignable.",
-                    code=ErrCode.VIDEO,
-                    ctx=get_step_ctx({"video_path": str(video_path)}),
-                )
-
-            # 🧩 Étape 2 : détection / désentrelacement
+            # 🧩 Étape 1 : détection / désentrelacement
             job.path = ensure_deinterlaced(video_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
-            job.comfyui_path = comfyui_path(full_path=job.path)
-            workflow = self.workflow_mgr.prepare_workflow(job, logger=logger)
-            logger.debug(f"✅ Workflow préparé : {workflow is not None}")
-            if workflow:
-                # --- Lancement ComfyUI via REST
-                client = ComfyClientREST()
 
-                client.set_on_start(lambda pid: logger.info(f"🚀 ComfyUI job démarré : {pid}"))
-                client.set_on_progress(lambda pid, status: logger.info(f"⏳ ComfyUI [{pid}] statut REST = {status}"))
-                client.set_on_error(lambda pid, err: logger.error(f"❌ ComfyUI erreur [{pid}] : {err}"))
-                client.set_on_complete(lambda pid, files: logger.info(f"🎉 ComfyUI terminé REST [{pid}] : {files}"))
+            # 🧩 Étape 2 : extraction des images
+            frames_dir, audio_path = extract_all_frames(
+                video_path=job.path,
+                frames_output_dir=TEMP_FRAMES_INPUT_DIR / job.work_key,
+                audio_output_path=TEMP_AUDIO_DIR / job.work_key / "audio.m4a",
+                has_audio=job.has_audio,
+                logger=logger,
+            )
 
-                # 🟦 Étape 1 : envoi du workflow
-                prompt_id = client.submit_prompt(workflow)
+            # 🧩 Étape 3 : Real-ESRGAN
+            current_frames_dir = frames_dir
 
-                # 🟧 Étape 2 : Attente REST LIGHT (ne bloque pas le Processor longtemps)
-                client.wait_for_completion(
-                    prompt_id,
-                    timeout=20,  # Très court → juste vérifier que le workflow part bien
-                    poll_interval=1.0,
+            if job.upscale_factor is not None:
+                current_frames_dir = upscale_frames_with_realesrgan(
+                    input_dir=current_frames_dir,
+                    output_dir=TEMP_FRAMES_UPSCALED_DIR / job.work_key,
+                    upscale_factor=job.upscale_factor,
+                    realesrgan_bin=REALESRGAN_BIN,
+                    model_dir=REALESRGAN_MODEL_DIR,
+                    model_name=REALESRGAN_MODEL,
+                    logger=logger,
                 )
 
-                logger.info("📡 ComfyUI REST OK → surveillance réelle par OutputManager...")
+            # 🧩 Étape 4 : Rife
+            rife_root_dir = TEMP_FRAMES_RIFE_DIR / job.work_key
 
-                # 🟥 Étape 3 : attente basée sur le vrai fichier généré
-                output_path = self.output_mgr.wait_for_output(
-                    video_job=job, stable_time=STABLE_TIME, poll_interval=CHECK_INTERVAL, timeout=TIMEOUT, logger=logger
+            if job.rife_passes > 0:
+                current_frames_dir = interpolate_frames_with_rife(
+                    input_dir=current_frames_dir,
+                    output_dir=rife_root_dir,
+                    rife_bin=RIFE_BIN,
+                    model_dir=RIFE_MODEL_DIR / RIFE_MODEL,
+                    passes=job.rife_passes,
+                    logger=logger,
                 )
 
-                if output_path is None:
-                    raise CutMindError(
-                        "❌ Workflow ComfyUI terminé mais aucun fichier de sortie détecté.",
-                        code=ErrCode.VIDEO,
-                        ctx=get_step_ctx({"video_path": str(video_path)}),
-                    )
+            # 🧩 Étape 5 : rebuild
+            rebuilt_path = OUTPUT_DIR / f"{job.work_key}_rebuilt.mp4"
 
-            job.path = output_path if output_path else job.path
+            job.path = rebuild_video_from_frames(
+                frames_dir=current_frames_dir,
+                output_path=rebuilt_path,
+                fps=job.fps_in * (2**job.rife_passes),
+                audio_path=audio_path,
+                has_audio=job.has_audio,
+                logger=logger,
+            )
+
+            # 🧩 Étape 6 : Check
+            meta = prepare_video(job.path, logger=logger)
+            job.fps_out = meta.fps
+            job.resolution_out = resolution_str_to_tuple(meta.resolution)
+
+            # 🧩 Étape 7 : Fix Resolution
+            res_out = job.resolution_out
+            job.path, job.resolution_out = ensure_resolution(job.path, job.resolution_out, logger=logger)
+            if job.resolution_out != res_out:
+                self.segment.add_tag("resolution_fixed")
+
+            # 🧩 Étape 8 : Fix FPS
+            if job.fps_out > 60:
+                temp_output = job.path.with_name(f"{job.path.stem}_60fps.mp4")
+                logger.debug(f"fps_out > 60 -> temp_output : {temp_output}")
+                job.path = convert_to_60fps(job.path, temp_output)
+                logger.info(f"✅ Conversion 60 FPS terminée : {job.path.stem}")
+                job.fps_out = get_fps(job.path)
+
+            # 🧩 Étape 9 : Smart Recut
             logger.info(f"🔧 Fichier à recouper intelligemment : {job.path}")
             logger.info(
                 "smart_recut_hybrid input | exists=%s size=%d path=%s",
@@ -160,19 +205,6 @@ class VideoProcessor:
             )
             job.path = smart_recut_hybrid(job.path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
             logger.info(f"✅ Smart recut terminé : {job.path}")
-            # 🔧 Définition officielle du fichier final
-            logger.info(f"📦 Fichier final détecté : {job.path}")
-
-            meta = prepare_video(job.path, logger=logger)
-            job.fps_out = meta.fps
-            job.resolution_out = resolution_str_to_tuple(meta.resolution)
-            # job.path = OK_DIR / job.path.name
-            res_out = job.resolution_out
-            job.path, job.resolution_out = ensure_resolution(job.path, job.resolution_out, logger=logger)
-            if job.resolution_out != res_out:
-                self.segment.add_tag("resolution_fixed")
-            logger.debug(f"✅ OK_DIR : {OK_DIR}, TRASH_DIR : {TRASH_DIR}")
-            logger.debug(f"✅ Fichier de sortie trouvé : {job.path}")
 
             try:
                 if meta.duration and self.segment.duration:
@@ -194,29 +226,25 @@ class VideoProcessor:
                             self.segment.add_tag("duration_warning")
                             logger.debug(f"Tag ajouté : self.segment.tags = {self.segment.tags}")
                 elif not meta.duration:
-                    logger.warning("⏱️ Impossible de lire la durée de sortie pour %s", job.path.name)
+                    logger.warning(
+                        "⏱️ Impossible de lire la durée de sortie pour %s",
+                        job.path.name,
+                    )
 
             except Exception as dur_err:
                 logger.error("❌ Erreur analyse durée finale : %s", job.path)
                 logger.exception(str(dur_err))
 
-            if job.fps_out > 60:
-                temp_output = job.path.with_name(f"{job.path.stem}_60fps.mp4")
-                logger.debug(f"fps_out > 60 -> temp_output : {temp_output}")
-                job.path = convert_to_60fps(job.path, temp_output)
-                logger.info(f"✅ Conversion 60 FPS terminée : {job.path.stem}")
-                job.fps_out = get_fps(job.path)
-
-            # move_to_trash(file_path=job.path, trash_root=TRASH_DIR)
+            # 🧩 Étape 10 : Move
             logger.debug(f"for _notif -> final_output : {job.path}")
             self._notify_cutmind(job, logger=logger)
             logger.debug("sortie notify")
-            # --- Mise à jour DB
 
+            # 🧩 Étape 11 : Mise à jour DB
             new_seg = ProcessedSegment(
                 id=self.segment.id,
                 status=OrchestratorStatus.SEGMENT_ENHANCED,
-                source_flow="comfyui_router" if workflow else "smart_recut_only",
+                source_flow=f"upscale_factor={job.upscale_factor} | rife_passes={job.rife_passes}",
                 fps=job.fps_out,
                 resolution=meta.resolution,
                 nb_frames=meta.nb_frames,
@@ -225,14 +253,13 @@ class VideoProcessor:
                 filesize_mb=meta.filesize_mb,
                 tags=self.segment.tags,
                 duration=meta.duration,
-                processed_by="comfyui_router" if workflow else "smart_recut_only",
+                processed_by="enhancer_router",
                 output_path=Path(self.segment.output_path),
             )
             logger.debug(f"new_seg : {new_seg}")
             self.log_summary(job=job, meta=meta, logger=logger)
             logger.debug("sortie summary")
-            cleanup_outputs(video_path.stem, job.path, OUTPUT_DIR)
-            logger.debug(f"🧹 Supprimé : {video_path.stem}")
+
             purge_old_trash(trash_root=TRASH_DIR, days=PURGE_DAYS, logger=logger)
             logger.info(f"🧹 Nettoyage des fichiers intermédiaires terminé pour {video_path.stem}")
             logger.info(f"✅ Terminé : {job.path.name}")
@@ -242,9 +269,14 @@ class VideoProcessor:
             raise
         except Exception as exc:
             raise CutMindError(
-                "❌ Erreur innatendue Processor Comfyui.",
+                "❌ Erreur innatendue Enhancer.",
                 code=ErrCode.UNEXPECTED,
-                ctx=get_step_ctx({"job.path.name": job.path.name, "segment": self.segment.filename_predicted}),
+                ctx=get_step_ctx(
+                    {
+                        "job.path.name": job.path.name,
+                        "segment": self.segment.filename_predicted,
+                    }
+                ),
             ) from exc
 
     @with_child_logger
@@ -273,13 +305,19 @@ class VideoProcessor:
             target_path.parent.mkdir(parents=True, exist_ok=True)
             logger.debug(f"🔄 Remplacement direct par copie transactionnelle : {job.path} → {target_path}")
 
-            # --- ⚠️ Vérification durée avant remplacement ---
-
             # --- 🛠️ Remplacement
             try:
-                logger.debug("appel safe_replace : final_output=%s, target_path=%s", job.path, target_path)
+                logger.debug(
+                    "appel safe_replace : final_output=%s, target_path=%s",
+                    job.path,
+                    target_path,
+                )
                 FileMover.safe_replace(job.path, target_path, logger)
-                logger.info("📦 Fichier remplacé (via safe_copy) : %s → %s", job.path.name, target_path)
+                logger.info(
+                    "📦 Fichier remplacé (via safe_copy) : %s → %s",
+                    job.path.name,
+                    target_path,
+                )
 
             except Exception as move_err:
                 raise CutMindError(

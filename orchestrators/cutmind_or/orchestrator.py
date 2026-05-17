@@ -6,7 +6,6 @@ from check.check_segments import CheckSegments
 from check.check_status import compute_video_status
 from check.histo.processing_checks import evaluate_segment_move
 from check.histo.processing_log import processing_step
-from comfyui_router.router_worker import RouterWorker
 from db.repository import CutMindRepository
 from IA.ia_worker_process import run_ia_for_video
 from shared.models.db_models import Segment, Video
@@ -17,6 +16,7 @@ from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
 from smartcut.services.main_cut import CutWorker
 from validation.main_validation import validation
+from video_enhancer.enhancer_worker import EnhancerWorker
 
 
 class CutMindOrchestratorV2:
@@ -47,25 +47,25 @@ class CutMindOrchestratorV2:
         self.logger.info("🎛️ Orchestration V2 démarrée pour video %s", video.id)
 
         # 1️⃣ Move post-cut
-        self._maybe_run_cut(video)
+        # self._maybe_run_cut(video)
 
         # 1️⃣ Move post-cut
-        self._maybe_run_move(video)
+        # self._maybe_run_move(video)
 
         # 1️⃣ Enhancement
         self._maybe_run_enhancement(video)
 
         # 2️⃣ IA
-        self._maybe_run_ia(video)
+        # self._maybe_run_ia(video)
 
         # 3️⃣ Confidence
-        self._maybe_run_confidence(video)
+        # self._maybe_run_confidence(video)
 
         # 4️⃣ Validation finale
-        self._maybe_run_validation(video)
+        # self._maybe_run_validation(video)
 
         # 4️⃣ Validation finale
-        self._maybe_run_final_check(video)
+        # self._maybe_run_final_check(video)
 
         # 5️⃣ Recalcul statut vidéo (projection)
         vid, _seg = self._reload_video_and_segments(video.id)
@@ -164,7 +164,7 @@ class CutMindOrchestratorV2:
             video.id,
         )
 
-        worker = RouterWorker(vid=video, segments=segments)
+        worker = EnhancerWorker(vid=video, segments=segments)
         worker.run()
 
     # ------------------------------------------------------------------
