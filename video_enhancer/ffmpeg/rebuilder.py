@@ -42,7 +42,7 @@ def rebuild_video_from_frames(
     if not frames_dir.exists():
         raise FileNotFoundError(f"Frames directory not found: {frames_dir}")
 
-    if not any(frames_dir.glob("frame_*.png")):
+    if not any(frames_dir.glob("*.png")):
         raise VideoRebuildError(f"No frames found in: {frames_dir}")
 
     if has_audio and audio_path is not None and not audio_path.exists():
@@ -50,7 +50,7 @@ def rebuild_video_from_frames(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    frame_pattern = frames_dir / "frame_%08d.png"
+    frame_pattern, start_number = detect_frame_pattern(frames_dir)
 
     logger.info(
         "Rebuild vidéo | frames=%s | fps=%s | audio=%s | output=%s",
@@ -64,7 +64,7 @@ def rebuild_video_from_frames(
         video_input = ffmpeg.input(
             str(frame_pattern),
             framerate=fps,
-            start_number=0,
+            start_number=start_number,
         )
 
         if has_audio and audio_path is not None:
@@ -125,3 +125,19 @@ def rebuild_video_from_frames(
     logger.info("✅ Rebuild vidéo terminé : %s", output_path)
 
     return output_path
+
+
+def detect_frame_pattern(frames_dir: Path) -> tuple[Path, int]:
+    png_files = sorted(frames_dir.glob("*.png"))
+
+    if not png_files:
+        raise VideoRebuildError(f"No PNG frames found in: {frames_dir}")
+
+    first_name = png_files[0].name
+
+    if first_name.startswith("frame_"):
+        number_part = first_name.removeprefix("frame_").removesuffix(".png")
+        return frames_dir / f"frame_%0{len(number_part)}d.png", int(number_part)
+
+    number_part = first_name.removesuffix(".png")
+    return frames_dir / f"%0{len(number_part)}d.png", int(number_part)

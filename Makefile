@@ -30,7 +30,7 @@ types:
 	mypy $(PKG)
 
 vulture:
-	vulture $(PKG) --min-confidence 80
+	vulture $(PKG) --min-confidence 80 --exclude "*.venv/*"
 
 qa: fmt types vulture
 

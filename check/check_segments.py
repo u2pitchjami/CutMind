@@ -24,7 +24,7 @@ from shared.models.timer_manager import Timer
 from shared.services.file_mover import FileMover
 from shared.services.video_preparation import prepare_video
 from shared.status_orchestrator.statuses import OrchestratorStatus, SegmentStatus
-from shared.utils.config import TRASH_DIR_SC, WORKDIR_CM
+from shared.utils.config import INPUT_DIR, OUTPUT_DIR, TRASH_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.trash import delete_files, move_to_trash
 
@@ -63,7 +63,7 @@ class CheckSegments:
         # 3️⃣ Transaction : copie + maj DB
         with Timer(f"Traitement Comfyui pour la vidéo : {self.video.name}", self.logger):
             try:
-                delete_files(path=Path(WORKDIR_CM), ext="*.mp4")
+                delete_files(path=Path(INPUT_DIR), ext="*.mp4")
 
                 for seg in self.segments:
                     with processing_step(self.video, seg, action="Check Segments") as history:
@@ -117,22 +117,22 @@ class CheckSegments:
                                 continue
 
                             self.logger.info(f"Video {seg.filename_predicted} n'est pas conforme.")
-                            dst: Path = Path(WORKDIR_CM) / f"{seg.filename_predicted}.mp4"
+                            dst: Path = Path(INPUT_DIR) / f"{seg.filename_predicted}.mp4"
                             self.file_mover.safe_copy(Path(seg.output_path), dst)
                             self.logger.info(f"Video {seg.filename_predicted} copiée vers {dst}")
 
-                            temp_path = dst.with_suffix(".normalized.mp4")
-                            convert_safe_video_format(str(dst), str(temp_path))
+                            out_path: Path = OUTPUT_DIR / f"{dst.stem}.normalized.mp4"
+                            convert_safe_video_format(str(dst), str(out_path))
                             self.logger.info(f"Video {seg.filename_predicted} normalisée.")
                             dst.unlink()
 
                             try:
                                 self.logger.debug(
-                                    "appel safe_replace : final_output=%s, target_path=%s", temp_path, seg.output_path
+                                    "appel safe_replace : final_output=%s, target_path=%s", out_path, seg.output_path
                                 )
-                                FileMover.safe_replace(temp_path, Path(seg.output_path), self.logger)
+                                FileMover.safe_replace(out_path, Path(seg.output_path), self.logger)
                                 self.logger.info(
-                                    "📦 Fichier remplacé (via safe_copy) : %s → %s", temp_path.name, seg.output_path
+                                    "📦 Fichier remplacé (via safe_copy) : %s → %s", out_path.name, seg.output_path
                                 )
 
                             except Exception as move_err:
@@ -142,7 +142,7 @@ class CheckSegments:
                                     ctx=get_step_ctx(
                                         {
                                             "final_output": seg.output_path,
-                                            "temp_path": temp_path,
+                                            "out_path": out_path,
                                             "seg_id": seg.id,
                                         }
                                     ),
@@ -155,7 +155,7 @@ class CheckSegments:
                                     ctx=get_step_ctx(
                                         {
                                             "final_output": seg.output_path,
-                                            "temp_path": temp_path,
+                                            "out_path": out_path,
                                             "seg_id": seg.id,
                                         }
                                     ),

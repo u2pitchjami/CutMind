@@ -104,12 +104,7 @@ def load_prompts() -> dict[str, str]:
 INPUT_DIR: Path = Path(get_path_required("INPUT_DIR"))
 OUTPUT_DIR: Path = Path(get_path_required("OUTPUT_DIR"))
 TEMP_DIR: Path = Path(get_path_required("TEMP_DIR"))
-WORKFLOW_DIR: Path = Path(get_path_required("WORKFLOW_DIR"))
 TRASH_DIR: Path = Path(get_str("TRASH_DIR", ".trash"))
-OK_DIR: Path = Path(get_str("OK_DIR", "truc"))
-COMFY_URL: str = get_required("COMFY_URL")
-HOST_ROOT: Path = Path(get_path_required("HOST_ROOT"))
-VISIBLE_ROOT: Path = Path(get_path_required("VISIBLE_ROOT"))
 REALESRGAN_MODEL_DIR: Path = Path(get_path_required("REALESRGAN_MODEL_DIR"))
 RIFE_MODEL_DIR: Path = Path(get_path_required("RIFE_MODEL_DIR"))
 REALESRGAN_BIN: Path = Path(get_path_required("REALESRGAN_BIN"))
@@ -118,15 +113,6 @@ TEMP_AUDIO_DIR: Path = Path(get_path_required("TEMP_AUDIO_DIR"))
 TEMP_FRAMES_INPUT_DIR: Path = Path(get_path_required("TEMP_FRAMES_INPUT_DIR"))
 TEMP_FRAMES_RIFE_DIR: Path = Path(get_path_required("TEMP_FRAMES_RIFE_DIR"))
 TEMP_FRAMES_UPSCALED_DIR: Path = Path(get_path_required("TEMP_FRAMES_UPSCALED_DIR"))
-
-
-WORKFLOW_MAP: dict[str, Path] = {
-    "1080p": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 1080p.json",
-    "2160p": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 1080p.json",
-    "720p": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 720p.json",
-    "720p_nofps": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion 720p-nofps.json",
-    "Autres": WORKFLOW_DIR / "Video-Upscaler-Next-Diffusion Autres.json",
-}
 
 # LOGS
 LOG_FILE_PATH = get_str("LOG_FILE_PATH", "logs")
@@ -138,8 +124,6 @@ LOG_SPLIT_LEVELS = get_bool("LOG_SPLIT_LEVELS", "false")
 DEV_SRC = get_str("DEV_SRC")
 DEV_DST = get_str("DEV_DST")
 DEV_MODE = get_str("DEV_MODE")
-
-COMFYUI_URL = get_str("COMFYUI_URL")
 
 PROMPT_PATH: str = get_str("PROMPT_PATH", "/app/config/prompts.py")
 
@@ -157,7 +141,6 @@ MANUAL_CSV_PATH = get_str("MANUAL_CSV_PATH")
 MANUAL_CSV_CUT_PATH = get_str("MANUAL_CSV_CUT_PATH")
 CSV_LOG_PATH = get_str("CSV_LOG_PATH")
 CSV_ARCHIVE_PATH: Path = Path(get_str("CSV_ARCHIVE_PATH", ".csv_archive"))
-WORKDIR_CM = get_str("WORKDIR_CM", "/basedir/_work")
 
 MIN_CONFIDENCE = get_float("MIN_CONFIDENCE", 0.6)
 
@@ -166,29 +149,12 @@ IMPORT_DIR_SC: Path = Path(get_path_required("IMPORT_DIR_SC"))
 TRASH_DIR_SC: Path = Path(get_str("TRASH_DIR_SC", ".trash"))
 ERROR_DIR_SC: Path = Path(get_str("ERROR_DIR_SC", ".error"))
 OUTPUT_DIR_SC: Path = Path(get_path_required("OUTPUT_DIR_SC"))
-JSON_STATES_DIR_SC: Path = Path(get_path_required("JSON_STATES_DIR_SC"))
 TMP_FRAMES_DIR_SC: Path = Path(get_str("TMP_FRAMES_DIR_SC", ".tmp_frames"))
 BATCH_FRAMES_DIR_SC: Path = Path(get_str("BATCH_FRAMES_DIR_SC", ".batches"))
 MULTIPLE_FRAMES_DIR_SC: Path = Path(get_str("MULTIPLE_FRAMES_DIR_SC", ".multiple"))
 KW_CACHE_FILE_SC = Path(get_str("KW_CACHE_FILE_SC"))
 KW_MAPPING_FILE_SC = Path(get_path_required("KW_MAPPING_FILE_SC"))
 KW_FORBIDDEN_FILE_SC = Path(get_str("KW_FORBIDDEN_FILE_SC"))
-
-IMPORT_DIR_SC.mkdir(parents=True, exist_ok=True)
-OUTPUT_DIR_SC.mkdir(parents=True, exist_ok=True)
-JSON_STATES_DIR_SC.mkdir(parents=True, exist_ok=True)
-TMP_FRAMES_DIR_SC.mkdir(parents=True, exist_ok=True)
-BATCH_FRAMES_DIR_SC.mkdir(parents=True, exist_ok=True)
-MULTIPLE_FRAMES_DIR_SC.mkdir(parents=True, exist_ok=True)
-KW_CACHE_FILE_SC.touch(exist_ok=True)
-KW_MAPPING_FILE_SC.touch(exist_ok=True)
-KW_FORBIDDEN_FILE_SC.touch(exist_ok=True)
-OK_DIR.mkdir(parents=True, exist_ok=True)
-TRASH_DIR.mkdir(parents=True, exist_ok=True)
-TRASH_DIR_SC.mkdir(parents=True, exist_ok=True)
-ERROR_DIR_SC.mkdir(parents=True, exist_ok=True)
-Path(LOG_FILE_PATH).mkdir(parents=True, exist_ok=True)
-CSV_ARCHIVE_PATH.mkdir(parents=True, exist_ok=True)
 
 TEMP_COMPIL = Path(get_str("TEMP_COMPIL", ".temp_compil"))
 TEMPLATES_COMPIL = Path(get_str("TEMPLATES_COMPIL", ".templates"))
@@ -202,3 +168,26 @@ COLOR_YELLOW = "\033[93m"
 COLOR_RED = "\033[91m"
 COLOR_PURPLE = "\033[95m"
 COLOR_CYAN = "\033[96m"
+
+INPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
+TRASH_DIR.mkdir(parents=True, exist_ok=True)
+REALESRGAN_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+RIFE_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+TEMP_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+TEMP_FRAMES_INPUT_DIR.mkdir(parents=True, exist_ok=True)
+TEMP_FRAMES_RIFE_DIR.mkdir(parents=True, exist_ok=True)
+TEMP_FRAMES_UPSCALED_DIR.mkdir(parents=True, exist_ok=True)
+IMPORT_DIR_SC.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR_SC.mkdir(parents=True, exist_ok=True)
+TMP_FRAMES_DIR_SC.mkdir(parents=True, exist_ok=True)
+BATCH_FRAMES_DIR_SC.mkdir(parents=True, exist_ok=True)
+MULTIPLE_FRAMES_DIR_SC.mkdir(parents=True, exist_ok=True)
+KW_CACHE_FILE_SC.touch(exist_ok=True)
+KW_MAPPING_FILE_SC.touch(exist_ok=True)
+KW_FORBIDDEN_FILE_SC.touch(exist_ok=True)
+TRASH_DIR_SC.mkdir(parents=True, exist_ok=True)
+ERROR_DIR_SC.mkdir(parents=True, exist_ok=True)
+Path(LOG_FILE_PATH).mkdir(parents=True, exist_ok=True)
+CSV_ARCHIVE_PATH.mkdir(parents=True, exist_ok=True)
