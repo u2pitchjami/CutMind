@@ -13,7 +13,7 @@ Envoie automatiquement les segments 'validated' mais hors standard
 from datetime import datetime
 from pathlib import Path
 
-from check.histo.processing_checks import evaluate_comfyui_output
+from check.histo.processing_checks import evaluate_enhancer_output
 from check.histo.processing_log import processing_step
 from db.repository import CutMindRepository
 from shared.models.db_models import Segment, Video
@@ -24,15 +24,10 @@ from shared.utils.config import (
     COLOR_RED,
     COLOR_RESET,
     INPUT_DIR,
-    TEMP_AUDIO_DIR,
-    TEMP_FRAMES_INPUT_DIR,
-    TEMP_FRAMES_RIFE_DIR,
-    TEMP_FRAMES_UPSCALED_DIR,
 )
 from shared.utils.error import log_exception
 from shared.utils.logger import get_logger
 from shared.utils.settings import get_settings
-from shared.utils.trash import cleanup_processing_dirs, delete_files
 from video_enhancer.models_cr.processor import VideoProcessor
 
 
@@ -59,7 +54,6 @@ class EnhancerWorker:
         settings = get_settings()
         forbidden_hours = settings.router_orchestrator.forbidden_hours
         FORCE_DEINTERLACE = settings.router_processor.force_deinterlace
-        KEEP_TEMP_FILES = settings.router_processor.keep_temp_files
         self.logger.info("🚀 Démarrage Enhancer Worker")
         if not self.video:
             self.logger.warning("⚠️ Vidéo introuvable")
@@ -71,20 +65,6 @@ class EnhancerWorker:
         # 1️⃣ Sélectionner les vidéos concernées
         repo = CutMindRepository()
         self.logger.info("🎞️ Vidéo '%s' nb segments: %i", self.video.name, len(self.segments))
-
-        delete_files(path=INPUT_DIR, ext="*.mp4")
-        processing_dirs = [
-            TEMP_AUDIO_DIR,
-            TEMP_FRAMES_INPUT_DIR,
-            TEMP_FRAMES_RIFE_DIR,
-            TEMP_FRAMES_UPSCALED_DIR,
-        ]
-
-        cleanup_processing_dirs(
-            processing_dirs,
-            KEEP_TEMP_FILES,
-            self.logger,
-        )
 
         # 3️⃣ Transaction : copie + maj DB
         with Timer(f"Traitement Comfyui pour la vidéo : {self.video.name}", self.logger):
@@ -105,7 +85,7 @@ class EnhancerWorker:
                                 repo.update_segment_postprocess(new_seg)
                                 self.logger.debug(f"new_seg {new_seg}")
                                 processed_count += 1
-                                status, message = evaluate_comfyui_output(new_seg.fps, new_seg.resolution)
+                                status, message = evaluate_enhancer_output(new_seg.fps, new_seg.resolution)
                                 history.status = status
                                 history.message = message
                         else:
@@ -130,13 +110,6 @@ class EnhancerWorker:
         else:
             self.logger.info("✅ %d segments envoyés et traités via Router.", processed_count)
 
-        cleanup_processing_dirs(
-            processing_dirs,
-            KEEP_TEMP_FILES,
-            self.logger,
-        )
-
-        self.logger.info("🚚  %d fichiers temporaires supprimés.", len(processing_dirs))
         self.logger.info("🏁 Cycle RouterWorker terminé.")
         return processed_count
 

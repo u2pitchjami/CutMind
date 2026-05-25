@@ -78,9 +78,9 @@ def evaluate_segment_move(output_path: str, basedir: str) -> tuple[str, str]:
     return "error", "Fichier en dehors du dossier cible"
 
 
-def evaluate_comfyui_output(fps: float | None, resolution: str | None) -> tuple[str, str]:
+def evaluate_enhancer_output(fps: float | None, resolution: str | None) -> tuple[str, str]:
     """
-    Évalue si le segment est passé correctement par le flow ComfyUI.
+    Évalue si le segment est passé correctement par le flow Enhancer.
 
     Critères :
     - fps doit être exactement 60
@@ -95,7 +95,7 @@ def evaluate_comfyui_output(fps: float | None, resolution: str | None) -> tuple[
         errors.append(f"résolution non conforme ({resolution})")
 
     if errors:
-        return "error", "ComfyUI KO : " + ", ".join(errors)
+        return "error", "Enhancer KO : " + ", ".join(errors)
 
     return "ok", f"FPS = {fps}, Résolution = {resolution}"
 

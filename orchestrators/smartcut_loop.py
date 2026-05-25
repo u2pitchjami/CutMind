@@ -21,22 +21,28 @@ def smartcut_loop() -> None:
     settings = get_settings()
     SMARTCUT_BATCH = settings.smartcut.batch_size
     SCAN_INTERVAL = settings.smartcut.scan_interval
+    SMARTCUT_ENABLED = settings.router_orchestrator.smartcut
+
     while True:
         try:
-            videos, dirs = list_videos_and_dirs(IMPORT_DIR_SC)
-            pending = len(videos) + len(dirs)
-
-            if pending == 0:
-                logger.info("📂 SmartCut: rien à traiter")
+            if not SMARTCUT_ENABLED:
+                logger.info("🚫 SmartCut est désactivé dans les settings. Loop inactive.")
                 time.sleep(SCAN_INTERVAL)
-
             else:
-                process_smartcut_batch(
-                    videos,
-                    dirs,
-                    SMARTCUT_BATCH,
-                    logger=logger,
-                )
+                videos, dirs = list_videos_and_dirs(IMPORT_DIR_SC)
+                pending = len(videos) + len(dirs)
+
+                if pending == 0:
+                    logger.info("📂 SmartCut: rien à traiter")
+                    time.sleep(SCAN_INTERVAL)
+
+                else:
+                    process_smartcut_batch(
+                        videos,
+                        dirs,
+                        SMARTCUT_BATCH,
+                        logger=logger,
+                    )
 
         except Exception:
             logger.exception("💥 Erreur SmartCut loop")

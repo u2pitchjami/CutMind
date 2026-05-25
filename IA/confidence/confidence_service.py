@@ -40,6 +40,17 @@ class ConfidenceService:
                 with processing_step(vid, seg, action="Confidence IA") as history:
                     if not seg.id:
                         continue
+                    if seg.confidence == 0.99:  # déjà validé par la validation automatique
+                        history.status = "skipped"
+                        history.message = "Confiance déjà élevée, segment considéré comme valide."
+                        results.append(
+                            ConfidenceResult(
+                                segment_id=seg.id,
+                                confidence=seg.confidence,
+                                merged_keywords=seg.keywords or [],
+                            )
+                        )
+                        continue
                     if not seg.description:
                         score = 0.0
                         merged = auto_keywords.copy()

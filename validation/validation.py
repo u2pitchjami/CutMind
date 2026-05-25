@@ -204,6 +204,11 @@ def validation_cut(
             for seg in valid_segments:
                 seg.output_path = str(planned_targets[seg.uid])
                 logger.debug("🔍 Mise à jour du chemin de sortie pour le segment %s : %s", seg.uid, seg.output_path)
+                if seg.category:
+                    seg.confidence = 0.99  # boost de confiance si catégorie déjà présente
+                    logger.debug(
+                        "🔍 Boost de confiance pour le segment %s (catégorie présente) : %s", seg.uid, seg.confidence
+                    )
                 repo.update_segment_validation(seg)
 
         remove_empty_dirs(root_path=OUTPUT_DIR_SC, logger=logger)

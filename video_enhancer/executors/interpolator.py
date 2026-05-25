@@ -66,7 +66,7 @@ def interpolate_frames_with_rife(
             result = subprocess.run(
                 command,
                 check=True,
-                capture_output=True,
+                capture_output=False,
                 text=True,
             )
         except FileNotFoundError as exc:

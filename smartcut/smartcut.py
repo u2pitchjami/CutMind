@@ -22,7 +22,6 @@ from check.histo.processing_log import processing_step
 from db.repository import CutMindRepository
 from shared.models.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
-from shared.services.file_mover import FileMover
 from shared.services.video_preparation import prepare_video
 from shared.status_orchestrator.statuses import OrchestratorStatus, SegmentStatus
 from shared.utils.config import ERROR_DIR_SC, OUTPUT_DIR_SC, TRASH_DIR_SC
@@ -30,6 +29,7 @@ from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
 from shared.utils.trash import move_to_trash
 from smartcut.executors.split_utils import get_downscale_factor, move_to_error
+from smartcut.services.main_cut import CutWorker
 from smartcut.services.scene_split.pipeline_service import adaptive_scene_split
 
 
@@ -75,14 +75,16 @@ def multi_stage_cut(
             prep = prepare_video(video_path, normalize=True, logger=logger)
             orig = Path(video_path).resolve()
             safe = Path(prep.path).resolve()
+            output_path = orig
 
             if orig != safe:
                 logger.info(f"🎞️ Conversion automatique : {orig.name} → {safe.name}")
                 move_to_trash(orig, TRASH_DIR_SC)
+                output_path = safe
 
-            file_mover = FileMover()
-            output_path = OUTPUT_DIR_SC.with_name(video_path.stem + ".mp4")
-            file_mover.safe_replace(src=safe, dst=output_path, logger=logger)
+            # file_mover = FileMover()
+            # output_path = OUTPUT_DIR_SC.with_name(video_path.stem + ".mp4")
+            # file_mover.safe_replace(src=safe, dst=output_path, logger=logger)
             # 2. Crée une nouvelle session à partir des métadonnées préparées
             new_vid = Video(
                 uid=str(uuid.uuid4()),
@@ -172,6 +174,22 @@ def multi_stage_cut(
             vid.status = OrchestratorStatus.VIDEO_PYSCENE_DONE
             repo.update_video(vid)
 
+        vid, vid_seg = _reload_video_and_segments(vid.id, repo, logger)
+        segments = [s for s in vid_seg if s.pipeline_target == SegmentStatus.TO_CUT]
+        logger.debug("🔍 Segments à cut : %s", [s.id for s in segments])
+        if not segments:
+            return
+
+        if not vid.video_path:
+            raise CutMindError(
+                "Vidéo sans chemin valide en base de données.",
+                code=ErrCode.CONTEXT,
+                ctx={"video": video_path},
+            )
+        cutter = CutWorker(vid=vid, segments=segments)
+        cutter.run()
+        move_to_trash(Path(vid.video_path), TRASH_DIR_SC)
+
         logger.info("───────────────────────────────")
         logger.info("🏁 Traitement terminé pour %s", video_path)
 
@@ -184,3 +202,24 @@ def multi_stage_cut(
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"video_path": video_path}),
         ) from exc
+
+
+def _reload_video_and_segments(
+    video_id: int, repo: CutMindRepository, logger: LoggerProtocol | None = None
+) -> tuple[Video, list[Segment]]:
+    """
+    Recharge la vidéo et retourne explicitement la liste des segments.
+    """
+    logger = ensure_logger(logger, __name__)
+    video = repo.get_video_with_segments(video_id=video_id)
+    if video is None:
+        raise ValueError(f"Video with id {video_id} not found in repository.")
+
+    segments = list(video.segments)
+    logger.debug(
+        "🔄 Reload video %s | segments status=%s",
+        video.id,
+        [s.status for s in segments],
+    )
+
+    return video, segments

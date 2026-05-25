@@ -9,7 +9,7 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.settings import get_settings
 
 
-def convert_to_60fps(input_path: Path, output_path: Path) -> Path:
+def convert_to_60fps(input_path: Path, output_path: Path, fps: int) -> Path:
     """
     Force une vidéo à 60 FPS en respectant le profil interne CutMind.
     """
@@ -37,7 +37,7 @@ def convert_to_60fps(input_path: Path, output_path: Path) -> Path:
         "-i",
         str(input_path),
         "-vf",
-        "fps=60",
+        f"fps={fps}",
         "-c:v",
         VCODEC,
         "-preset",

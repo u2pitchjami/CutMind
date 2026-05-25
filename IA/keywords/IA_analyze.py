@@ -62,7 +62,7 @@ def analyze_IA(
             seg.description = ""
         if not seg.output_path or not seg.id:
             raise CutMindError(
-                "❌ Erreur segment : Aucune output path défini.",
+                "❌ Erreur segment : Aucun output path défini.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"seg.id": seg.id}),
             )

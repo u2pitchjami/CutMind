@@ -8,7 +8,7 @@ class ProcessingHistory:
     segment_id: int | None
     video_name: str
     segment_uid: str | None
-    action: str  # ex: 'analyse_ia', 'comfyui_router', etc.
+    action: str  # ex: 'analyse_ia', 'enhancer_router', etc.
     status: str  # 'ok', 'partial', 'error', 'skipped'
     message: str
     started_at: datetime

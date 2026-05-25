@@ -87,6 +87,11 @@ class CutMindOrchestratorV2:
     # ------------------------------------------------------------------
 
     def _maybe_run_cut(self, video: Video) -> None:
+        settings = get_settings()
+        CUT_ENABLED = settings.router_orchestrator.cut
+        if not CUT_ENABLED:
+            self.logger.info("🚫 Cut est désactivé dans les settings. Cut inactive.")
+            return
         if not video.id:
             raise CutMindError("❌ Erreur fichier prédit manquant pour le déplacement post-cut.", code=ErrCode.NOFILE)
         vid, vid_seg = self._reload_video_and_segments(video.id)
@@ -103,6 +108,11 @@ class CutMindOrchestratorV2:
     # ------------------------------------------------------------------
 
     def _maybe_run_move(self, video: Video) -> None:
+        settings = get_settings()
+        MOVE_ENABLED = settings.router_orchestrator.move_post_cut
+        if not MOVE_ENABLED:
+            self.logger.info("🚫 Move post-cut est désactivé dans les settings. Move inactive.")
+            return
         if not video.id:
             raise CutMindError("❌ Erreur fichier prédit manquant pour le déplacement post-cut.", code=ErrCode.NOFILE)
         vid, vid_seg = self._reload_video_and_segments(video.id)
@@ -152,6 +162,11 @@ class CutMindOrchestratorV2:
     # ------------------------------------------------------------------
 
     def _maybe_run_enhancement(self, video: Video) -> None:
+        settings = get_settings()
+        ENHANCEMENT_ENABLED = settings.router_orchestrator.enhancement
+        if not ENHANCEMENT_ENABLED:
+            self.logger.info("🚫 Enhancement est désactivé dans les settings. Enhancement inactive.")
+            return
         vid_seg = self._reload_video_with_segments(video)
         segments = [s for s in vid_seg if s.status == SegmentStatus.CUT_VALIDATED]
         self.logger.debug("🔍 Segments à enhanced : %s", [s.id for s in segments])
@@ -172,6 +187,11 @@ class CutMindOrchestratorV2:
     # ------------------------------------------------------------------
 
     def _maybe_run_ia(self, video: Video) -> None:
+        settings = get_settings()
+        IA_ENABLED = settings.router_orchestrator.IA
+        if not IA_ENABLED:
+            self.logger.info("🚫 IA est désactivé dans les settings. IA inactive.")
+            return
         vid_seg = self._reload_video_with_segments(video)
         segments = [s for s in vid_seg if s.status == SegmentStatus.ENHANCED or s.pipeline_target == "IA"]
         self.logger.debug("🔍 Segments analyse ia : %s", [s.id for s in segments])
@@ -191,6 +211,10 @@ class CutMindOrchestratorV2:
 
     def _maybe_run_confidence(self, video: Video) -> None:
         settings = get_settings()
+        CONFIDENCE_ENABLED = settings.router_orchestrator.confidence
+        if not CONFIDENCE_ENABLED:
+            self.logger.info("🚫 Confidence est désactivé dans les settings. Confidence inactive.")
+            return
         vid_seg = self._reload_video_with_segments(video)
         segments = [s for s in vid_seg if s.status == SegmentStatus.IA_DONE]
         self.logger.debug("🔍 Segments confidence : %s", [s.id for s in segments])
@@ -219,6 +243,11 @@ class CutMindOrchestratorV2:
     # ------------------------------------------------------------------
 
     def _maybe_run_validation(self, video: Video) -> None:
+        settings = get_settings()
+        VALIDATION_ENABLED = settings.router_orchestrator.validation
+        if not VALIDATION_ENABLED:
+            self.logger.info("🚫 Validation est désactivé dans les settings. Validation inactive.")
+            return
         vid_seg = self._reload_video_with_segments(video)
         segments = [s for s in vid_seg if s.status == SegmentStatus.CONFIDENCE_DONE]
         self.logger.debug("🔍 Segments à valider : %s", [s.id for s in segments])
@@ -248,6 +277,11 @@ class CutMindOrchestratorV2:
     # ------------------------------------------------------------------
 
     def _maybe_run_final_check(self, video: Video) -> None:
+        settings = get_settings()
+        FINAL_CHECK_ENABLED = settings.router_orchestrator.final_check
+        if not FINAL_CHECK_ENABLED:
+            self.logger.info("🚫 Final Check est désactivé dans les settings. Final Check inactive.")
+            return
         vid_seg = self._reload_video_with_segments(video)
         segments = [s for s in vid_seg if s.status == SegmentStatus.VALIDATED]
         self.logger.debug("🔍 Segments à checker : %s", [s.id for s in segments])

@@ -158,7 +158,8 @@ def delete_frames(path: Path = Path(TMP_FRAMES_DIR_SC)) -> None:
     Args:
         path (Path, optional): _description_. Defaults to Path(TMP_FRAMES_DIR_SC).
     """
-    for file in Path(path).glob("*.jpg"):
+    root = Path(path)
+    for file in root.rglob("*.jpg"):
         try:
             file.unlink()
         except Exception as exc:

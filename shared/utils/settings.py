@@ -120,6 +120,14 @@ class AnalyseConfidenceSettings:
 @dataclass
 class OrchestratorSettings:
     forbidden_hours: list[int]
+    smartcut: bool
+    cut: bool
+    move_post_cut: bool
+    enhancement: bool
+    IA: bool
+    confidence: bool
+    validation: bool
+    final_check: bool
 
 
 @dataclass
@@ -139,6 +147,13 @@ class ProcessorSettings:
     rife_model: str
     g_param: int
     j_param: str
+    target_width: int
+    target_height: int
+    target_fps: int
+    target_aspect_ratio: str
+    upscale_ratio: int
+    upscale_ratio_up: str
+    upscale_ratio_down: str
 
 
 @dataclass
@@ -225,7 +240,15 @@ def init_settings(config: Any) -> None:
         keyword_normalizer=KeywordNormalizerSettings(**sc["keyword_normalizer"]),
         analyse_confidence=AnalyseConfidenceSettings(**sc["analyse_confidence"]),
         router_orchestrator=OrchestratorSettings(
-            forbidden_hours=rt["orchestrator"]["router_forbidden_hours"],
+            forbidden_hours=er["orchestrator"]["router_forbidden_hours"],
+            smartcut=er["orchestrator"]["smartcut"],
+            cut=er["orchestrator"]["cut"],
+            move_post_cut=er["orchestrator"]["move_post_cut"],
+            enhancement=er["orchestrator"]["enhancement"],
+            IA=er["orchestrator"]["IA"],
+            confidence=er["orchestrator"]["confidence"],
+            validation=er["orchestrator"]["validation"],
+            final_check=er["orchestrator"]["final_check"],
         ),
         router_optimal_batch_size=OptimalBatchSizeSettings(min_size=rt["optimal_batch_size"]["min_size"]),
         router_processor=ProcessorSettings(**er["processor"]),

@@ -25,7 +25,7 @@ from IA.keywords.frames.frames_hash import SegmentFrameHash
 from shared.models.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.services.video_preparation import VideoPrepared
-from shared.status_orchestrator.statuses import OrchestratorStatus
+from shared.status_orchestrator.statuses import OrchestratorStatus, SegmentStatus
 from shared.utils.logger import get_logger
 from video_enhancer.models_cr.processed_segment import ProcessedSegment
 
@@ -871,36 +871,54 @@ class CutMindRepository:
                 ctx=get_step_ctx(),
             ) from exc
 
-    def get_active_videos(self) -> list[Video]:
+    def get_active_videos(
+        self,
+        excluded_statuses: tuple[SegmentStatus, ...],
+    ) -> list[Video]:
         """
         Retourne les vidéos pouvant avancer automatiquement :
 
-        - au moins un segment
-        - aucun segment en attente de validation humaine
+        - au moins un segment actif
+        - aucun segment actif en attente de validation humaine
+
+        Args:
+            excluded_statuses:
+                Statuts à exclure de la sélection.
         """
         try:
-            query = """
+            placeholders = ", ".join(["%s"] * len(excluded_statuses))
+
+            query = f"""
                 SELECT v.*
                 FROM videos v
                 WHERE EXISTS (
                     SELECT 1
                     FROM segments s
                     WHERE s.video_id = v.id
-                    AND s.status != %s
+                    AND s.status NOT IN ({placeholders})
                 )
                 AND NOT EXISTS (
                     SELECT 1
                     FROM segments s
                     WHERE s.video_id = v.id
-                    AND s.status != %s
-                    AND s.pipeline_target IN ('VALIDATION', 'VALIDATION_CUT')
-                )"""
+                    AND s.status NOT IN ({placeholders})
+                    AND s.pipeline_target IN (
+                        'VALIDATION',
+                        'VALIDATION_CUT'
+                    )
+                )
+            """
+
             params = (
-                OrchestratorStatus.SEGMENT_VALIDATED_CHECK,
-                OrchestratorStatus.SEGMENT_VALIDATED_CHECK,
+                *excluded_statuses,
+                *excluded_statuses,
             )
 
-            rows = self._fetch_all(query, params)
+            rows = self._fetch_all(
+                query,
+                params,
+            )
+
             return [Video.from_row(row) for row in rows]
 
         except CutMindError as err:

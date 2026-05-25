@@ -14,17 +14,26 @@ def cleanup_processing_dirs(
     temp_dirs: list[Path],
     keep_temp_files: bool = False,
     logger: LoggerProtocol | None = None,
-) -> None:
-    """Clean processing directories content."""
+) -> tuple[int, int]:
+    """
+    Clean processing directories content.
 
+    Returns:
+        tuple[int, int]:
+            files_deleted,
+            directories_deleted
+    """
     logger = ensure_logger(
         logger,
         __name__,
     )
 
+    files_deleted = 0
+    directories_deleted = 0
+
     if keep_temp_files:
         logger.info("KEEP_TEMP_FILES=true → nettoyage ignoré")
-        return
+        return files_deleted, directories_deleted
 
     for temp_dir in temp_dirs:
         if not temp_dir.exists():
@@ -39,13 +48,17 @@ def cleanup_processing_dirs(
             for item in temp_dir.iterdir():
                 if item.is_dir():
                     shutil.rmtree(item)
+                    directories_deleted += 1
 
                 else:
                     item.unlink()
+                    files_deleted += 1
 
             logger.info(
-                "✅ Nettoyage terminé : %s",
+                "✅ Nettoyage terminé : %s (files=%s dirs=%s)",
                 temp_dir,
+                files_deleted,
+                directories_deleted,
             )
 
         except Exception as exc:
@@ -54,6 +67,8 @@ def cleanup_processing_dirs(
                 temp_dir,
                 exc,
             )
+
+    return files_deleted, directories_deleted
 
 
 def delete_files(path: Path, ext: str = "*.jpg") -> None:
