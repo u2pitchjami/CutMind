@@ -21,6 +21,7 @@ from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
 from video_enhancer.executors.interpolator import interpolate_frames_with_rife
 from video_enhancer.executors.upscaler import upscale_frames_with_realesrgan
+from video_enhancer.ffmpeg.ffmpeg_command import convert_to_fps, interpolate_video_minterpolate
 from video_enhancer.ffmpeg.frames_extract import extract_all_frames
 from video_enhancer.ffmpeg.rebuilder import rebuild_video_from_frames
 from video_enhancer.ffmpeg.upscale_lanczos import upscale_video_lanczos
@@ -44,6 +45,10 @@ def run_enhancement_workflow(
     RIFE_MODEL = settings.router_processor.rife_model
     REALESRGAN_MODEL = settings.router_processor.realesrgan_model
     UPSCALE_RATIO_DOWN = settings.router_processor.upscale_ratio_down
+    method_low_fps: str = settings.router_interpolation.method_low_fps
+    method_mid_fps: str = settings.router_interpolation.method_mid_fps
+    method_high_fps: str = settings.router_interpolation.method_high_fps
+    TARGET_FPS = settings.router_processor.target_fps
 
     extract_frames = False
     current_frames_dir: Path | None = None
@@ -54,8 +59,8 @@ def run_enhancement_workflow(
             upscaled_path = INPUT_DIR / job.work_key / "upscaled.mp4"
 
             upscale_video_lanczos(
-                video_path=str(job.path),
-                output_path=str(upscaled_path),
+                video_path=job.path,
+                output_path=upscaled_path,
                 has_audio=job.has_audio,
                 logger=logger,
             )
@@ -83,7 +88,7 @@ def run_enhancement_workflow(
                 logger=logger,
             )
 
-        if job.rife_passes > 0:
+        if job.interpolation_method == method_low_fps:
             if current_frames_dir is None:
                 frames_dir, audio_path = extract_all_frames(
                     video_path=job.path,
@@ -104,6 +109,51 @@ def run_enhancement_workflow(
                 passes=job.rife_passes,
                 logger=logger,
             )
+        elif job.interpolation_method in (method_mid_fps, method_high_fps):
+            if extract_frames:
+                if current_frames_dir is None:
+                    raise CutMindError(
+                        "❌ Frames manquantes après workflow enhancement.",
+                        code=ErrCode.UNEXPECTED,
+                        ctx=get_step_ctx({"work_key": job.work_key}),
+                    )
+
+                rebuilt_path = OUTPUT_DIR / f"{job.work_key}_rebuilt.mp4"
+
+                job.path = rebuild_video_from_frames(
+                    frames_dir=current_frames_dir,
+                    output_path=rebuilt_path,
+                    fps=job.fps_in,
+                    audio_path=audio_path,
+                    has_audio=job.has_audio,
+                    logger=logger,
+                )
+                extract_frames = False
+                current_frames_dir = None
+
+            if job.interpolation_method == method_mid_fps:
+                minterpolated_path = INPUT_DIR / job.work_key / "minterpolated.mp4"
+
+                interpolate_video_minterpolate(
+                    video_path=job.path,
+                    output_path=minterpolated_path,
+                    has_audio=job.has_audio,
+                    target_fps=TARGET_FPS,
+                    logger=logger,
+                )
+
+                job.path = minterpolated_path
+
+            if job.interpolation_method == method_high_fps:
+                converted_path = INPUT_DIR / job.work_key / "converted.mp4"
+                convert_to_fps(
+                    input_path=job.path,
+                    output_path=converted_path,
+                    fps=TARGET_FPS,
+                    has_audio=job.has_audio,
+                    logger=logger,
+                )
+                job.path = converted_path
 
         if extract_frames:
             if current_frames_dir is None:

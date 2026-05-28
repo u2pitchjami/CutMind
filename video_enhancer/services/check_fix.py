@@ -14,7 +14,7 @@ from shared.services.video_preparation import prepare_video
 from shared.utils.datas import resolution_str_to_tuple
 from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
-from video_enhancer.ffmpeg.ffmpeg_command import convert_to_60fps
+from video_enhancer.ffmpeg.ffmpeg_command import convert_to_fps
 from video_enhancer.models_cr.videojob import VideoJob
 
 
@@ -42,7 +42,7 @@ def check_fix_workflow(
 
         # 🧩 Étape 4 : Fix Resolution
         res_out = job.resolution_out
-        job.path, job.resolution_out = ensure_resolution(job.path, job.resolution_out, logger=logger)
+        job.path, job.resolution_out = ensure_resolution(job.path, job.resolution_out, job.has_audio, logger=logger)
         if job.resolution_out != res_out:
             segment.add_tag("resolution_fixed")
 
@@ -50,7 +50,7 @@ def check_fix_workflow(
         if job.fps_out > TARGET_FPS:
             temp_output = job.path.with_name(f"{job.path.stem}_{TARGET_FPS}fps.mp4")
             logger.debug(f"fps_out > {TARGET_FPS} -> temp_output : {temp_output}")
-            job.path = convert_to_60fps(job.path, temp_output, TARGET_FPS)
+            job.path = convert_to_fps(job.path, temp_output, TARGET_FPS, job.has_audio, logger=logger)
             logger.info(f"✅ Conversion {TARGET_FPS} FPS terminée : {job.path.stem}")
             job.fps_out = get_fps(job.path)
 

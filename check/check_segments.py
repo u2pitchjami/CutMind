@@ -122,7 +122,7 @@ class CheckSegments:
                             self.logger.info(f"Video {seg.filename_predicted} copiée vers {dst}")
 
                             out_path: Path = OUTPUT_DIR / f"{dst.stem}.normalized.mp4"
-                            convert_safe_video_format(str(dst), str(out_path))
+                            convert_safe_video_format(str(dst), str(out_path), logger=self.logger)
                             self.logger.info(f"Video {seg.filename_predicted} normalisée.")
                             dst.unlink()
 

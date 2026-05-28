@@ -121,7 +121,10 @@ class IAWorker:
                                     )
                                 if seg.keywords:
                                     normalizer = KeywordNormalizer(
-                                        model_name=MODEL_NAME, threshold=SIMILARITY_THRESHOLD, mode=MODE
+                                        model_name=MODEL_NAME,
+                                        threshold=SIMILARITY_THRESHOLD,
+                                        mode=MODE,
+                                        logger=self.logger,
                                     )
                                     seg.keywords = normalizer.normalize_keywords(seg.keywords, logger=self.logger)
                                     self.logger.debug(f"keywords : {seg.keywords}")

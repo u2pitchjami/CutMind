@@ -13,7 +13,11 @@ from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 @with_child_logger
 def ensure_resolution(
-    video_path: Path, input_res: tuple[int, int], cleanup: bool = True, logger: LoggerProtocol | None = None
+    video_path: Path,
+    input_res: tuple[int, int],
+    cleanup: bool = True,
+    has_audio: bool = True,
+    logger: LoggerProtocol | None = None,
 ) -> tuple[Path, tuple[int, int]]:
     """
     Vérifie si une vidéo est entrelacée et la désentrelace si nécessaire.
@@ -29,7 +33,9 @@ def ensure_resolution(
         logger.info(f"⚙️ résolution incorrecte détectée : {video_path.name} - {input_res}")
         resize_path = video_path.with_name(f"{video_path.stem}_resize.mp4")
         logger.info(f"🧩 Resize en cours : {video_path.name} → {resize_path}")
-        new_res = fix_segment_resolution(in_path=video_path, out_path=resize_path, input_res=input_res)
+        new_res = fix_segment_resolution(
+            in_path=video_path, out_path=resize_path, input_res=input_res, has_audio=has_audio, logger=logger
+        )
         if new_res:
             logger.info(f"✅ Vidéo resizée : {resize_path}")
 

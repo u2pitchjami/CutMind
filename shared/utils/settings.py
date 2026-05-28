@@ -157,6 +157,15 @@ class ProcessorSettings:
 
 
 @dataclass
+class InterpolationSettings:
+    cfr_threshold_ratio: float
+    ffmpeg_threshold_ratio: float
+    method_low_fps: str
+    method_mid_fps: str
+    method_high_fps: str
+
+
+@dataclass
 class WaitOutputSettings:
     stable_time: int
     check_interval: int
@@ -185,6 +194,7 @@ class Settings:
     router_orchestrator: OrchestratorSettings
     router_optimal_batch_size: OptimalBatchSizeSettings
     router_processor: ProcessorSettings
+    router_interpolation: InterpolationSettings
     router_wait_output: WaitOutputSettings
 
     # IMPORTANT :
@@ -252,6 +262,7 @@ def init_settings(config: Any) -> None:
         ),
         router_optimal_batch_size=OptimalBatchSizeSettings(min_size=rt["optimal_batch_size"]["min_size"]),
         router_processor=ProcessorSettings(**er["processor"]),
+        router_interpolation=InterpolationSettings(**er["interpolation"]),
         router_wait_output=WaitOutputSettings(**rt["wait_for_output"]),
         adaptive_batch=rt["adaptive_batch"],  # ← laissé en dict volontairement
     )

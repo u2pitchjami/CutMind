@@ -107,7 +107,9 @@ class VideoProcessor:
                 cuda = False
 
             # 🧩 Étape 1 : détection / désentrelacement
-            job.path = ensure_deinterlaced(video_path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
+            job.path = ensure_deinterlaced(
+                video_path, use_cuda=cuda, cleanup=CLEANUP, has_audio=job.has_audio, logger=logger
+            )
             # 🧩 Étape 2 : workflow enhancement
             job.path = run_enhancement_workflow(job=job, logger=logger)
             # 🧩 Étape 3 : check & fix

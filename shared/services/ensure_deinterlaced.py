@@ -13,7 +13,11 @@ from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
 
 @with_child_logger
 def ensure_deinterlaced(
-    video_path: Path, use_cuda: bool = True, cleanup: bool = True, logger: LoggerProtocol | None = None
+    video_path: Path,
+    use_cuda: bool = True,
+    cleanup: bool = True,
+    has_audio: bool = True,
+    logger: LoggerProtocol | None = None,
 ) -> Path:
     """
     Vérifie si une vidéo est entrelacée et la désentrelace si nécessaire.
@@ -31,7 +35,7 @@ def ensure_deinterlaced(
         logger.info(f"⚙️ Vidéo entrelacée détectée : {video_path.name}")
         deint_path = video_path.with_name(f"{video_path.stem}_deint.mp4")
         logger.info(f"🧩 Désentrelacement en cours : {video_path.name} → {deint_path.name}")
-        if deinterlace_video(video_path, deint_path):
+        if deinterlace_video(video_path, deint_path, has_audio=has_audio, logger=logger):
             logger.info(f"✅ Vidéo désentrelacée : {deint_path.name}")
 
             if cleanup:

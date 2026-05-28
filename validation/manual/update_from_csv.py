@@ -47,7 +47,7 @@ def update_segments_csv(
         if not manual_csv.exists():
             logger.warning("❌ Erreur Fichier Manuel Absent.")
             return
-        with db_conn() as conn:
+        with db_conn(logger=logger) as conn:
             with get_dict_cursor(conn), open(manual_csv, newline="", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 for row in reader:

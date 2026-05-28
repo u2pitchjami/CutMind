@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-import subprocess
 
+from shared.ffmpegjob.ffjob import FFmpegJob, run_ffmpeg_job
 from shared.utils.logger import LoggerProtocol, ensure_logger
 
 
@@ -28,29 +28,22 @@ def extract_all_frames(
 
     frame_pattern = frames_output_dir / "frame_%08d.png"
 
-    frames_command = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(video_path),
-        "-start_number",
-        "0",
-        str(frame_pattern),
-    ]
+    run_ffmpeg_job(
+        FFmpegJob(
+            step="extract_frames",
+            input_path=video_path,
+            output_path=frame_pattern,
+            include_audio=False,
+            output_args=[
+                "-start_number",
+                "0",
+            ],
+            use_common_video_args=False,
+        ),
+        logger=logger,
+    )
 
     logger.info("Extraction des frames : %s", video_path.name)
-
-    try:
-        subprocess.run(
-            frames_command,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        logger.error("FFmpeg frames stdout: %s", exc.stdout)
-        logger.error("FFmpeg frames stderr: %s", exc.stderr)
-        raise FrameExtractionError(f"Frame extraction failed for {video_path}") from exc
 
     if not any(frames_output_dir.glob("frame_*.png")):
         raise FrameExtractionError(f"No frames extracted from {video_path}")
@@ -63,30 +56,25 @@ def extract_all_frames(
 
         audio_output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        audio_command = [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(video_path),
-            "-vn",
-            "-c:a",
-            "copy",
-            str(audio_output_path),
-        ]
+        run_ffmpeg_job(
+            FFmpegJob(
+                step="extract_audio",
+                input_path=video_path,
+                output_path=audio_output_path,
+                include_audio=True,
+                audio_args=[
+                    "-c:a",
+                    "copy",
+                ],
+                output_args=[
+                    "-vn",
+                ],
+                use_common_video_args=False,
+            ),
+            logger=logger,
+        )
 
         logger.info("Extraction audio : %s", video_path.name)
-
-        try:
-            subprocess.run(
-                audio_command,
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        except subprocess.CalledProcessError as exc:
-            logger.error("FFmpeg audio stdout: %s", exc.stdout)
-            logger.error("FFmpeg audio stderr: %s", exc.stderr)
-            raise FrameExtractionError(f"Audio extraction failed for {video_path}") from exc
 
         extracted_audio_path = audio_output_path
 

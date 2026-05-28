@@ -14,7 +14,7 @@ def select_segments_for_block(
 ) -> list[Segment]:
     logger = ensure_logger(logger, __name__)
     segments = repo.get_segments_by_category(block.category, ["validated_check"])
-    with db_conn() as conn:
+    with db_conn(logger=logger) as conn:
         with get_dict_cursor(conn) as cur:
             for seg in segments:
                 if not seg.id:

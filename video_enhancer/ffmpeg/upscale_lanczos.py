@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import ffmpeg  # type: ignore
 
 from shared.models.exceptions import CutMindError, ErrCode
@@ -8,8 +10,8 @@ from shared.utils.settings import get_settings
 
 
 def upscale_video_lanczos(
-    video_path: str,
-    output_path: str,
+    video_path: Path,
+    output_path: Path,
     has_audio: bool,
     target_width: int = 1920,
     target_height: int = 1080,
@@ -20,6 +22,11 @@ def upscale_video_lanczos(
     """
     logger = ensure_logger(logger, __name__)
     settings = get_settings()
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     try:
         logger.info(

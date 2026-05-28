@@ -72,14 +72,8 @@ def perform_recut(
             output_path = output_dir / f"seg_{segment.id:04d}_{new_uid}.mp4"
 
             try:
-                executor.cut(str(input_path), start, end, str(output_path))
-                # ffmpeg_cut_one_segment(
-                #     input_path=input_path,
-                #     start=start,
-                #     end=end,
-                #     output_path=output_path,
-                #     logger=logger,
-                # )
+                executor.cut(str(input_path), start, end, str(output_path), logger=logger)
+
             except Exception as exc:
                 logger.error("❌ Erreur ffmpeg (cut): %s", exc)
                 continue

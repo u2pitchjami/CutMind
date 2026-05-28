@@ -24,13 +24,31 @@ class VideoJob:
     has_audio: bool = False
     output_file: Path | None = None
     upscale_factor: str | None = field(init=False, default=None)
+    interpolation_method: str | None = field(init=False, default=None)
     rife_passes: int = field(init=False, default=0)
 
     def __post_init__(self) -> None:
         """Compute processing decisions."""
+        settings = get_settings()
+        cfr_threshold_ratio: float = settings.router_interpolation.cfr_threshold_ratio
+        ffmpeg_threshold_ratio: float = settings.router_interpolation.ffmpeg_threshold_ratio
+        method_low_fps: str = settings.router_interpolation.method_low_fps
+        method_mid_fps: str = settings.router_interpolation.method_mid_fps
+        method_high_fps: str = settings.router_interpolation.method_high_fps
 
         self.upscale_factor = self._compute_upscale_factor()
-        self.rife_passes = self._compute_rife_passes()
+
+        if self.fps_in >= cfr_threshold_ratio:
+            self.interpolation_method = method_high_fps
+            self.rife_passes = 0
+
+        elif self.fps_in >= ffmpeg_threshold_ratio:
+            self.interpolation_method = method_mid_fps
+            self.rife_passes = 0
+
+        else:
+            self.interpolation_method = method_low_fps
+            self.rife_passes = self._compute_rife_passes()
 
     def _compute_upscale_factor(self) -> str | None:
         """Compute Real-ESRGAN scale factor.

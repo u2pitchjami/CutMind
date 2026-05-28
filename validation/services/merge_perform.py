@@ -33,7 +33,7 @@ def perform_merge(
 
     try:
         # --- 1️⃣ Validations de base ---
-        if not segment or not segment.id:
+        if not segment or not segment.id or not segment.has_audio:
             raise CutMindError(
                 "❌ Segment invalide pour merge.",
                 code=ErrCode.UNEXPECTED,
@@ -95,6 +95,7 @@ def perform_merge(
         ffmpeg_concat_segments(
             input_files=[str(p) for p in input_paths],
             output_file=str(output_path),
+            has_audio=segment.has_audio,
             logger=logger,
         )
 

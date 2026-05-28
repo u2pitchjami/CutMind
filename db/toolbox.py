@@ -54,7 +54,7 @@ class PathMigrationTool:
         query = f"CREATE TABLE IF NOT EXISTS backup_{self.table}_paths AS SELECT id, {self.column} FROM {self.table};"
 
         try:
-            with db_conn() as conn:
+            with db_conn(logger=logger) as conn:
                 with get_dict_cursor(conn) as cur:
                     safe_execute_dict(cur, query)
             logger.info("✔ Backup créée : backup_%s_paths", self.table)
@@ -79,7 +79,7 @@ class PathMigrationTool:
             )
 
             try:
-                with db_conn() as conn:
+                with db_conn(logger=logger) as conn:
                     with get_dict_cursor(conn) as cur:
                         safe_execute_dict(cur, query, (old, new, f"{old}%"))
                         rows = cur.fetchall()
@@ -110,7 +110,7 @@ class PathMigrationTool:
         query = f"SELECT id, {self.column} AS path FROM {self.table} WHERE NOT ({like_clauses});"
 
         try:
-            with db_conn() as conn:
+            with db_conn(logger=logger) as conn:
                 with get_dict_cursor(conn) as cur:
                     safe_execute_dict(cur, query)
                     rows = cur.fetchall()
@@ -142,7 +142,7 @@ class PathMigrationTool:
             )
 
             try:
-                with db_conn() as conn:
+                with db_conn(logger=logger) as conn:
                     with get_dict_cursor(conn) as cur:
                         safe_execute_dict(cur, query, (old, new, f"{old}%"))
                 logger.info("✔ Remplacement effectué : %s → %s", old, new)
@@ -165,7 +165,7 @@ class PathMigrationTool:
         )
 
         try:
-            with db_conn() as conn:
+            with db_conn(logger=logger) as conn:
                 with get_dict_cursor(conn) as cur:
                     safe_execute_dict(cur, query)
             logger.info("✔ Rollback terminé.")
