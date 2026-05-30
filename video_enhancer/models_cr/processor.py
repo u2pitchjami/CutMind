@@ -95,8 +95,9 @@ class VideoProcessor:
             )
 
             logger.info(
-                "Processing plan | upscale=%s | rife_passes=%s",
+                "Processing plan | upscale=%s | interpolation_method=%s | rife_passes=%s",
                 job.upscale_factor,
+                job.interpolation_method,
                 job.rife_passes,
             )
 

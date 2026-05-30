@@ -38,7 +38,7 @@ def upscale_video_lanczos(
             has_audio,
         )
 
-        input_stream = ffmpeg.input(video_path)
+        input_stream = ffmpeg.input(str(video_path))
 
         video_scaled = input_stream.video.filter(
             "scale",
@@ -65,7 +65,7 @@ def upscale_video_lanczos(
             stream = ffmpeg.output(
                 video_scaled,
                 input_stream.audio,
-                output_path,
+                str(output_path),
                 acodec=settings.ffsmartcut.acodec,
                 audio_bitrate=settings.ffsmartcut.audio_bitrate,
                 ar=settings.ffsmartcut.ar,
@@ -75,7 +75,7 @@ def upscale_video_lanczos(
         else:
             stream = ffmpeg.output(
                 video_scaled,
-                output_path,
+                str(output_path),
                 an=None,
                 **output_kwargs,
             )

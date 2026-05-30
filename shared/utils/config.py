@@ -101,18 +101,22 @@ def load_prompts() -> dict[str, str]:
 
 # --- Variables d'environnement accessibles globalement ---
 
+# ENHANCER
 INPUT_DIR: Path = Path(get_path_required("INPUT_DIR"))
 OUTPUT_DIR: Path = Path(get_path_required("OUTPUT_DIR"))
+
 TEMP_DIR: Path = Path(get_path_required("TEMP_DIR"))
-TRASH_DIR: Path = Path(get_str("TRASH_DIR", ".trash"))
-REALESRGAN_MODEL_DIR: Path = Path(get_path_required("REALESRGAN_MODEL_DIR"))
-RIFE_MODEL_DIR: Path = Path(get_path_required("RIFE_MODEL_DIR"))
-REALESRGAN_BIN: Path = Path(get_path_required("REALESRGAN_BIN"))
-RIFE_BIN: Path = Path(get_path_required("RIFE_BIN"))
 TEMP_AUDIO_DIR: Path = Path(get_path_required("TEMP_AUDIO_DIR"))
 TEMP_FRAMES_INPUT_DIR: Path = Path(get_path_required("TEMP_FRAMES_INPUT_DIR"))
 TEMP_FRAMES_RIFE_DIR: Path = Path(get_path_required("TEMP_FRAMES_RIFE_DIR"))
 TEMP_FRAMES_UPSCALED_DIR: Path = Path(get_path_required("TEMP_FRAMES_UPSCALED_DIR"))
+
+REALESRGAN_MODEL_DIR: Path = Path(get_path_required("REALESRGAN_MODEL_DIR"))
+RIFE_MODEL_DIR: Path = Path(get_path_required("RIFE_MODEL_DIR"))
+REALESRGAN_BIN: Path = Path(get_path_required("REALESRGAN_BIN"))
+RIFE_BIN: Path = Path(get_path_required("RIFE_BIN"))
+
+TRASH_DIR: Path = Path(get_str("TRASH_DIR", ".trash"))
 
 # LOGS
 LOG_FILE_PATH = get_str("LOG_FILE_PATH", "logs")
@@ -125,10 +129,6 @@ DEV_SRC = get_str("DEV_SRC")
 DEV_DST = get_str("DEV_DST")
 DEV_MODE = get_str("DEV_MODE")
 
-PROMPT_PATH: str = get_str("PROMPT_PATH", "/app/config/prompts.py")
-
-PROMPTS = load_prompts()
-
 # DB
 DB_HOST = str(get_required("DB_HOST"))
 DB_PORT = int(get_int("DB_PORT"))
@@ -136,26 +136,36 @@ DB_USER = str(get_required("DB_USER"))
 DB_PASSWORD = str(get_required("DB_PASSWORD"))
 DB_NAME = str(get_required("DB_NAME"))
 
-CUTMIND_BASEDIR = Path(get_path_required("CUTMIND_BASEDIR"))
+# MANUAL CSV
 MANUAL_CSV_PATH = get_str("MANUAL_CSV_PATH")
 MANUAL_CSV_CUT_PATH = get_str("MANUAL_CSV_CUT_PATH")
 CSV_LOG_PATH = get_str("CSV_LOG_PATH")
 CSV_ARCHIVE_PATH: Path = Path(get_str("CSV_ARCHIVE_PATH", ".csv_archive"))
-
-MIN_CONFIDENCE = get_float("MIN_CONFIDENCE", 0.6)
 
 # SMARTCUT
 IMPORT_DIR_SC: Path = Path(get_path_required("IMPORT_DIR_SC"))
 TRASH_DIR_SC: Path = Path(get_str("TRASH_DIR_SC", ".trash"))
 ERROR_DIR_SC: Path = Path(get_str("ERROR_DIR_SC", ".error"))
 OUTPUT_DIR_SC: Path = Path(get_path_required("OUTPUT_DIR_SC"))
+
+# IA
 TMP_FRAMES_DIR_SC: Path = Path(get_str("TMP_FRAMES_DIR_SC", ".tmp_frames"))
 BATCH_FRAMES_DIR_SC: Path = Path(get_str("BATCH_FRAMES_DIR_SC", ".batches"))
 MULTIPLE_FRAMES_DIR_SC: Path = Path(get_str("MULTIPLE_FRAMES_DIR_SC", ".multiple"))
+
 KW_CACHE_FILE_SC = Path(get_str("KW_CACHE_FILE_SC"))
 KW_MAPPING_FILE_SC = Path(get_path_required("KW_MAPPING_FILE_SC"))
 KW_FORBIDDEN_FILE_SC = Path(get_str("KW_FORBIDDEN_FILE_SC"))
 
+PROMPT_PATH: str = get_str("PROMPT_PATH", "/app/config/prompts.py")
+PROMPTS = load_prompts()
+
+MIN_CONFIDENCE = get_float("MIN_CONFIDENCE", 0.6)
+
+# CUTMIND BASE
+CUTMIND_BASEDIR = Path(get_path_required("CUTMIND_BASEDIR"))
+
+# COMPIL
 TEMP_COMPIL = Path(get_str("TEMP_COMPIL", ".temp_compil"))
 TEMPLATES_COMPIL = Path(get_str("TEMPLATES_COMPIL", ".templates"))
 EXPORTS_COMPIL = Path(get_str("EXPORTS_COMPIL", ".exports"))
