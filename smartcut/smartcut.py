@@ -167,6 +167,7 @@ def multi_stage_cut(
             for seg in vid.segments:
                 logger.debug(f"seg : {seg}")
                 repo._insert_segment(seg)
+
                 seg.pipeline_target = SegmentStatus.TO_CUT
                 seg.last_updated = datetime.now().isoformat()
                 repo.update_segment_validation(seg)

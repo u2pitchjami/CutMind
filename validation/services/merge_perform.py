@@ -33,7 +33,7 @@ def perform_merge(
 
     try:
         # --- 1️⃣ Validations de base ---
-        if not segment or not segment.id or not segment.has_audio:
+        if not segment or not segment.id or segment.has_audio is None:
             raise CutMindError(
                 "❌ Segment invalide pour merge.",
                 code=ErrCode.UNEXPECTED,
@@ -124,6 +124,10 @@ def perform_merge(
             resolution=segment.resolution,
             codec=segment.codec,
             bitrate=segment.bitrate,
+            has_audio=segment.has_audio,
+            audio_codec=segment.audio_codec,
+            sample_rate=segment.sample_rate,
+            channels=segment.channels,
             filename_predicted=output_path.name,
             output_path=str(output_path),
             source_flow="manual_csv",
