@@ -17,6 +17,7 @@ from IA.keywords.utils.keyword_normalizer import KeywordNormalizer
 from shared.models.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
+from shared.services.gpu_guard import guard_gpu_or_requeue
 from shared.status_orchestrator.statuses import SegmentStatus
 from shared.utils.config import COLOR_RED, COLOR_RESET
 from shared.utils.logger import get_logger
@@ -73,92 +74,94 @@ class IAWorker:
         # Chargement du modèle IA + paramètres de batching
         free_gb, total_gb = vram_gpu()
         self.logger.info(f"📊 VRAM avant chargement : {free_gb:.2f} Go / {total_gb:.2f} Go")
-
-        # 3️⃣ Transaction : copie + maj DB
-        with Timer(f"Traitement IA pour la vidéo : {self.video.name}", self.logger):
-            try:
-                for seg in self.segments:
-                    with processing_step(self.video, seg, action="Analyse IA") as history:
-                        # --- DÉCISION INTELLIGENTE ---
-                        current_hour = datetime.now().hour
-                        IA_allowed = current_hour not in forbidden_hours
-                        if IA_allowed:
-                            with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
-                                (
-                                    seg.description,
-                                    seg.category,
-                                    seg.keywords,
-                                    seg.quality_score,
-                                    seg.rating,
-                                    seg.hashes,
-                                ) = analyze_IA(
-                                    seg=seg,
-                                    processor=self.processor,
-                                    model=self.model,
-                                    model_precision=self.model_precision,
-                                    model_name=self.model_name,
-                                    batch_size=self.batch_size,
-                                    min_frames=MIN_FRAMES,
-                                    max_frames=MAX_FRAMES,
-                                    force=False,
-                                    logger=self.logger,
-                                )
-                                self.logger.info(
-                                    f"seg.description, seg.category, seg.keywords, seg.rating :\
-                                {seg.description, seg.category, seg.keywords, seg.rating}"
-                                )
-                                seg.status = SegmentStatus.IA_DONE
-                                seg.ai_model = self.model_name
-                                seg.pipeline_target = None
-                                self.logger.debug(f"segment : {seg}")
-                                self.repo.update_segment_validation(seg)
-
-                                if not seg.id:
-                                    raise CutMindError(
-                                        "❌ Erreur DB : aucun seg.id.",
-                                        code=ErrCode.DB,
-                                        ctx=get_step_ctx({"video_name": self.video.name}),
-                                    )
-                                if seg.keywords:
-                                    normalizer = KeywordNormalizer(
-                                        model_name=MODEL_NAME,
-                                        threshold=SIMILARITY_THRESHOLD,
-                                        mode=MODE,
+        if guard_gpu_or_requeue(logger=self.logger):
+            # 3️⃣ Transaction : copie + maj DB
+            with Timer(f"Traitement IA pour la vidéo : {self.video.name}", self.logger):
+                try:
+                    for seg in self.segments:
+                        with processing_step(self.video, seg, action="Analyse IA") as history:
+                            # --- DÉCISION INTELLIGENTE ---
+                            current_hour = datetime.now().hour
+                            IA_allowed = current_hour not in forbidden_hours
+                            if IA_allowed:
+                                with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
+                                    (
+                                        seg.description,
+                                        seg.category,
+                                        seg.keywords,
+                                        seg.quality_score,
+                                        seg.rating,
+                                        seg.hashes,
+                                    ) = analyze_IA(
+                                        seg=seg,
+                                        processor=self.processor,
+                                        model=self.model,
+                                        model_precision=self.model_precision,
+                                        model_name=self.model_name,
+                                        batch_size=self.batch_size,
+                                        min_frames=MIN_FRAMES,
+                                        max_frames=MAX_FRAMES,
+                                        force=False,
                                         logger=self.logger,
                                     )
-                                    seg.keywords = normalizer.normalize_keywords(seg.keywords, logger=self.logger)
-                                    self.logger.debug(f"keywords : {seg.keywords}")
-                                    self.repo.insert_keywords_standalone(segment_id=seg.id, keywords=seg.keywords)
+                                    self.logger.info(
+                                        f"seg.description, seg.category, seg.keywords, seg.rating :\
+                                    {seg.description, seg.category, seg.keywords, seg.rating}"
+                                    )
+                                    seg.status = SegmentStatus.IA_DONE
+                                    seg.ai_model = self.model_name
+                                    seg.pipeline_target = None
+                                    self.logger.debug(f"segment : {seg}")
+                                    self.repo.update_segment_validation(seg)
 
-                                if seg.hashes:
-                                    self.repo.replace_segment_frame_hashes(seg.id, seg.hashes)
+                                    if not seg.id:
+                                        raise CutMindError(
+                                            "❌ Erreur DB : aucun seg.id.",
+                                            code=ErrCode.DB,
+                                            ctx=get_step_ctx({"video_name": self.video.name}),
+                                        )
+                                    if seg.keywords:
+                                        normalizer = KeywordNormalizer(
+                                            model_name=MODEL_NAME,
+                                            threshold=SIMILARITY_THRESHOLD,
+                                            mode=MODE,
+                                            logger=self.logger,
+                                        )
+                                        seg.keywords = normalizer.normalize_keywords(seg.keywords, logger=self.logger)
+                                        self.logger.debug(f"keywords : {seg.keywords}")
+                                        self.repo.insert_keywords_standalone(segment_id=seg.id, keywords=seg.keywords)
 
-                                processed_count += 1
-                                status, message = evaluate_ia_output(seg)
-                                history.status = status
-                                history.message = message
-                        else:
-                            self.logger.info(
-                                f"{COLOR_RED}🌙 Plage horaire silencieuse — Analyse IA désactivé\
-                                    {COLOR_RESET}"
-                            )
-                            history.status = "ko"
-                            history.message = "Plage horaire silencieuse — Analyse IA désactivé"
-                            return processed_count
+                                    if seg.hashes:
+                                        self.repo.replace_segment_frame_hashes(seg.id, seg.hashes)
 
-                    free, total = vram_gpu()
-                    self.logger.info(f"📊 VRAM avant release : {free:.2f} Go / {total:.2f} Go")
+                                    processed_count += 1
+                                    status, message = evaluate_ia_output(seg)
+                                    history.status = status
+                                    history.message = message
+                            else:
+                                self.logger.info(
+                                    f"{COLOR_RED}🌙 Plage horaire silencieuse — Analyse IA désactivé\
+                                        {COLOR_RESET}"
+                                )
+                                history.status = "ko"
+                                history.message = "Plage horaire silencieuse — Analyse IA désactivé"
+                                return processed_count
 
-            except CutMindError as err:
-                self.handle_ia_failure(seg, err)
+                        free, total = vram_gpu()
+                        self.logger.info(f"📊 VRAM avant release : {free:.2f} Go / {total:.2f} Go")
 
-            except Exception as exc:
-                self.handle_ia_failure(
-                    seg,
-                    exc,
-                    message="❌ Erreur inattendue durant l'envoi à Processor Comfyui.",
-                    code=ErrCode.UNEXPECTED,
-                )
+                except CutMindError as err:
+                    release_gpu_memory(model=self.model, processor=self.processor, cache_only=False, logger=self.logger)
+                    self.handle_ia_failure(seg, err)
+
+                except Exception as exc:
+                    release_gpu_memory(model=self.model, processor=self.processor, cache_only=False, logger=self.logger)
+                    self.handle_ia_failure(
+                        seg,
+                        exc,
+                        message="❌ Erreur inattendue durant l'envoi à Processor Comfyui.",
+                        code=ErrCode.UNEXPECTED,
+                    )
 
         release_gpu_memory(model=self.model, processor=self.processor, cache_only=False, logger=self.logger)
         free, total = vram_gpu()

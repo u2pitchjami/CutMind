@@ -23,7 +23,7 @@ def extract_keywords_from_filename(filename: str | Path) -> list[str]:
     """
     try:
         # Nom de base sans extension
-        name = Path(filename).stem
+        name = Path(filename).stem.lower()
 
         # 1️⃣ Normalisation : remplacer underscores et tirets doubles par des espaces/tirets simples
         name = name.replace("_-_", "-").replace("_", " ")

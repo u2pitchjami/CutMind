@@ -10,6 +10,7 @@ from shared.utils.logger import LoggerProtocol, ensure_logger
 def run_master(logger: LoggerProtocol | None = None) -> None:
     logger = ensure_logger(logger, __name__)
     mp.set_start_method("spawn", force=True)
+    logger.info("▶️ Lancement de Cutmind")
     logger.info("🎛️ Master Orchestrator démarré")
 
     p_smartcut = Process(

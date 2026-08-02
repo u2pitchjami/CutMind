@@ -20,6 +20,7 @@ from shared.models.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
 from shared.services.file_mover import FileMover
+from shared.services.gpu_guard import guard_gpu_or_requeue
 from shared.utils.config import (
     COLOR_RED,
     COLOR_RESET,
@@ -65,45 +66,46 @@ class EnhancerWorker:
         # 1️⃣ Sélectionner les vidéos concernées
         repo = CutMindRepository()
         self.logger.info("🎞️ Vidéo '%s' nb segments: %i", self.video.name, len(self.segments))
+        # 1️⃣ Sélectionner les vidéos concernées
+        if guard_gpu_or_requeue(logger=self.logger):
+            # 3️⃣ Transaction : copie + maj DB
+            with Timer(f"Traitement Comfyui pour la vidéo : {self.video.name}", self.logger):
+                try:
+                    for seg, src, dst in prepared:
+                        with processing_step(self.video, seg, action="Enhancer Router") as history:
+                            self.file_mover.safe_copy(src, dst)
+                            seg.source_flow = "enhancer_router"
+                            repo.update_segment_validation(seg)
 
-        # 3️⃣ Transaction : copie + maj DB
-        with Timer(f"Traitement Comfyui pour la vidéo : {self.video.name}", self.logger):
-            try:
-                for seg, src, dst in prepared:
-                    with processing_step(self.video, seg, action="Enhancer Router") as history:
-                        self.file_mover.safe_copy(src, dst)
-                        seg.source_flow = "enhancer_router"
-                        repo.update_segment_validation(seg)
-
-                        # --- DÉCISION INTELLIGENTE ---
-                        current_hour = datetime.now().hour
-                        router_allowed = current_hour not in forbidden_hours
-                        if router_allowed:
-                            with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
-                                processor = VideoProcessor(segment=seg, logger=self.logger)
-                                new_seg = processor.process(Path(dst), FORCE_DEINTERLACE, logger=self.logger)
-                                repo.update_segment_postprocess(new_seg)
-                                self.logger.debug(f"new_seg {new_seg}")
-                                processed_count += 1
-                                status, message = evaluate_enhancer_output(new_seg.fps, new_seg.resolution)
-                                history.status = status
-                                history.message = message
-                        else:
-                            self.logger.info(
-                                f"{COLOR_RED}🌙 Plage horaire silencieuse — Router désactivé (SmartCut forcé)\
-                                    {COLOR_RESET}"
-                            )
-                            history.status = "ko"
-                            history.message = "Plage horaire silencieuse — Analyse IA désactivé"
-                            return processed_count
-            except Exception as exc:
-                self.logger.exception("💥 Erreur Comfyui Router")
-                log_exception(self.logger, exc)
-                raise CutMindError(
-                    "❌ Erreur inatendue durant l'envoi à Processor Comfyui.",
-                    code=ErrCode.UNEXPECTED,
-                    ctx=get_step_ctx({"video.name": self.video.name, "video.status": self.video.status}),
-                ) from exc
+                            # --- DÉCISION INTELLIGENTE ---
+                            current_hour = datetime.now().hour
+                            router_allowed = current_hour not in forbidden_hours
+                            if router_allowed:
+                                with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
+                                    processor = VideoProcessor(segment=seg, logger=self.logger)
+                                    new_seg = processor.process(Path(dst), FORCE_DEINTERLACE, logger=self.logger)
+                                    repo.update_segment_postprocess(new_seg)
+                                    self.logger.debug(f"new_seg {new_seg}")
+                                    processed_count += 1
+                                    status, message = evaluate_enhancer_output(new_seg.fps, new_seg.resolution)
+                                    history.status = status
+                                    history.message = message
+                            else:
+                                self.logger.info(
+                                    f"{COLOR_RED}🌙 Plage horaire silencieuse — Router désactivé (SmartCut forcé)\
+                                        {COLOR_RESET}"
+                                )
+                                history.status = "ko"
+                                history.message = "Plage horaire silencieuse — Analyse IA désactivé"
+                                return processed_count
+                except Exception as exc:
+                    self.logger.exception("💥 Erreur Comfyui Router")
+                    log_exception(self.logger, exc)
+                    raise CutMindError(
+                        "❌ Erreur inatendue durant l'envoi à Processor Comfyui.",
+                        code=ErrCode.UNEXPECTED,
+                        ctx=get_step_ctx({"video.name": self.video.name, "video.status": self.video.status}),
+                    ) from exc
 
         if processed_count == 0:
             self.logger.info("📭 Aucun segment traité lors de ce cycle.")

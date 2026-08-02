@@ -152,6 +152,7 @@ OUTPUT_DIR_SC: Path = Path(get_path_required("OUTPUT_DIR_SC"))
 TMP_FRAMES_DIR_SC: Path = Path(get_str("TMP_FRAMES_DIR_SC", ".tmp_frames"))
 BATCH_FRAMES_DIR_SC: Path = Path(get_str("BATCH_FRAMES_DIR_SC", ".batches"))
 MULTIPLE_FRAMES_DIR_SC: Path = Path(get_str("MULTIPLE_FRAMES_DIR_SC", ".multiple"))
+PROMETHEUS_URL = get_required("PROMETHEUS_URL")
 
 KW_CACHE_FILE_SC = Path(get_str("KW_CACHE_FILE_SC"))
 KW_MAPPING_FILE_SC = Path(get_path_required("KW_MAPPING_FILE_SC"))

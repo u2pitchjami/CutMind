@@ -294,7 +294,7 @@ class CutMindOrchestratorV2:
             video.id,
         )
 
-        checker = CheckSegments(vid=video, segments=segments, logger=self.logger)
+        checker = CheckSegments(vid=video, segments=segments)
         checker.run()
 
     def _reload_video_with_segments(self, video: Video) -> list[Segment]:
