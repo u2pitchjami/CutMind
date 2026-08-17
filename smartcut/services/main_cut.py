@@ -1,14 +1,14 @@
 # check/check_enhanced_segments.py
 
-from datetime import datetime
 from pathlib import Path
 
 from db.repository import CutMindRepository
 from shared.models.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode
 from shared.models.timer_manager import Timer
+from shared.services.file_mover import FileMover
 from shared.status_orchestrator.statuses import OrchestratorStatus
-from shared.utils.config import ERROR_DIR_SC, TRASH_DIR_SC
+from shared.utils.config import ERROR_DIR_SC, POST_CUT_DIR_SC, TRASH_DIR_SC
 from shared.utils.error import log_exception
 from shared.utils.logger import get_logger
 from shared.utils.settings import get_settings
@@ -28,6 +28,7 @@ class CutWorker:
         self.segments = segments
         self.repo = CutMindRepository()
         self.service_cut = CutService()
+        self.file_mover = FileMover()
 
     # ---------------------------------------------------------
     # 🚀 Main Entry Point
@@ -90,9 +91,19 @@ class CutWorker:
 
             # mise à jour de la session
             for seg in self.segments:
+                if not seg.output_path:
+                    raise CutMindError(
+                        "Segment sans chemin de sortie valide.",
+                        code=ErrCode.CONTEXT,
+                        ctx={"segment_id": seg.id},
+                    )
+                # seg.output_path = str(post_cut_path)
+                post_cut_path = Path(POST_CUT_DIR_SC) / self.video.name / Path(seg.output_path).name
+                self.file_mover.safe_replace(src=Path(seg.output_path), dst=post_cut_path, logger=self.logger)
                 seg.status = OrchestratorStatus.SEGMENT_CUT_DONE
                 seg.pipeline_target = OrchestratorStatus.SEGMENT_IN_CUT_VALIDATION
-                seg.last_updated = datetime.now().isoformat()
+                seg.predict_filename(base_dir=POST_CUT_DIR_SC, folder_name=self.video.name)
+                # seg.last_updated = datetime.now().isoformat()
                 self.repo.update_segment_validation(seg)
 
             self.video.status = OrchestratorStatus.VIDEO_CUT_DONE

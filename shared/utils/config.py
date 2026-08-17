@@ -144,9 +144,11 @@ CSV_ARCHIVE_PATH: Path = Path(get_str("CSV_ARCHIVE_PATH", ".csv_archive"))
 
 # SMARTCUT
 IMPORT_DIR_SC: Path = Path(get_path_required("IMPORT_DIR_SC"))
+WORK_DIR_SC: Path = Path(get_path_required("WORK_DIR_SC"))
 TRASH_DIR_SC: Path = Path(get_str("TRASH_DIR_SC", ".trash"))
 ERROR_DIR_SC: Path = Path(get_str("ERROR_DIR_SC", ".error"))
 OUTPUT_DIR_SC: Path = Path(get_path_required("OUTPUT_DIR_SC"))
+POST_CUT_DIR_SC: Path = Path(get_str("POST_CUT_DIR_SC", ".post_cut"))
 
 # IA
 TMP_FRAMES_DIR_SC: Path = Path(get_str("TMP_FRAMES_DIR_SC", ".tmp_frames"))

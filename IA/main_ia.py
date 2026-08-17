@@ -1,6 +1,5 @@
 # check/check_enhanced_segments.py
 
-from datetime import datetime
 
 from transformers import PreTrainedModel, ProcessorMixin
 
@@ -19,7 +18,6 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
 from shared.services.gpu_guard import guard_gpu_or_requeue
 from shared.status_orchestrator.statuses import SegmentStatus
-from shared.utils.config import COLOR_RED, COLOR_RESET
 from shared.utils.logger import get_logger
 from shared.utils.settings import get_settings
 
@@ -54,7 +52,6 @@ class IAWorker:
         Retourne le nombre total de segments envoyés pour traitement.
         """
         settings = get_settings()
-        forbidden_hours = settings.router_orchestrator.forbidden_hours
         MODEL_NAME = settings.keyword_normalizer.model_name_key
         MODE = settings.keyword_normalizer.mode
         SIMILARITY_THRESHOLD = settings.keyword_normalizer.similarity_threshold
@@ -80,73 +77,76 @@ class IAWorker:
                 try:
                     for seg in self.segments:
                         with processing_step(self.video, seg, action="Analyse IA") as history:
-                            # --- DÉCISION INTELLIGENTE ---
-                            current_hour = datetime.now().hour
-                            IA_allowed = current_hour not in forbidden_hours
-                            if IA_allowed:
-                                with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
-                                    (
-                                        seg.description,
-                                        seg.category,
-                                        seg.keywords,
-                                        seg.quality_score,
-                                        seg.rating,
-                                        seg.hashes,
-                                    ) = analyze_IA(
-                                        seg=seg,
-                                        processor=self.processor,
-                                        model=self.model,
-                                        model_precision=self.model_precision,
-                                        model_name=self.model_name,
-                                        batch_size=self.batch_size,
-                                        min_frames=MIN_FRAMES,
-                                        max_frames=MAX_FRAMES,
-                                        force=False,
+                            with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
+                                (
+                                    seg.description,
+                                    seg.category,
+                                    seg.keywords,
+                                    seg.quality_score,
+                                    seg.rating,
+                                    seg.hashes,
+                                ) = analyze_IA(
+                                    seg=seg,
+                                    processor=self.processor,
+                                    model=self.model,
+                                    model_precision=self.model_precision,
+                                    model_name=self.model_name,
+                                    batch_size=self.batch_size,
+                                    min_frames=MIN_FRAMES,
+                                    max_frames=MAX_FRAMES,
+                                    force=False,
+                                    logger=self.logger,
+                                )
+                                self.logger.info(
+                                    f"seg.description, seg.category, seg.keywords, seg.rating :\
+                                {seg.description, seg.category, seg.keywords, seg.rating}"
+                                )
+                                seg.status = SegmentStatus.IA_DONE
+                                seg.ai_model = self.model_name
+                                seg.pipeline_target = None
+                                self.logger.debug(f"segment : {seg}")
+                                self.repo.update_segment_validation(seg)
+
+                                if not seg.id:
+                                    raise CutMindError(
+                                        "❌ Erreur DB : aucun seg.id.",
+                                        code=ErrCode.DB,
+                                        ctx=get_step_ctx({"video_name": self.video.name}),
+                                    )
+                                if seg.keywords:
+                                    normalizer = KeywordNormalizer(
+                                        model_name=MODEL_NAME,
+                                        threshold=SIMILARITY_THRESHOLD,
+                                        mode=MODE,
                                         logger=self.logger,
                                     )
-                                    self.logger.info(
-                                        f"seg.description, seg.category, seg.keywords, seg.rating :\
-                                    {seg.description, seg.category, seg.keywords, seg.rating}"
+                                    seg.keywords = normalizer.normalize_keywords(seg.keywords, logger=self.logger)
+                                    self.logger.debug(f"keywords : {seg.keywords}")
+                                    self.repo.insert_keywords_standalone(segment_id=seg.id, keywords=seg.keywords)
+
+                                if seg.hashes:
+                                    self.repo.replace_segment_frame_hashes(seg.id, seg.hashes)
+
+                                processed_count += 1
+                                status, message = evaluate_ia_output(seg)
+                                history.status = status
+                                history.message = message
+                                if "ok" not in status:
+                                    self.logger.warning(
+                                        f"🚨 Segment en erreur IA : {seg.filename_predicted} — {message}"
                                     )
-                                    seg.status = SegmentStatus.IA_DONE
-                                    seg.ai_model = self.model_name
-                                    seg.pipeline_target = None
-                                    self.logger.debug(f"segment : {seg}")
+                                    if "IA_error" not in seg.tags:
+                                        seg.add_tag("IA_error")
+                                        seg.pipeline_target = SegmentStatus.TO_IA
+                                        self.logger.warning("🚨 Segment en erreur IA (1ère tentative)")
+                                    else:
+                                        seg.status = SegmentStatus.IA_ERROR
+                                        seg.pipeline_target = None
+                                        self.logger.warning(
+                                            "🚨 Segment en erreur IA (2e tentative) — statut mis à jour"
+                                        )
+
                                     self.repo.update_segment_validation(seg)
-
-                                    if not seg.id:
-                                        raise CutMindError(
-                                            "❌ Erreur DB : aucun seg.id.",
-                                            code=ErrCode.DB,
-                                            ctx=get_step_ctx({"video_name": self.video.name}),
-                                        )
-                                    if seg.keywords:
-                                        normalizer = KeywordNormalizer(
-                                            model_name=MODEL_NAME,
-                                            threshold=SIMILARITY_THRESHOLD,
-                                            mode=MODE,
-                                            logger=self.logger,
-                                        )
-                                        seg.keywords = normalizer.normalize_keywords(seg.keywords, logger=self.logger)
-                                        self.logger.debug(f"keywords : {seg.keywords}")
-                                        self.repo.insert_keywords_standalone(segment_id=seg.id, keywords=seg.keywords)
-
-                                    if seg.hashes:
-                                        self.repo.replace_segment_frame_hashes(seg.id, seg.hashes)
-
-                                    processed_count += 1
-                                    status, message = evaluate_ia_output(seg)
-                                    history.status = status
-                                    history.message = message
-                            else:
-                                self.logger.info(
-                                    f"{COLOR_RED}🌙 Plage horaire silencieuse — Analyse IA désactivé\
-                                        {COLOR_RESET}"
-                                )
-                                history.status = "ko"
-                                history.message = "Plage horaire silencieuse — Analyse IA désactivé"
-                                return processed_count
-
                         free, total = vram_gpu()
                         self.logger.info(f"📊 VRAM avant release : {free:.2f} Go / {total:.2f} Go")
 
@@ -159,7 +159,7 @@ class IAWorker:
                     self.handle_ia_failure(
                         seg,
                         exc,
-                        message="❌ Erreur inattendue durant l'envoi à Processor Comfyui.",
+                        message="❌ Erreur inattendue durant l'envoi au modèle HF.",
                         code=ErrCode.UNEXPECTED,
                     )
 
@@ -196,9 +196,11 @@ class IAWorker:
         # Gestion des tags / statut segment
         if "IA_error" not in seg.tags:
             seg.add_tag("IA_error")
+            seg.pipeline_target = SegmentStatus.TO_IA
             self.logger.warning("🚨 Segment en erreur IA (1ère tentative)")
         else:
             seg.status = SegmentStatus.IA_ERROR
+            seg.pipeline_target = None
             self.logger.warning("🚨 Segment en erreur IA (2e tentative) — statut mis à jour")
 
         self.repo.update_segment_validation(seg)

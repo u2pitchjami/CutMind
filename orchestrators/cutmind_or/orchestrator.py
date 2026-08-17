@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from multiprocessing import Process
 
 from check.check_segments import CheckSegments
@@ -47,7 +48,7 @@ class CutMindOrchestratorV2:
         self.logger.info("🎛️ Orchestration V2 démarrée pour video %s", video.id)
 
         # 1️⃣ Move post-cut
-        self._maybe_run_cut(video)
+        # self._maybe_run_cut(video)
 
         # 1️⃣ Move post-cut
         self._maybe_run_move(video)
@@ -164,8 +165,15 @@ class CutMindOrchestratorV2:
     def _maybe_run_enhancement(self, video: Video) -> None:
         settings = get_settings()
         ENHANCEMENT_ENABLED = settings.router_orchestrator.enhancement
+        forbidden_hours = settings.router_orchestrator.forbidden_hours
         if not ENHANCEMENT_ENABLED:
             self.logger.info("🚫 Enhancement est désactivé dans les settings. Enhancement inactive.")
+            return
+        # --- DÉCISION INTELLIGENTE ---
+        current_hour = datetime.now().hour
+        enhancer_allowed = current_hour not in forbidden_hours
+        if not enhancer_allowed:
+            self.logger.info("🌙 Plage horaire silencieuse Enhancement n'est pas autorisée à cette heure.")
             return
         vid_seg = self._reload_video_with_segments(video)
         segments = [s for s in vid_seg if s.status == SegmentStatus.CUT_VALIDATED]
@@ -189,8 +197,15 @@ class CutMindOrchestratorV2:
     def _maybe_run_ia(self, video: Video) -> None:
         settings = get_settings()
         IA_ENABLED = settings.router_orchestrator.IA
+        forbidden_hours = settings.router_orchestrator.forbidden_hours
         if not IA_ENABLED:
             self.logger.info("🚫 IA est désactivé dans les settings. IA inactive.")
+            return
+        # --- DÉCISION INTELLIGENTE ---
+        current_hour = datetime.now().hour
+        IA_allowed = current_hour not in forbidden_hours
+        if not IA_allowed:
+            self.logger.info("🌙 Plage horaire silencieuse IA n'est pas autorisée à cette heure. IA inactive.")
             return
         vid_seg = self._reload_video_with_segments(video)
         segments = [s for s in vid_seg if s.status == SegmentStatus.ENHANCED or s.pipeline_target == "IA"]

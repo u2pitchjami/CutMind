@@ -87,6 +87,8 @@ def update_segments_csv(
                         if status in ("ok", "OK"):
                             new_data["status"] = OrchestratorStatus.SEGMENT_CUT_VALIDATED
                             new_data["pipeline_target"] = OrchestratorStatus.SEGMENT_TO_MOVE
+                            if has_category:
+                                new_data["confidence"] = 0.99
                             stats["updated"] += 1
                             log_rows.append(
                                 {"segment_id": seg_id, "action": "Cut Validation OK", "differences": "status"}

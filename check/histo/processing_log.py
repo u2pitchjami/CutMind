@@ -32,8 +32,8 @@ def processing_step(video: Video, segment: Segment | None, action: str) -> Gener
         action=action,
         status="pending",
         message="",
-        started_at=datetime.utcnow(),
-        ended_at=datetime.utcnow(),  # placeholder
+        started_at=datetime.now(),
+        ended_at=datetime.now(),  # placeholder
     )
 
     repo.insert_processing_history(history)

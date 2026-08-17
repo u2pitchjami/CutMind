@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.utils.logger import LoggerProtocol, ensure_logger
 from smartcut.executors.pyscenedetect_executor import run_pyscenedetect
 
 
@@ -11,12 +12,15 @@ def detect_initial_scenes(
     start: float | None = None,
     end: float | None = None,
     min_scene_len: float = 15.0,
+    logger: LoggerProtocol | None = None,
 ) -> list[tuple[float, float]]:
     """
     Détection PySceneDetect avec filtrage start/end.
 
     Version propre : aucune dépendance, aucun logger.
     """
+    logger = ensure_logger(logger, __name__)
+    logger.debug("🔍 Début de la détection initiale des scènes pour : %s", video_path)
     try:
         scenes = run_pyscenedetect(
             video_path=video_path,
@@ -26,7 +30,7 @@ def detect_initial_scenes(
             end=end,
             min_scene_len=min_scene_len,
         )
-
+        logger.debug("🔍 Détection initiale terminée, %d scènes détectées.", len(scenes))
         filtered: list[tuple[float, float]] = []
 
         for s, e in scenes:

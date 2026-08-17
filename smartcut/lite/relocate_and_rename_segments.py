@@ -10,12 +10,12 @@ from db.repository import CutMindRepository
 from shared.models.db_models import Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.status_orchestrator.statuses import OrchestratorStatus
-from shared.utils.config import OUTPUT_DIR_SC
+from shared.utils.config import POST_CUT_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger
 
 
 def relocate_and_rename_segments(
-    session: Video, output_dir: Path = OUTPUT_DIR_SC, logger: LoggerProtocol | None = None
+    session: Video, output_dir: Path = POST_CUT_DIR_SC, logger: LoggerProtocol | None = None
 ) -> None:
     """
     Renomme et déplace tous les segments dans le dossier de sortie.

@@ -22,9 +22,11 @@ from check.histo.processing_log import processing_step
 from db.repository import CutMindRepository
 from shared.models.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.models.timer_manager import Timer
+from shared.services.file_mover import FileMover
 from shared.services.video_preparation import prepare_video
 from shared.status_orchestrator.statuses import OrchestratorStatus, SegmentStatus
-from shared.utils.config import ERROR_DIR_SC, OUTPUT_DIR_SC, TRASH_DIR_SC
+from shared.utils.config import ERROR_DIR_SC, IMPORT_DIR_SC, OUTPUT_DIR_SC, TRASH_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
 from shared.utils.trash import move_to_trash
@@ -64,145 +66,148 @@ def multi_stage_cut(
     # ======================
     # 🧠 Étape 0 : Init session
     # ======================
-
     repo = CutMindRepository()
+    with Timer(f"SmartCut pour la vidéo : {video_path.name}", logger):
+        try:
+            session = repo.video_exists_by_video_path(str(video_path))
+            logger.debug("🔍 Session existante : %s", session)
+            if not session:
+                # 1. Prépare la vidéo (format, durée, fps, etc.)
+                logger.info("🎞️ Préparation de la vidéo : %s", video_path)
+                prep = prepare_video(video_path, normalize=True, logger=logger)
+                orig = Path(video_path).resolve()
+                safe = Path(prep.path).resolve()
+                output_path = orig
 
-    try:
-        session = repo.video_exists_by_video_path(str(video_path))
+                if orig != safe:
+                    logger.info(f"🎞️ Conversion automatique : {orig.name} → {safe.name}")
+                    move_to_trash(orig, TRASH_DIR_SC)
+                    output_path = safe
 
-        if not session:
-            # 1. Prépare la vidéo (format, durée, fps, etc.)
-            prep = prepare_video(video_path, normalize=True, logger=logger)
-            orig = Path(video_path).resolve()
-            safe = Path(prep.path).resolve()
-            output_path = orig
-
-            if orig != safe:
-                logger.info(f"🎞️ Conversion automatique : {orig.name} → {safe.name}")
-                move_to_trash(orig, TRASH_DIR_SC)
-                output_path = safe
-
-            # file_mover = FileMover()
-            # output_path = OUTPUT_DIR_SC.with_name(video_path.stem + ".mp4")
-            # file_mover.safe_replace(src=safe, dst=output_path, logger=logger)
-            # 2. Crée une nouvelle session à partir des métadonnées préparées
-            new_vid = Video(
-                uid=str(uuid.uuid4()),
-                name=video_path.stem,
-                video_path=str(output_path),
-                duration=prep.duration,
-                fps=prep.fps,
-                nb_frames=prep.nb_frames,
-                resolution=prep.resolution,
-                codec=prep.codec,
-                bitrate=prep.bitrate,
-                filesize_mb=prep.filesize_mb,
-                has_audio=prep.has_audio,
-                audio_codec=prep.audio_codec,
-                sample_rate=prep.sample_rate,
-                channels=prep.channels,
-                audio_duration=prep.audio_duration,
-                status=OrchestratorStatus.VIDEO_INIT,
-                origin="smartcut",
-            )
-            repo.insert_video_with_segments(new_vid)
-            vid = repo.get_video_with_segments(video_uid=new_vid.uid)
-            logger.info("✅ Nouvelle vidéo créée %s : %.2fs @ %.2f FPS", new_vid.name, new_vid.duration, new_vid.fps)
-        else:
-            vid = repo.get_video_with_segments(video_id=session)
-            if not vid or not vid.status:
-                raise CutMindError(
-                    f"Vidéo introuvable en base de données pour l'ID {session}",
-                    code=ErrCode.NOT_FOUND,
+                new_vid = Video(
+                    uid=str(uuid.uuid4()),
+                    name=video_path.stem,
+                    video_path=str(output_path),
+                    duration=prep.duration,
+                    fps=prep.fps,
+                    nb_frames=prep.nb_frames,
+                    resolution=prep.resolution,
+                    codec=prep.codec,
+                    bitrate=prep.bitrate,
+                    filesize_mb=prep.filesize_mb,
+                    has_audio=prep.has_audio,
+                    audio_codec=prep.audio_codec,
+                    sample_rate=prep.sample_rate,
+                    channels=prep.channels,
+                    audio_duration=prep.audio_duration,
+                    status=OrchestratorStatus.VIDEO_INIT,
+                    origin="smartcut",
                 )
-            logger.info("♻️ Reprise de session existante %s : %s", vid.name, vid.status)
-
-        # ======================
-        # 🎬 Étape 1 : Découpage pyscenedetect
-        # ======================
-        if not vid or not vid.status or not vid.duration or not vid.id or not vid.video_path:
-            raise CutMindError(
-                "Vidéo sans statut valide en base de données.",
-                code=ErrCode.CONTEXT,
-                ctx={"video": video_path},
-            )
-        if vid.status in (OrchestratorStatus.VIDEO_READY_PYSCENE,):
-            logger.info("🔍 Découpage vidéo avec pyscenedetect...")
-            with processing_step(vid, None, action="Découpage pyscenedetect") as history:
-                try:
-                    cuts = adaptive_scene_split(
-                        str(vid.video_path),
-                        duration=vid.duration,
-                        initial_threshold=INITIAL_THRESHOLD,
-                        min_threshold=MIN_THRESHOLD,
-                        threshold_step=THRESHOLD_STEP,
-                        min_duration=MIN_DURATION,
-                        max_duration=MAX_DURATION,
-                        downscale_factor=get_downscale_factor(str(video_path)),
-                    )
-                    status, message = evaluate_scene_detection_output(True, len(cuts))
-                    history.status = status
-                    history.message = message
-                except CutMindError as e:
-                    logger.error("❌ Scene split error: %s", e)
-                    if not Path(vid.video_path).exists():
-                        logger.warning(f"⚠️ Vidéo introuvable : {vid.video_path}")
-                    if vid.tags == "" or "pyscene_error" not in vid.tags:
-                        vid.add_tag_vid("pyscene_error")
-                    else:
-                        error_path = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
-                        vid.video_path = str(error_path)
-                        vid.status = OrchestratorStatus.VIDEO_SMARTCUT_ERROR
-                        logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
-                    repo.update_video(vid)
+                repo.insert_video_with_segments(new_vid)
+                vid = repo.get_video_with_segments(video_uid=new_vid.uid)
+                logger.info(
+                    "✅ Nouvelle vidéo créée %s : %.2fs @ %.2f FPS", new_vid.name, new_vid.duration, new_vid.fps
+                )
+            else:
+                vid = repo.get_video_with_segments(video_id=session)
+                if not vid or not vid.status:
                     raise CutMindError(
-                        f"❌ Erreur lors de Découpage pyscenedetect {vid.name}",
-                        code=ErrCode.UNEXPECTED,
-                    ) from e
+                        f"Vidéo introuvable en base de données pour l'ID {session}",
+                        code=ErrCode.NOT_FOUND,
+                    )
+                logger.info("♻️ Reprise de session existante %s : %s", vid.name, vid.status)
 
-            # Création des segments SmartCut
-            vid.segments = [Segment(id=i + 1, start=s, end=e) for i, (s, e) in enumerate(cuts)]
-            vid.finalize_segments(OUTPUT_DIR_SC)
+            # ======================
+            # 🎬 Étape 1 : Découpage pyscenedetect
+            # ======================
+            if not vid or not vid.status or not vid.duration or not vid.id or not vid.video_path:
+                raise CutMindError(
+                    "Vidéo sans statut valide en base de données.",
+                    code=ErrCode.CONTEXT,
+                    ctx={"video": video_path},
+                )
+            if vid.status in (OrchestratorStatus.VIDEO_READY_PYSCENE,):
+                logger.info("🔍 Découpage vidéo avec pyscenedetect...")
+                with Timer(f"Pyscenedetect pour la vidéo : {video_path.name}", logger):
+                    with processing_step(vid, None, action="Découpage pyscenedetect") as history:
+                        try:
+                            cuts = adaptive_scene_split(
+                                str(vid.video_path),
+                                duration=vid.duration,
+                                initial_threshold=INITIAL_THRESHOLD,
+                                min_threshold=MIN_THRESHOLD,
+                                threshold_step=THRESHOLD_STEP,
+                                min_duration=MIN_DURATION,
+                                max_duration=MAX_DURATION,
+                                downscale_factor=get_downscale_factor(str(video_path)),
+                                logger=logger,
+                            )
+                            status, message = evaluate_scene_detection_output(True, len(cuts))
+                            history.status = status
+                            history.message = message
+                        except CutMindError as e:
+                            logger.error("❌ Scene split error: %s", e)
+                            if not Path(vid.video_path).exists():
+                                logger.warning(f"⚠️ Vidéo introuvable : {vid.video_path}")
+                                file_mover = FileMover()
+                                dst_path = IMPORT_DIR_SC / video_path.name
+                                file_mover.safe_replace(Path(vid.video_path), dst_path, logger)
+                            if vid.tags == "" or "pyscene_error" not in vid.tags:
+                                vid.add_tag_vid("pyscene_error")
+                            else:
+                                error_path = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
+                                vid.video_path = str(error_path)
+                                vid.status = OrchestratorStatus.VIDEO_SMARTCUT_ERROR
+                                logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
+                            repo.update_video(vid)
+                            raise CutMindError(
+                                f"❌ Erreur lors de Découpage pyscenedetect {vid.name}",
+                                code=ErrCode.UNEXPECTED,
+                            ) from e
 
-            for seg in vid.segments:
-                logger.debug(f"seg : {seg}")
-                repo._insert_segment(seg)
+                # Création des segments SmartCut
+                vid.segments = [Segment(id=i + 1, start=s, end=e) for i, (s, e) in enumerate(cuts)]
+                vid.finalize_segments(OUTPUT_DIR_SC)
 
-                seg.pipeline_target = SegmentStatus.TO_CUT
-                seg.last_updated = datetime.now().isoformat()
-                repo.update_segment_validation(seg)
+                for seg in vid.segments:
+                    logger.debug(f"seg : {seg}")
+                    repo._insert_segment(seg)
 
-            vid.status = OrchestratorStatus.VIDEO_PYSCENE_DONE
-            repo.update_video(vid)
+                    seg.pipeline_target = SegmentStatus.TO_CUT
+                    seg.last_updated = datetime.now().isoformat()
+                    repo.update_segment_validation(seg)
 
-        vid, vid_seg = _reload_video_and_segments(vid.id, repo, logger)
-        segments = [s for s in vid_seg if s.pipeline_target == SegmentStatus.TO_CUT]
-        logger.debug("🔍 Segments à cut : %s", [s.id for s in segments])
-        if not segments:
+                vid.status = OrchestratorStatus.VIDEO_PYSCENE_DONE
+                repo.update_video(vid)
+
+            vid, vid_seg = _reload_video_and_segments(vid.id, repo, logger)
+            segments = [s for s in vid_seg if s.pipeline_target == SegmentStatus.TO_CUT]
+            logger.debug("🔍 Segments à cut : %s", [s.id for s in segments])
+            if not segments:
+                return
+
+            if not vid.video_path:
+                raise CutMindError(
+                    "Vidéo sans chemin valide en base de données.",
+                    code=ErrCode.CONTEXT,
+                    ctx={"video": video_path},
+                )
+            cutter = CutWorker(vid=vid, segments=segments)
+            cutter.run()
+            move_to_trash(Path(vid.video_path), TRASH_DIR_SC)
+
+            logger.info("───────────────────────────────")
+            logger.info("🏁 Traitement terminé pour %s", video_path)
+
             return
 
-        if not vid.video_path:
+        except Exception as exc:
+            logger.exception("💥 Erreur Smartcut")
             raise CutMindError(
-                "Vidéo sans chemin valide en base de données.",
-                code=ErrCode.CONTEXT,
-                ctx={"video": video_path},
-            )
-        cutter = CutWorker(vid=vid, segments=segments)
-        cutter.run()
-        move_to_trash(Path(vid.video_path), TRASH_DIR_SC)
-
-        logger.info("───────────────────────────────")
-        logger.info("🏁 Traitement terminé pour %s", video_path)
-
-        return
-
-    except Exception as exc:
-        logger.exception("💥 Erreur Smartcut")
-        raise CutMindError(
-            "❌ Erreur lors du traitement Smartcut.",
-            code=ErrCode.UNEXPECTED,
-            ctx=get_step_ctx({"video_path": video_path}),
-        ) from exc
+                "❌ Erreur lors du traitement Smartcut.",
+                code=ErrCode.UNEXPECTED,
+                ctx=get_step_ctx({"video_path": video_path}),
+            ) from exc
 
 
 def _reload_video_and_segments(

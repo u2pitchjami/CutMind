@@ -2,9 +2,11 @@ from pathlib import Path
 import time
 
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.services.file_mover import FileMover
 from shared.utils.config import (
     IMPORT_DIR_SC,
     OUTPUT_DIR_SC,
+    WORK_DIR_SC,
 )
 from shared.utils.logger import LoggerProtocol, ensure_logger, get_logger
 from smartcut.smartcut import multi_stage_cut
@@ -68,10 +70,13 @@ def process_smartcut_batch(
     Retourne le nombre total traités.
     """
     logger = ensure_logger(logger, __name__)
+    file_mover = FileMover()
     try:
         count = 0
         for video_path in videos:
-            process_smartcut_video(video_path)
+            sc_path = WORK_DIR_SC / video_path.name
+            file_mover.safe_replace(src=video_path, dst=sc_path, logger=logger)
+            process_smartcut_video(sc_path)
             count += 1
             if count >= max_items:
                 return count

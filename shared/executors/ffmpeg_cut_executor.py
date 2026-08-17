@@ -50,34 +50,41 @@ class FfmpegCutExecutor:
             raise FileNotFoundError(f"Input video not found: {input_path}")
 
         try:
-            (
-                ffmpeg.input(str(input_file))
-                .output(
-                    str(output_file),
-                    ss=start,
-                    to=end,
-                    vcodec=VCODEC,
-                    preset=PRESET,
-                    crf=CRF,
-                    pix_fmt=PIX_FMT,
-                    color_primaries=COLOR_PRIMARIES,
-                    color_trc=COLOR_TRC,
-                    colorspace=COLORSPACE,
-                    vsync=VSYNC,
-                    movflags=MOVFLAGS,
-                    acodec=ACODEC,
-                    audio_bitrate=AUDIO_BITRATE,
-                    ar=AR,
-                    ac=AC,
-                    loglevel="error",
-                    **{"profile:v": PROFILE_V},
-                    **{"tag:v": TAG_V},
-                )
-                .overwrite_output()
-                .run(
-                    capture_stdout=True,
-                    capture_stderr=True,
-                )
+            duration = end - start
+
+            if duration <= 0:
+                raise ValueError(f"Invalid cut interval: start={start}, end={end}")
+
+            stream = ffmpeg.input(str(input_file))
+
+            stream = ffmpeg.output(
+                stream,
+                str(output_file),
+                ss=start,
+                t=duration,
+                vcodec=VCODEC,
+                preset=PRESET,
+                crf=CRF,
+                pix_fmt=PIX_FMT,
+                color_primaries=COLOR_PRIMARIES,
+                color_trc=COLOR_TRC,
+                colorspace=COLORSPACE,
+                vsync=VSYNC,
+                movflags=MOVFLAGS,
+                acodec=ACODEC,
+                audio_bitrate=AUDIO_BITRATE,
+                ar=AR,
+                ac=AC,
+                loglevel="error",
+                **{"profile:v": PROFILE_V},
+                **{"tag:v": TAG_V},
+            )
+            command = ffmpeg.compile(stream.overwrite_output())
+            logger.debug("FFmpeg command: %s", " ".join(command))
+
+            stream.overwrite_output().run(
+                capture_stdout=True,
+                capture_stderr=True,
             )
             logger.debug(f"Cut FFMPEG succeeded: {output_path}")
         except ffmpeg.Error as exc:
@@ -97,3 +104,87 @@ class FfmpegCutExecutor:
                     }
                 ),
             ) from exc
+
+    # def cut(
+    #     self,
+    #     input_path: str,
+    #     start: float,
+    #     end: float,
+    #     output_path: str,
+    #     logger: LoggerProtocol | None = None,
+    # ) -> None:
+    #     logger = ensure_logger(logger, __name__)
+    #     logger.debug(f"Cut FFMPEG : {input_path} [{start} - {end}] -> {output_path}")
+    #     settings = get_settings()
+
+    #     PRESET: str = settings.ffsmartcut.preset
+    #     PIX_FMT: str = settings.ffsmartcut.pix_fmt
+    #     VCODEC: str = settings.ffsmartcut.vcodec
+    #     CRF: int = settings.ffsmartcut.crf
+    #     PROFILE_V: str = settings.ffsmartcut.profile_v
+    #     COLOR_PRIMARIES: str = settings.ffsmartcut.color_primaries
+    #     COLOR_TRC: str = settings.ffsmartcut.color_trc
+    #     COLORSPACE: str = settings.ffsmartcut.colorspace
+    #     VSYNC: str = settings.ffsmartcut.vsync
+    #     TAG_V: str = settings.ffsmartcut.tag_v
+    #     MOVFLAGS: str = settings.ffsmartcut.movflags
+    #     ACODEC: str = settings.ffsmartcut.acodec
+    #     AUDIO_BITRATE: str = settings.ffsmartcut.audio_bitrate
+    #     AR: int = settings.ffsmartcut.ar
+    #     AC: int = settings.ffsmartcut.ac
+
+    #     input_file = Path(input_path)
+    #     output_file = Path(output_path)
+    #     logger.debug(f"Cut FFMPEG - input file: {input_file}, output file: {output_file}")
+    #     if not input_file.exists():
+    #         logger.debug(f"Input video not found: {input_file}")
+    #         raise FileNotFoundError(f"Input video not found: {input_path}")
+
+    #     try:
+    #         (
+    #             ffmpeg.input(str(input_file))
+    #             .output(
+    #                 str(output_file),
+    #                 ss=start,
+    #                 to=end,
+    #                 vcodec=VCODEC,
+    #                 preset=PRESET,
+    #                 crf=CRF,
+    #                 pix_fmt=PIX_FMT,
+    #                 color_primaries=COLOR_PRIMARIES,
+    #                 color_trc=COLOR_TRC,
+    #                 colorspace=COLORSPACE,
+    #                 vsync=VSYNC,
+    #                 movflags=MOVFLAGS,
+    #                 acodec=ACODEC,
+    #                 audio_bitrate=AUDIO_BITRATE,
+    #                 ar=AR,
+    #                 ac=AC,
+    #                 loglevel="error",
+    #                 **{"profile:v": PROFILE_V},
+    #                 **{"tag:v": TAG_V},
+    #             )
+    #             .overwrite_output()
+    #             .run(
+    #                 capture_stdout=True,
+    #                 capture_stderr=True,
+    #             )
+    #         )
+    #         logger.debug(f"Cut FFMPEG succeeded: {output_path}")
+    #     except ffmpeg.Error as exc:
+    #         stderr = exc.stderr.decode("utf-8", errors="replace") if exc.stderr else "NO STDERR"
+    #         logger.debug("FFmpeg cut failed. stderr:\n%s", stderr)
+
+    #         raise CutMindError(
+    #             "❌ Erreur technique pendant le cut de la vidéo.",
+    #             code=ErrCode.FFMPEG,
+    #             ctx=get_step_ctx(
+    #                 {
+    #                     "input_path": input_path,
+    #                     "start": start,
+    #                     "end": end,
+    #                     "output_path": output_path,
+    #                     "stderr": stderr,
+    #                 }
+    #             ),
+    #         ) from exc

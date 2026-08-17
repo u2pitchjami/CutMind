@@ -10,7 +10,6 @@ Envoie automatiquement les segments 'validated' mais hors standard
 - Met à jour les statuts dans la base (segments + vidéos)
 """
 
-from datetime import datetime
 from pathlib import Path
 
 from check.histo.processing_checks import evaluate_enhancer_output
@@ -22,8 +21,6 @@ from shared.models.timer_manager import Timer
 from shared.services.file_mover import FileMover
 from shared.services.gpu_guard import guard_gpu_or_requeue
 from shared.utils.config import (
-    COLOR_RED,
-    COLOR_RESET,
     INPUT_DIR,
 )
 from shared.utils.error import log_exception
@@ -53,7 +50,6 @@ class EnhancerWorker:
         Retourne le nombre total de segments envoyés pour traitement.
         """
         settings = get_settings()
-        forbidden_hours = settings.router_orchestrator.forbidden_hours
         FORCE_DEINTERLACE = settings.router_processor.force_deinterlace
         self.logger.info("🚀 Démarrage Enhancer Worker")
         if not self.video:
@@ -76,28 +72,15 @@ class EnhancerWorker:
                             self.file_mover.safe_copy(src, dst)
                             seg.source_flow = "enhancer_router"
                             repo.update_segment_validation(seg)
-
-                            # --- DÉCISION INTELLIGENTE ---
-                            current_hour = datetime.now().hour
-                            router_allowed = current_hour not in forbidden_hours
-                            if router_allowed:
-                                with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
-                                    processor = VideoProcessor(segment=seg, logger=self.logger)
-                                    new_seg = processor.process(Path(dst), FORCE_DEINTERLACE, logger=self.logger)
-                                    repo.update_segment_postprocess(new_seg)
-                                    self.logger.debug(f"new_seg {new_seg}")
-                                    processed_count += 1
-                                    status, message = evaluate_enhancer_output(new_seg.fps, new_seg.resolution)
-                                    history.status = status
-                                    history.message = message
-                            else:
-                                self.logger.info(
-                                    f"{COLOR_RED}🌙 Plage horaire silencieuse — Router désactivé (SmartCut forcé)\
-                                        {COLOR_RESET}"
-                                )
-                                history.status = "ko"
-                                history.message = "Plage horaire silencieuse — Analyse IA désactivé"
-                                return processed_count
+                            with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
+                                processor = VideoProcessor(segment=seg, logger=self.logger)
+                                new_seg = processor.process(Path(dst), FORCE_DEINTERLACE, logger=self.logger)
+                                repo.update_segment_postprocess(new_seg)
+                                self.logger.debug(f"new_seg {new_seg}")
+                                processed_count += 1
+                                status, message = evaluate_enhancer_output(new_seg.fps, new_seg.resolution)
+                                history.status = status
+                                history.message = message
                 except Exception as exc:
                     self.logger.exception("💥 Erreur Comfyui Router")
                     log_exception(self.logger, exc)

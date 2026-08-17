@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "Cutmind"
-version = "3.0.02"
+version = "3.1.1"
 description = "SmartComfyUIVideoRouter"
 requires-python = ">=3.12,<3.13"  # cohérent avec mypy/ruff
 dynamic = ["dependencies", "optional-dependencies"]
