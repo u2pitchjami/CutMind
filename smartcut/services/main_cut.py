@@ -97,14 +97,13 @@ class CutWorker:
                         code=ErrCode.CONTEXT,
                         ctx={"segment_id": seg.id},
                     )
-                # seg.output_path = str(post_cut_path)
-                post_cut_path = Path(POST_CUT_DIR_SC) / self.video.name / Path(seg.output_path).name
-                self.file_mover.safe_replace(src=Path(seg.output_path), dst=post_cut_path, logger=self.logger)
+                src_path = Path(seg.output_path)
                 seg.status = OrchestratorStatus.SEGMENT_CUT_DONE
                 seg.pipeline_target = OrchestratorStatus.SEGMENT_IN_CUT_VALIDATION
                 seg.predict_filename(base_dir=POST_CUT_DIR_SC, folder_name=self.video.name)
-                # seg.last_updated = datetime.now().isoformat()
                 self.repo.update_segment_validation(seg)
+                # post_cut_path = Path(POST_CUT_DIR_SC) / self.video.name / Path(seg.output_path).name
+                self.file_mover.safe_replace(src=src_path, dst=Path(seg.output_path), logger=self.logger)
 
             self.video.status = OrchestratorStatus.VIDEO_CUT_DONE
             self.repo.update_video(self.video)

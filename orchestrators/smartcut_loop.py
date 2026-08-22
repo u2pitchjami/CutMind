@@ -3,12 +3,9 @@ import time
 
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.services.file_mover import FileMover
-from shared.utils.config import (
-    IMPORT_DIR_SC,
-    OUTPUT_DIR_SC,
-    WORK_DIR_SC,
-)
+from shared.utils.config import IMPORT_DIR_SC, OUTPUT_DIR_SC, TRASH_DIR_SC, WORK_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger, get_logger
+from shared.utils.trash import move_to_trash
 from smartcut.smartcut import multi_stage_cut
 from smartcut.smartcut_lite import lite_cut
 
@@ -24,6 +21,12 @@ def smartcut_loop() -> None:
     SMARTCUT_BATCH = settings.smartcut.batch_size
     SCAN_INTERVAL = settings.smartcut.scan_interval
     SMARTCUT_ENABLED = settings.router_orchestrator.smartcut
+
+    back_to_imports(
+        path_in=WORK_DIR_SC,
+        path_out=IMPORT_DIR_SC,
+        logger=logger,
+    )
 
     while True:
         try:
@@ -136,4 +139,36 @@ def process_smartcut_folder(folder_path: Path) -> None:
             "❌ Erreur lors du process Smartcut Lite.",
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx({"folder_path.name": folder_path.name}),
+        ) from exc
+
+
+def back_to_imports(path_in: Path, path_out: Path, logger: LoggerProtocol | None = None) -> None:
+    """
+    Déplace les vidéos non traitées vers le dossier d'import.
+    """
+    logger = ensure_logger(logger, __name__)
+    file_mover = FileMover()
+    videos, _ = list_videos_and_dirs(path_in)
+    pending = len(videos)
+
+    if pending == 0:
+        logger.info("📂 SmartCut: workdir propre, rien renvoyer")
+        return
+    try:
+        for video_path in videos:
+            if video_path.name.endswith("_conv.mp4"):
+                move_to_trash(video_path, TRASH_DIR_SC)
+                logger.info(f"🗑️ Vidéo de conversion supprimée : {video_path.name}")
+            else:
+                sc_path = path_out / video_path.name
+                file_mover.safe_replace(src=video_path, dst=sc_path, logger=logger)
+                logger.info(f"📂 Vidéo renvoyée vers imports : {video_path.name}")
+        return
+    except CutMindError as err:
+        raise err.with_context(get_step_ctx({"nb_videos": len(videos)})) from err
+    except Exception as exc:
+        raise CutMindError(
+            "Unexpected error in Smartcut batch",
+            code=ErrCode.UNEXPECTED,
+            ctx=get_step_ctx({"nb_videos": len(videos)}),
         ) from exc

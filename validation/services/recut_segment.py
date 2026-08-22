@@ -10,6 +10,7 @@ from db.repository import CutMindRepository
 from shared.executors.ffmpeg_cut_executor import FfmpegCutExecutor
 from shared.models.db_models import Segment
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.services.file_mover import FileMover
 from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import TRASH_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger
@@ -26,6 +27,7 @@ def perform_recut(
     """
     logger = ensure_logger(logger, __name__)
     repo = CutMindRepository()
+    file_mover = FileMover()
 
     try:
         if not segment or not segment.id or not segment.duration:
@@ -130,7 +132,28 @@ def perform_recut(
 
         # 5 — Recuts OK → on supprime l’ancien
         for seg in new_segments:
-            repo._insert_segment(seg)
+            new_id = repo._insert_segment(seg)
+            new_seg_load = repo.get_segment_by_id(new_id)
+            if not new_seg_load or not new_seg_load.output_path:
+                raise CutMindError(
+                    "❌ Impossible de charger le nouveau segment après insertion.",
+                    code=ErrCode.DB,
+                    ctx=get_step_ctx({"new_segment_id": new_id}),
+                )
+            src_path = new_seg_load.output_path
+            if not src_path:
+                raise CutMindError(
+                    "❌ Nouveau segment sans chemin de sortie valide.",
+                    code=ErrCode.UNEXPECTED,
+                    ctx=get_step_ctx({"new_segment_id": new_id}),
+                )
+            src_path_parent2 = Path(src_path).parent.parent
+            vidname = Path(src_path).parent.name
+            if not src_path_parent2.exists():
+                src_path_parent2.mkdir(parents=True, exist_ok=True)
+            new_seg_load.predict_filename(base_dir=str(src_path_parent2), folder_name=str(vidname))
+            repo.update_segment_validation(new_seg_load)
+            file_mover.safe_replace(src=Path(src_path), dst=Path(new_seg_load.output_path), logger=logger)
 
         move_to_trash(input_path, TRASH_DIR_SC)
         repo.delete_segment(segment.id)

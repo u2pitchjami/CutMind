@@ -36,7 +36,7 @@ def lite_cut(directory_path: Path, logger: LoggerProtocol | None = None) -> None
             logger.info("🚀 Démarrage SmartCut-Lite sur : %s", directory_path)
             if any(directory_path.iterdir()):
                 # Étape 0️⃣ — Initialisation session
-                session = repo.video_exists_by_video_path(str(directory_path))
+                session = repo.video_exists_by_name(str(directory_path.name))
                 if not session:
                     new_vid = Video(
                         uid=str(uuid.uuid4()),

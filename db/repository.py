@@ -151,6 +151,22 @@ class CutMindRepository:
                 ctx=get_step_ctx({"video_path": video_path}),
             ) from exc
 
+    def video_exists_by_name(self, video_name: str) -> int | None:
+        try:
+            row = self._fetch_one(
+                "SELECT id FROM videos WHERE name=%s",
+                (video_name,),
+            )
+            return row["id"] if row else None
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx({"video_name": video_name})) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur Repo video_exists_by_name.",
+                code=ErrCode.DB,
+                ctx=get_step_ctx({"video_name": video_name}),
+            ) from exc
+
     # -------------------------------------------------------------
     # 📥 Insertion vidéo + segments
     # -------------------------------------------------------------

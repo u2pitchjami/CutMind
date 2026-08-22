@@ -69,7 +69,7 @@ def multi_stage_cut(
     repo = CutMindRepository()
     with Timer(f"SmartCut pour la vidéo : {video_path.name}", logger):
         try:
-            session = repo.video_exists_by_video_path(str(video_path))
+            session = repo.video_exists_by_name(str(video_path.stem))
             logger.debug("🔍 Session existante : %s", session)
             if not session:
                 # 1. Prépare la vidéo (format, durée, fps, etc.)
@@ -115,6 +115,12 @@ def multi_stage_cut(
                         f"Vidéo introuvable en base de données pour l'ID {session}",
                         code=ErrCode.NOT_FOUND,
                     )
+
+                if vid.status == OrchestratorStatus.VIDEO_VALIDATED_CHECK:
+                    logger.warning("🚨 Import rejeté : le nom de la vidéo existe déjà et est terminé : %s", video_path)
+                    _ = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
+                    return
+
                 logger.info("♻️ Reprise de session existante %s : %s", vid.name, vid.status)
 
             # ======================
@@ -147,19 +153,6 @@ def multi_stage_cut(
                             history.message = message
                         except CutMindError as e:
                             logger.error("❌ Scene split error: %s", e)
-                            if not Path(vid.video_path).exists():
-                                logger.warning(f"⚠️ Vidéo introuvable : {vid.video_path}")
-                                file_mover = FileMover()
-                                dst_path = IMPORT_DIR_SC / video_path.name
-                                file_mover.safe_replace(Path(vid.video_path), dst_path, logger)
-                            if vid.tags == "" or "pyscene_error" not in vid.tags:
-                                vid.add_tag_vid("pyscene_error")
-                            else:
-                                error_path = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
-                                vid.video_path = str(error_path)
-                                vid.status = OrchestratorStatus.VIDEO_SMARTCUT_ERROR
-                                logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
-                            repo.update_video(vid)
                             raise CutMindError(
                                 f"❌ Erreur lors de Découpage pyscenedetect {vid.name}",
                                 code=ErrCode.UNEXPECTED,
@@ -182,10 +175,17 @@ def multi_stage_cut(
 
             vid, vid_seg = _reload_video_and_segments(vid.id, repo, logger)
             segments = [s for s in vid_seg if s.pipeline_target == SegmentStatus.TO_CUT]
-            logger.debug("🔍 Segments à cut : %s", [s.id for s in segments])
             if not segments:
+                logger.warning(
+                    "✅ Aucun segment à traiter pour %s\
+                    Doublon potentiel statut : %s",
+                    video_path,
+                    vid.status,
+                )
+                _ = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
                 return
 
+            logger.debug("🔍 Segments à cut : %s", [s.id for s in segments])
             if not vid.video_path:
                 raise CutMindError(
                     "Vidéo sans chemin valide en base de données.",
@@ -203,6 +203,25 @@ def multi_stage_cut(
 
         except Exception as exc:
             logger.exception("💥 Erreur Smartcut")
+            if not vid or not vid.video_path:
+                raise CutMindError(
+                    "❌ Erreur lors du traitement Smartcut.",
+                    code=ErrCode.UNEXPECTED,
+                    ctx=get_step_ctx({"video_path": video_path}),
+                ) from exc
+            if not Path(vid.video_path).exists():
+                logger.warning(f"⚠️ Vidéo introuvable : {vid.video_path}")
+            if vid.tags == "" or "smartcut_error" not in vid.tags:
+                vid.add_tag_vid("smartcut_error")
+                file_mover = FileMover()
+                dst_path = IMPORT_DIR_SC / video_path.name
+                file_mover.safe_replace(Path(vid.video_path), dst_path, logger)
+            else:
+                error_path = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
+                vid.video_path = str(error_path)
+                vid.status = OrchestratorStatus.VIDEO_SMARTCUT_ERROR
+                logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
+            repo.update_video(vid)
             raise CutMindError(
                 "❌ Erreur lors du traitement Smartcut.",
                 code=ErrCode.UNEXPECTED,
