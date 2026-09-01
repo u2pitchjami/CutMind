@@ -2,54 +2,70 @@ from __future__ import annotations
 
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.logger import LoggerProtocol, ensure_logger
-from smartcut.executors.pyscenedetect_executor import run_pyscenedetect
+from smartcut.executors.pyscenedetect_executor import SceneDetectionSession
 
 
 def detect_initial_scenes(
-    video_path: str,
+    session: SceneDetectionSession,
     threshold: float,
-    downscale_factor: int,
     start: float | None = None,
     end: float | None = None,
     min_scene_len: float = 15.0,
     logger: LoggerProtocol | None = None,
 ) -> list[tuple[float, float]]:
-    """
-    Détection PySceneDetect avec filtrage start/end.
+    """Détection de scènes utilisant une session PySceneDetect existante."""
 
-    Version propre : aucune dépendance, aucun logger.
-    """
     logger = ensure_logger(logger, __name__)
-    logger.debug("🔍 Début de la détection initiale des scènes pour : %s", video_path)
+
     try:
-        scenes = run_pyscenedetect(
-            video_path=video_path,
+        logger.debug(
+            "🔍 Détection scènes threshold=%.2f start=%s end=%s",
+            threshold,
+            start,
+            end,
+        )
+
+        scenes = session.detect(
             threshold=threshold,
-            downscale=downscale_factor,
             start=start,
             end=end,
             min_scene_len=min_scene_len,
         )
-        logger.debug("🔍 Détection initiale terminée, %d scènes détectées.", len(scenes))
+
         filtered: list[tuple[float, float]] = []
 
-        for s, e in scenes:
-            if start and e <= start:
-                continue
-            if end and s >= end:
+        for scene_start, scene_end in scenes:
+            if start is not None and scene_end <= start:
                 continue
 
-            s2 = max(s, start or 0.0)
-            e2 = min(e, end or e)
+            if end is not None and scene_start >= end:
+                continue
 
-            filtered.append((s2, e2))
+            clipped_start = max(
+                scene_start,
+                start if start is not None else 0.0,
+            )
+
+            clipped_end = min(
+                scene_end,
+                end if end is not None else scene_end,
+            )
+
+            filtered.append((clipped_start, clipped_end))
+
+        logger.debug(
+            "🔍 %d scènes détectées.",
+            len(filtered),
+        )
 
         return filtered
+
     except CutMindError as err:
-        raise err.with_context(get_step_ctx({"video_path": video_path})) from err
+        raise err.with_context(get_step_ctx({"video_path": session.video_path})) from err
+
     except Exception as exc:
         raise CutMindError(
             "❌ Erreur lors de la détection de scènes.",
             code=ErrCode.UNEXPECTED,
-            ctx=get_step_ctx({"video_path": video_path}),
+            ctx=get_step_ctx({"video_path": session.video_path}),
         ) from exc

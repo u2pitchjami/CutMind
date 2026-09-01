@@ -2,86 +2,92 @@ from __future__ import annotations
 
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.logger import LoggerProtocol, ensure_logger
+from smartcut.executors.pyscenedetect_executor import SceneDetectionSession
 from smartcut.services.scene_split.detector_service import detect_initial_scenes
 
 
 def refine_long_segments(
-    video_path: str,
+    session: SceneDetectionSession,
     scenes: list[tuple[float, float]],
     thresholds: list[int],
     min_duration: float,
     max_duration: float,
     logger: LoggerProtocol | None = None,
 ) -> list[tuple[float, float]]:
-    """
-    Raffinage récursif des segments trop longs.
+    """Raffine récursivement les segments trop longs."""
 
-    Version pure, sans logs.
-    """
     logger = ensure_logger(logger, __name__)
     refined: list[tuple[float, float]] = []
-    logger.debug("🔍 Début du raffinage des segments pour : %s", video_path)
+
     try:
         for start, end in scenes:
             duration = end - start
 
-            # court → on garde
             if duration < 0.8 * max_duration:
                 refined.append((start, end))
-                logger.debug("🔍 Segment court conservé : (%.2f, %.2f)", start, end)
                 continue
 
-            # boucle de seuils descendants
             sub_scenes: list[tuple[float, float]] = []
-            for t in thresholds:
+            remaining_thresholds: list[int] = []
+
+            for threshold_index, threshold in enumerate(thresholds):
                 logger.debug(
-                    "🔍 Raffinage du segment (%.2f, %.2f) avec seuil %d",
+                    "🔍 Raffinage %.2f → %.2f, threshold=%d",
                     start,
                     end,
-                    t,
+                    threshold,
                 )
+
                 sub_scenes = detect_initial_scenes(
-                    video_path=video_path,
-                    threshold=t,
-                    downscale_factor=1,
+                    session=session,
+                    threshold=threshold,
                     start=start,
                     end=end,
                     min_scene_len=min_duration,
                     logger=logger,
                 )
-                logger.debug("🔍 Sous-segments détectés : %d", len(sub_scenes))
+
                 if sub_scenes:
+                    remaining_thresholds = thresholds[threshold_index + 1 :]
                     break
 
-            # rien trouvé → garder brut
             if not sub_scenes:
                 refined.append((start, end))
-                logger.debug("🔍 Segment long non raffiné : (%.2f, %.2f)", start, end)
+                logger.debug(
+                    "🔍 Segment non raffiné : %.2f → %.2f",
+                    start,
+                    end,
+                )
                 continue
 
-            # raffiner récursivement si encore trop long
-            for s, e in sub_scenes:
-                logger.debug("Rafinage récursif : (%.2f, %.2f)", s, e)
-                if (e - s) > max_duration and len(thresholds) > 1:
+            for sub_start, sub_end in sub_scenes:
+                sub_duration = sub_end - sub_start
+
+                if sub_duration > max_duration and remaining_thresholds:
                     refined.extend(
                         refine_long_segments(
-                            video_path,
-                            [(s, e)],
-                            thresholds[1:],
-                            min_duration,
-                            max_duration,
+                            session=session,
+                            scenes=[(sub_start, sub_end)],
+                            thresholds=remaining_thresholds,
+                            min_duration=min_duration,
+                            max_duration=max_duration,
                             logger=logger,
                         )
                     )
                 else:
-                    refined.append((s, e))
-                    logger.debug("🔍 Segment raffiné : (%.2f, %.2f)", s, e)
-        return sorted(refined, key=lambda x: x[0])
+                    refined.append((sub_start, sub_end))
+
+        return sorted(
+            refined,
+            key=lambda segment: segment[0],
+        )
+
     except CutMindError as err:
-        raise err.with_context(get_step_ctx({"video_path": video_path})) from err
+        raise err.with_context(get_step_ctx({"video_path": session.video_path})) from err
+
     except Exception as exc:
         raise CutMindError(
-            "❌ Erreur lors de la détection de scènes : refine.",
+            "❌ Erreur lors du raffinage des scènes.",
             code=ErrCode.UNEXPECTED,
-            ctx=get_step_ctx({"video_path": video_path}),
+            ctx=get_step_ctx({"video_path": session.video_path}),
         ) from exc
