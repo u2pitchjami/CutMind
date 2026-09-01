@@ -70,6 +70,7 @@ def refine_long_segments(
                             thresholds[1:],
                             min_duration,
                             max_duration,
+                            logger=logger,
                         )
                     )
                 else:

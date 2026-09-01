@@ -9,6 +9,7 @@ from db.repository import CutMindRepository
 from IA.keywords.IA_analyze import analyze_IA
 from IA.keywords.prep.load_model import load_and_batches
 from IA.keywords.utils.analyze_torch_utils import (
+    ModelManager,
     release_gpu_memory,
     vram_gpu,
 )
@@ -25,22 +26,25 @@ from shared.utils.settings import get_settings
 class IAWorker:
     processor: ProcessorMixin
     model: PreTrainedModel
-    model_name: str
-    batch_size: int
-    model_precision: str
+    model_name: str | None
+    batch_size: int | None
+    model_precision: str | None
     """
     Gère l'envoi automatique des segments non conformes vers ComfyUI Router.
     """
 
-    def __init__(self, vid: Video, segments: list[Segment]):
+    def __init__(self, vid: Video, segments: list[Segment]) -> None:
         self.logger = get_logger("CutMind-Analyse_IA")
         self.video = vid
         self.segments = segments
         self.repo = CutMindRepository()
+        self.model_manager = ModelManager()
         self.free_gb, self.total_gb = vram_gpu()
-        self.processor, self.model, self.model_name, self.batch_size, self.model_precision = load_and_batches(
-            free_gb=self.free_gb, logger=self.logger
-        )
+        self.processor = None
+        self.model = None
+        self.model_name = None
+        self.batch_size = None
+        self.model_precision = None
 
     # ---------------------------------------------------------
     # 🚀 Main Entry Point
@@ -63,18 +67,19 @@ class IAWorker:
             return 0
 
         processed_count = 0
-
         # 1️⃣ Sélectionner les vidéos concernée
-
         self.logger.info("🎞️ Vidéo '%s' (%d segments)", self.video.name, len(self.video.segments))
 
         # Chargement du modèle IA + paramètres de batching
-        free_gb, total_gb = vram_gpu()
-        self.logger.info(f"📊 VRAM avant chargement : {free_gb:.2f} Go / {total_gb:.2f} Go")
-        if guard_gpu_or_requeue(logger=self.logger):
-            # 3️⃣ Transaction : copie + maj DB
-            with Timer(f"Traitement IA pour la vidéo : {self.video.name}", self.logger):
-                try:
+        try:
+            self.processor, self.model, self.model_name, self.batch_size, self.model_precision = load_and_batches(
+                free_gb=self.free_gb, logger=self.logger
+            )
+            free_gb, total_gb = vram_gpu()
+            self.logger.info(f"📊 VRAM avant chargement : {free_gb:.2f} Go / {total_gb:.2f} Go")
+            if guard_gpu_or_requeue(logger=self.logger):
+                # 3️⃣ Transaction : copie + maj DB
+                with Timer(f"Traitement IA pour la vidéo : {self.video.name}", self.logger):
                     for seg in self.segments:
                         with processing_step(self.video, seg, action="Analyse IA") as history:
                             with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
@@ -99,7 +104,7 @@ class IAWorker:
                                 )
                                 self.logger.info(
                                     f"seg.description, seg.category, seg.keywords, seg.rating :\
-                                {seg.description, seg.category, seg.keywords, seg.rating}"
+                                    {seg.description, seg.category, seg.keywords, seg.rating}"
                                 )
                                 seg.status = SegmentStatus.IA_DONE
                                 seg.ai_model = self.model_name
@@ -150,19 +155,21 @@ class IAWorker:
                         free, total = vram_gpu()
                         self.logger.info(f"📊 VRAM avant release : {free:.2f} Go / {total:.2f} Go")
 
-                except CutMindError as err:
-                    release_gpu_memory(model=self.model, processor=self.processor, cache_only=False, logger=self.logger)
-                    self.handle_ia_failure(seg, err)
+        except CutMindError as err:
+            self.model_manager.unload()
+            release_gpu_memory(model=self.model, processor=self.processor, cache_only=False, logger=self.logger)
+            self.handle_ia_failure(seg, err)
 
-                except Exception as exc:
-                    release_gpu_memory(model=self.model, processor=self.processor, cache_only=False, logger=self.logger)
-                    self.handle_ia_failure(
-                        seg,
-                        exc,
-                        message="❌ Erreur inattendue durant l'envoi au modèle HF.",
-                        code=ErrCode.UNEXPECTED,
-                    )
-
+        except Exception as exc:
+            self.model_manager.unload()
+            release_gpu_memory(model=self.model, processor=self.processor, cache_only=False, logger=self.logger)
+            self.handle_ia_failure(
+                seg,
+                exc,
+                message="❌ Erreur inattendue durant l'envoi au modèle HF.",
+                code=ErrCode.UNEXPECTED,
+            )
+        self.model_manager.unload()
         release_gpu_memory(model=self.model, processor=self.processor, cache_only=False, logger=self.logger)
         free, total = vram_gpu()
         self.logger.info(f"🧹 VRAM nettoyée ('full release') → VRAM libre : {free:.2f} Go / {total:.2f} Go")

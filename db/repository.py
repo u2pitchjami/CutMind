@@ -911,7 +911,10 @@ class CutMindRepository:
                     SELECT 1
                     FROM segments s
                     WHERE s.video_id = v.id
-                    AND s.status NOT IN ({placeholders})
+                    AND (
+                        s.status NOT IN ({placeholders})
+                        OR s.pipeline_target IN ('IA', 'RATINGS')
+                    )
                 )
                 AND NOT EXISTS (
                     SELECT 1

@@ -58,7 +58,7 @@ def smartcut_loop() -> None:
 # 🔁 Traitement par lot SmartCut
 # ============================================================
 def list_videos_and_dirs(directory: Path) -> tuple[list[Path], list[Path]]:
-    video_exts = (".mp4", ".mov", ".mkv", ".avi", ".wmv")
+    video_exts = (".mp4", ".mov", ".mkv", ".avi", ".wmv", ".flv", ".webm", ".mpeg", ".mpg", ".m4v")
     videos = [p for p in directory.iterdir() if p.is_file() and p.suffix.lower() in video_exts]
     dirs = [p for p in directory.iterdir() if p.is_dir()]
     return videos, dirs
@@ -79,12 +79,12 @@ def process_smartcut_batch(
         for video_path in videos:
             sc_path = WORK_DIR_SC / video_path.name
             file_mover.safe_replace(src=video_path, dst=sc_path, logger=logger)
-            process_smartcut_video(sc_path)
+            process_smartcut_video(sc_path, logger=logger)
             count += 1
             if count >= max_items:
                 return count
         for folder_path in dirs:
-            process_smartcut_folder(folder_path)
+            process_smartcut_folder(folder_path, logger=logger)
             count += 1
             if count >= max_items:
                 return count
@@ -102,8 +102,8 @@ def process_smartcut_batch(
 # ============================================================
 # 📦 Traitement SmartCut complet
 # ============================================================
-def process_smartcut_video(video_path: Path) -> None:
-    logger = get_logger("CutMind-SmartCut")
+def process_smartcut_video(video_path: Path, logger: LoggerProtocol | None = None) -> None:
+    logger = ensure_logger(logger, "CutMind-SmartCut")
     from shared.utils.settings import get_settings
 
     settings = get_settings()
@@ -123,14 +123,14 @@ def process_smartcut_video(video_path: Path) -> None:
         ) from exc
 
 
-def process_smartcut_folder(folder_path: Path) -> None:
+def process_smartcut_folder(folder_path: Path, logger: LoggerProtocol | None = None) -> None:
     """
     Flow SmartCut Lite (segments déjà présents dans un dossier).
     """
-    logger = get_logger("CutMind-SmartCutLite")
+    logger = ensure_logger(logger, "CutMind-SmartCutLite")
     try:
         logger.info(f"🚀 SmartCut Lite : dossier {folder_path.name}")
-        lite_cut(directory_path=folder_path)
+        lite_cut(directory_path=folder_path, logger=logger)
 
     except CutMindError as err:
         raise err.with_context(get_step_ctx({"folder_path.name": folder_path.name})) from err

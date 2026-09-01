@@ -23,7 +23,7 @@ from shared.models.db_models import Segment
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
 from shared.utils.config import BATCH_FRAMES_DIR_SC
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.safe_segments import safe_segments
 
 KeywordsBatches = list[AIResult]
@@ -33,7 +33,6 @@ KeywordsBatches = list[AIResult]
 # 🧠 FONCTION PRINCIPALE : analyse de la vidéo par segments
 # ===========================================================
 @safe_segments
-@with_child_logger
 def analyze_IA(
     seg: Segment,
     processor: ProcessorMixin,
@@ -66,6 +65,14 @@ def analyze_IA(
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"seg.id": seg.id}),
             )
+
+        if seg.pipeline_target in ["RATINGS"]:
+            logger.info("⚡ Analyse segment %s : pipeline_target = RATINGS → analyse ratings uniquement", seg.id)
+            analyzetype = "ratings"
+        else:
+            logger.info("⚡ Analyse segment %s : pipeline_target = %s → analyse complète", seg.id, seg.pipeline_target)
+            analyzetype = "full"
+
         cap, video_name = open_vid(seg.output_path)
 
         free_vram_gb, total_vram_gb = vram_gpu()
@@ -117,6 +124,7 @@ def analyze_IA(
         #     output_type = "keywords"
 
         logger.info(f"🎬 Analyse segment {seg.id} ({start:.2f}s → {end:.2f}s) : {len(frame_paths)} frames extraites.")
+
         with Timer(f"Traitement Keywords : {seg.id}", logger):
             context = run_ai_pipeline_v25(
                 video_name=video_name,
@@ -127,6 +135,7 @@ def analyze_IA(
                 batch_size=batch_size,
                 processor=processor,
                 model=model,
+                analyzetype=analyzetype,
                 logger=logger,
             )
 
@@ -342,6 +351,7 @@ def run_ai_pipeline_v25(
     processor: ProcessorMixin,
     model: PreTrainedModel,
     categ: str | None = None,
+    analyzetype: str = "full",
     logger: LoggerProtocol,
 ) -> AIContext:
     context = AIContext()
@@ -385,35 +395,38 @@ def run_ai_pipeline_v25(
         logger.warning("⚠️ Aucune catégorie détectée, on arrête le pipeline IA ici.")
 
     else:
-        # ===== PASSAGE 2 : keywords guidés =====
-        logger.info("🧠 IA Pass 2 — Keywords guidés : %s", context.category)
+        if analyzetype == "full":
+            # ===== PASSAGE 2 : keywords guidés =====
+            logger.info("🧠 IA Pass 2 — Keywords guidés : %s", context.category)
 
-        pass2_batches = run_prompt_on_batches(
-            video_name=video_name,
-            start=start,
-            end=end,
-            frame_paths=frame_paths,
-            batch_size=batch_size,
-            processor=processor,
-            model=model,
-            output_type=AIOutputType.SCENE_ANALYSIS,
-            prompt_name=context.category,
-            system_prompt="system_keywords",
-            logger=logger,
-        )
-        context.description = merge_description(pass2_batches) or ""
-        context.keywords = merge_keywords(pass2_batches)
-        for i, batch in enumerate(pass2_batches):
-            logger.debug(
-                "🧪 Batch %d → description=%s | keywords=%s",
-                i,
-                batch.get("description"),
-                batch.get("keywords"),
+            pass2_batches = run_prompt_on_batches(
+                video_name=video_name,
+                start=start,
+                end=end,
+                frame_paths=frame_paths,
+                batch_size=batch_size,
+                processor=processor,
+                model=model,
+                output_type=AIOutputType.SCENE_ANALYSIS,
+                prompt_name=context.category,
+                system_prompt="system_keywords",
+                logger=logger,
             )
+            context.description = merge_description(pass2_batches) or ""
+            context.keywords = merge_keywords(pass2_batches)
+            for i, batch in enumerate(pass2_batches):
+                logger.debug(
+                    "🧪 Batch %d → description=%s | keywords=%s",
+                    i,
+                    batch.get("description"),
+                    batch.get("keywords"),
+                )
+        else:
+            logger.info("🧠 IA Pass 2 skipped (analyzetype=%s)", analyzetype)
 
-    if not context.quality_rating and not context.interest_rating:
+    if (not context.quality_rating and not context.interest_rating) or analyzetype == "ratings":
         # ===== PASSAGE 3 : Ratings =====
-        logger.info("🧠 IA Pass 2 — Keywords guidés : %s", context.category)
+        logger.info("🧠 IA Pass 3 — Ratings")
 
         pass3_batches = run_prompt_on_batches(
             video_name=video_name,

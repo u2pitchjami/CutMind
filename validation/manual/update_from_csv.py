@@ -24,6 +24,8 @@ from validation.manual.manual_utils import (
     archive_csv,
     build_new_data_from_csv_row,
     compare_segment,
+    has_keywords,
+    has_text,
     summarize_import,
     write_csv_log,
 )
@@ -67,12 +69,12 @@ def update_segments_csv(
 
                         new_data = build_new_data_from_csv_row(row)
                         logger.debug("🔍 Segment %s | Données CSV : %s", seg_id, new_data)
-                        has_category = bool(new_data["category"])
-                        has_description = bool(new_data["description"])
-                        has_keywords = bool(new_data["keywords"])
+                        has_category = has_text(new_data["category"])
+                        has_description = has_text(new_data["description"])
+                        has_keywords_value = has_keywords(new_data["keywords"])
                         has_confidence = new_data["confidence"] > 0.0
 
-                        new_data["pipeline_target"] = None
+                        # new_data["pipeline_target"] = None
                         status = new_data["status"]
                         logger.debug("🔍 Segment %s | Nouveau statut CSV : %s", seg_id, status)
                         if status in ("delete", "to_delete"):
@@ -122,17 +124,17 @@ def update_segments_csv(
 
                         logger.debug(
                             f"🔍 Segment {seg_id} | has_category : {has_category} | status : {status} \
-                            | has_description : {has_description} | has_keywords : {has_keywords} \
+                            | has_description : {has_description} | has_keywords : {has_keywords_value} \
                                 | has_confidence : {has_confidence}"
                         )
                         if (
                             has_category
                             and status == OrchestratorStatus.SEGMENT_CONFIDENCE_DONE
-                            and not (has_description or has_keywords or has_confidence)
+                            and not (has_description or has_keywords_value or has_confidence)
                         ):
                             logger.debug(
                                 f"🔍 2 - Segment {seg_id} | has_category : {has_category} | status : {status} \
-                                    | has_description : {has_description} | has_keywords : {has_keywords} \
+                                    | has_description : {has_description} | has_keywords : {has_keywords_value} \
                                         | has_confidence : {has_confidence}"
                             )
                             new_data["pipeline_target"] = OrchestratorStatus.SEGMENT_TO_IA
@@ -146,7 +148,7 @@ def update_segments_csv(
                                 }
                             )
 
-                        if has_category and has_description and has_keywords and has_confidence:
+                        if has_category and has_description and has_keywords_value and has_confidence:
                             segment.pipeline_target = None
 
                         if not segment:

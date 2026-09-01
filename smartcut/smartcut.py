@@ -116,11 +116,16 @@ def multi_stage_cut(
                         code=ErrCode.NOT_FOUND,
                     )
 
+                if vid.status == OrchestratorStatus.VIDEO_SMARTCUT_ERROR:
+                    logger.info("💫 Vidéo en erreur, remise en file : %s", video_path)
+                    vid.status = OrchestratorStatus.VIDEO_READY_PYSCENE
+                    vid.video_path = str(video_path)
+                    repo.update_video(vid)
+
                 if vid.status == OrchestratorStatus.VIDEO_VALIDATED_CHECK:
                     logger.warning("🚨 Import rejeté : le nom de la vidéo existe déjà et est terminé : %s", video_path)
                     _ = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
                     return
-
                 logger.info("♻️ Reprise de session existante %s : %s", vid.name, vid.status)
 
             # ======================

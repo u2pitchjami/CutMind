@@ -28,17 +28,30 @@ NULL_EQUIVALENTS = {"", "null", "none", "nan", "n/a"}
 # ---------------------------------------------------------
 
 
+def has_text(value: str | None) -> bool:
+    """Return True if value contains non-whitespace text."""
+    return value is not None and bool(value.strip())
+
+
+def has_keywords(values: list[str] | None) -> bool:
+    """Return True if at least one keyword contains non-whitespace text."""
+    if not values:
+        return False
+    return any(keyword.strip() for keyword in values)
+
+
 def safe_to_float(value: object) -> float:
-    """
-    Convertit proprement en float, sinon 0.0.
-    """
+    """Convert a value to float, accepting dot or comma decimals."""
     if isinstance(value, (int | float)):
         return float(value)
+
     if isinstance(value, str):
         try:
-            return float(value.strip())
+            normalized = value.strip().replace(",", ".")
+            return float(normalized)
         except ValueError:
             return 0.0
+
     return 0.0
 
 
@@ -88,7 +101,7 @@ def build_new_data_from_csv_row(row: dict[str, Any]) -> dict[str, Any]:
         pipeline_target = normalize_csv_value(row.get("pipeline_target")).upper()
 
         try:
-            conf = float(row.get("confidence") or 0.0)
+            conf = safe_to_float(row.get("confidence"))
         except (TypeError, ValueError):
             conf = 0.0
 

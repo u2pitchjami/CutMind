@@ -58,3 +58,6 @@ pytest.ini
 *.egg-info/
 Makefile
 
+# Scripts
+dev_scripts/
+

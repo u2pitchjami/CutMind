@@ -160,7 +160,7 @@ def load_and_batches(
         batch_size = estimate_safe_batch_size(free_gb, total_gb, precision, SAFETY_MARGIN)
     except Exception as exc:
         raise CutMindError(
-            "❌ Impossible d'ouvrir la vidéo.",
+            "❌ Impossible de charger le modèle Qwen.",
             code=ErrCode.UNEXPECTED,
             ctx={"step": "load_and_batches", "free_gb": free_gb},
         ) from exc

@@ -13,6 +13,20 @@ from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
 
 
+class ModelManager:
+    def __init__(self) -> None:
+        self.model: PreTrainedModel | None = None
+        self.processor: ProcessorMixin | None = None
+
+    def unload(self) -> None:
+        """Unload the owned model and release CUDA memory."""
+        self.model = None
+        self.processor = None
+
+        gc.collect()
+        torch.cuda.empty_cache()
+
+
 def get_model_precision(model: torch.nn.Module) -> str:
     """
     Détecte automatiquement la précision du modèle (4bit ou floatX).

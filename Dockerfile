@@ -42,7 +42,8 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 # ---- 5️⃣ Installation des dépendances Python ----
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 # ---- 6️⃣ Copie du code source ----
 COPY . .
 
@@ -53,4 +54,5 @@ RUN mkdir -p /basedir/input /basedir/output
 ENV PYTHONUNBUFFERED=1
 
 # ---- 9️⃣ Commande par défaut ----
-CMD ["python3", "-m", "comfyui_router.z_smartcut.smartcut"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["python3", "-m", "main"]

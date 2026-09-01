@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from multiprocessing import Process
 
 from check.check_segments import CheckSegments
 from check.check_status import compute_video_status
@@ -208,7 +207,11 @@ class CutMindOrchestratorV2:
             self.logger.info("🌙 Plage horaire silencieuse IA n'est pas autorisée à cette heure. IA inactive.")
             return
         vid_seg = self._reload_video_with_segments(video)
-        segments = [s for s in vid_seg if s.status == SegmentStatus.ENHANCED or s.pipeline_target == "IA"]
+        segments = [
+            s
+            for s in vid_seg
+            if s.status == SegmentStatus.ENHANCED or s.pipeline_target == "IA" or s.pipeline_target == "RATINGS"
+        ]
         self.logger.debug("🔍 Segments analyse ia : %s", [s.id for s in segments])
         if not segments:
             return
@@ -216,9 +219,10 @@ class CutMindOrchestratorV2:
         self.logger.info("🧠 IA (%s segments) pour video %s", len(segments), video.id)
 
         # --- Process GPU isolé ---
-        p = Process(target=run_ia_for_video, args=(video, segments, self.logger), daemon=False)
-        p.start()
-        p.join()
+        # p = Process(target=run_ia_for_video, args=(video, segments, self.logger), daemon=False)
+        # p.start()
+        # p.join()
+        run_ia_for_video(video, segments, self.logger)
 
     # ------------------------------------------------------------------
     # Confidence

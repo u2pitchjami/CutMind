@@ -42,7 +42,7 @@ def parse_json_ai_output(
 
             if isinstance(quality, (int | float)) and isinstance(interest, (int | float)):
                 quality_f = max(1.0, min(5.0, float(quality)))
-                interest_f = max(1.0, min(5.0, float(interest)))
+                interest_f = max(1.0, min(10.0, float(interest)))
 
                 result["quality_rating"] = quality_f
                 result["interest_rating"] = interest_f
