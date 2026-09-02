@@ -101,6 +101,8 @@ def load_prompts() -> dict[str, str]:
 
 # --- Variables d'environnement accessibles globalement ---
 
+USE_SCENE_DETECTION_V2: bool = get_bool("USE_SCENE_DETECTION_V2", "false")
+
 # ENHANCER
 INPUT_DIR: Path = Path(get_path_required("INPUT_DIR"))
 OUTPUT_DIR: Path = Path(get_path_required("OUTPUT_DIR"))

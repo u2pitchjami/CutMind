@@ -26,12 +26,13 @@ from shared.models.timer_manager import Timer
 from shared.services.file_mover import FileMover
 from shared.services.video_preparation import prepare_video
 from shared.status_orchestrator.statuses import OrchestratorStatus, SegmentStatus
-from shared.utils.config import ERROR_DIR_SC, IMPORT_DIR_SC, OUTPUT_DIR_SC, TRASH_DIR_SC
+from shared.utils.config import ERROR_DIR_SC, IMPORT_DIR_SC, OUTPUT_DIR_SC, TRASH_DIR_SC, USE_SCENE_DETECTION_V2
 from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
 from shared.utils.trash import move_to_trash
 from smartcut.executors.split_utils import get_downscale_factor, move_to_error
 from smartcut.services.main_cut import CutWorker
+from smartcut.services.scene_split.adaptive_scene_split_v2 import adaptive_scene_split_v2
 from smartcut.services.scene_split.pipeline_service import adaptive_scene_split
 
 
@@ -139,10 +140,16 @@ def multi_stage_cut(
                 )
             if vid.status in (OrchestratorStatus.VIDEO_READY_PYSCENE,):
                 logger.info("🔍 Découpage vidéo avec pyscenedetect...")
+                scene_splitter = adaptive_scene_split_v2 if USE_SCENE_DETECTION_V2 else adaptive_scene_split
+
                 with Timer(f"Pyscenedetect pour la vidéo : {video_path.name}", logger):
-                    with processing_step(vid, None, action="Découpage pyscenedetect") as history:
+                    with processing_step(
+                        vid,
+                        None,
+                        action="Découpage pyscenedetect",
+                    ) as history:
                         try:
-                            cuts = adaptive_scene_split(
+                            cuts = scene_splitter(
                                 str(vid.video_path),
                                 duration=vid.duration,
                                 initial_threshold=INITIAL_THRESHOLD,
@@ -153,15 +160,21 @@ def multi_stage_cut(
                                 downscale_factor=get_downscale_factor(str(video_path)),
                                 logger=logger,
                             )
-                            status, message = evaluate_scene_detection_output(True, len(cuts))
+
+                            status, message = evaluate_scene_detection_output(
+                                True,
+                                len(cuts),
+                            )
                             history.status = status
                             history.message = message
-                        except CutMindError as e:
-                            logger.error("❌ Scene split error: %s", e)
+
+                        except CutMindError as err:
+                            logger.error("❌ Scene split error: %s", err)
+
                             raise CutMindError(
                                 f"❌ Erreur lors de Découpage pyscenedetect {vid.name}",
                                 code=ErrCode.UNEXPECTED,
-                            ) from e
+                            ) from err
 
                 # Création des segments SmartCut
                 vid.segments = [Segment(id=i + 1, start=s, end=e) for i, (s, e) in enumerate(cuts)]
