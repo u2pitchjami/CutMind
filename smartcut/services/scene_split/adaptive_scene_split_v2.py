@@ -186,11 +186,6 @@ def adaptive_scene_split_v2(
             len(refined),
         )
 
-        #
-        # 7. NETTOYAGE FINAL
-        #
-        refined = [segment for segment in refined if (segment[1] - segment[0]) >= min_duration]
-
         refined = sorted(
             refined,
             key=lambda segment: segment[0],
