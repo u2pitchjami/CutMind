@@ -9,7 +9,7 @@ from shared.utils.config import PROMETHEUS_URL
 from shared.utils.logger import LoggerProtocol, ensure_logger
 
 DEFAULT_MIN_VRAM_MB: Final[int] = 8192
-DEFAULT_MAX_GPU_UTIL_PERCENT: Final[int] = 40
+DEFAULT_MAX_GPU_UTIL_PERCENT: Final[int] = 50
 DEFAULT_MAX_GPU_TEMP_CELSIUS: Final[int] = 82
 DEFAULT_CHECK_INTERVAL_SEC: Final[int] = 5
 DEFAULT_TIMEOUT_SEC: Final[int] = 360

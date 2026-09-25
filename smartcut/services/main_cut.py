@@ -10,7 +10,7 @@ from shared.services.file_mover import FileMover
 from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.config import ERROR_DIR_SC, POST_CUT_DIR_SC, TRASH_DIR_SC
 from shared.utils.error import log_exception
-from shared.utils.logger import get_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
 from shared.utils.trash import move_to_trash, purge_old_trash
 from smartcut.executors.split_utils import move_to_error
@@ -22,8 +22,8 @@ class CutWorker:
     Gère l'envoi automatique des segments non conformes vers ComfyUI Router.
     """
 
-    def __init__(self, vid: Video, segments: list[Segment]):
-        self.logger = get_logger("Smartcut-Cut")
+    def __init__(self, vid: Video, segments: list[Segment], logger: LoggerProtocol | None = None):
+        self.logger = ensure_logger(logger, "Smartcut-Cut")
         self.video = vid
         self.segments = segments
         self.repo = CutMindRepository()

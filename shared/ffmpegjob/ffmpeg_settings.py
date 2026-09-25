@@ -45,14 +45,63 @@ class FFmpegExportSettings:
             ac=settings.ffsmartcut.ac,
         )
 
+    @property
+    def is_nvenc(self) -> bool:
+        """Return True when the configured video encoder uses NVENC."""
+        return self.vcodec in {"hevc_nvenc", "h264_nvenc"}
+
+    def video_quality_args(self) -> list[str]:
+        """
+        Build encoder-specific quality arguments.
+
+        libx265:
+            -crf <value>
+
+        NVENC:
+            -rc vbr -cq <value> -b:v 0
+
+        Note:
+            `crf` is temporarily reused as the configured quality value
+            for NVENC. CRF and CQ are not equivalent quality scales.
+        """
+        if self.is_nvenc:
+            return [
+                "-rc",
+                "vbr",
+                "-cq",
+                str(self.crf),
+                "-b:v",
+                "0",
+            ]
+
+        return [
+            "-crf",
+            str(self.crf),
+        ]
+
+    def video_quality_kwargs(self) -> dict[str, str | int]:
+        """
+        Build encoder-specific quality kwargs for ffmpeg-python.
+        """
+        if self.is_nvenc:
+            return {
+                "rc": "vbr",
+                "cq": self.crf,
+                "b:v": "0",
+            }
+
+        return {
+            "crf": self.crf,
+        }
+
     def video_args(self) -> list[str]:
+        """Build common video arguments for FFmpeg subprocess calls."""
         return [
             "-c:v",
             self.vcodec,
             "-preset",
             self.preset,
-            "-crf",
-            str(self.crf),
+            *self.video_quality_args(),
             "-pix_fmt",
             self.pix_fmt,
             "-profile:v",
@@ -72,6 +121,7 @@ class FFmpegExportSettings:
         ]
 
     def audio_args(self) -> list[str]:
+        """Build common audio arguments for FFmpeg subprocess calls."""
         return [
             "-c:a",
             self.acodec,
@@ -84,10 +134,11 @@ class FFmpegExportSettings:
         ]
 
     def video_kwargs(self) -> dict[str, str | int]:
+        """Build common video kwargs for ffmpeg-python."""
         return {
             "vcodec": self.vcodec,
             "preset": self.preset,
-            "crf": self.crf,
+            **self.video_quality_kwargs(),
             "pix_fmt": self.pix_fmt,
             "color_primaries": self.color_primaries,
             "color_trc": self.color_trc,
@@ -99,6 +150,7 @@ class FFmpegExportSettings:
         }
 
     def audio_kwargs(self) -> dict[str, str | int]:
+        """Build common audio kwargs for ffmpeg-python."""
         return {
             "acodec": self.acodec,
             "audio_bitrate": self.audio_bitrate,

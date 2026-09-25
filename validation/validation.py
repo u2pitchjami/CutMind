@@ -28,7 +28,7 @@ from shared.models.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.services.file_mover import CUTMIND_BASEDIR, FileMover, sanitize
 from shared.status_orchestrator.statuses import OrchestratorStatus
-from shared.utils.config import OUTPUT_DIR_SC
+from shared.utils.config import OUTPUT_DIR_SC, POST_CUT_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.remove_empty_dirs import remove_empty_dirs
 from shared.utils.safe_segments import safe_segments
@@ -212,6 +212,7 @@ def validation_cut(
                 repo.update_segment_validation(seg)
 
         remove_empty_dirs(root_path=OUTPUT_DIR_SC, logger=logger)
+        remove_empty_dirs(root_path=POST_CUT_DIR_SC, logger=logger)
 
         return {
             "uid": video.uid,

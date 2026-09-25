@@ -3,13 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-import subprocess
-
-import ffmpeg  # type: ignore
 
 from shared.ffmpegjob.ffjob import FFmpegJob, run_ffmpeg_job
-from shared.ffmpegjob.ffmpeg_settings import FFmpegExportSettings
-from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.logger import LoggerProtocol, ensure_logger
 
 
@@ -50,85 +45,29 @@ def interpolate_video_minterpolate(
     """
     logger = ensure_logger(logger, __name__)
 
-    output_path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
+    if target_fps <= 0:
+        raise ValueError(f"target_fps must be greater than zero: {target_fps}")
+
+    logger.info(
+        "Starting FFmpeg minterpolate: input=%s output=%s target_fps=%s has_audio=%s",
+        video_path,
+        output_path,
+        target_fps,
+        has_audio,
     )
-    try:
-        logger.info(
-            "Starting FFmpeg minterpolate: input=%s output=%s target_fps=%s has_audio=%s",
-            video_path,
-            output_path,
-            target_fps,
-            has_audio,
-        )
 
-        cfg = FFmpegExportSettings.from_settings()
+    job = FFmpegJob(
+        step="minterpolate",
+        input_path=video_path,
+        output_path=output_path,
+        include_audio=has_audio,
+        video_filters=[(f"minterpolate=fps={target_fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1")],
+    )
 
-        input_stream = ffmpeg.input(video_path)
+    run_ffmpeg_job(job, logger)
 
-        video_filtered = input_stream.video.filter(
-            "minterpolate",
-            fps=target_fps,
-            mi_mode="mci",
-            mc_mode="aobmc",
-            me_mode="bidir",
-            vsbmc=1,
-        )
-
-        if has_audio:
-            stream = ffmpeg.output(
-                video_filtered,
-                input_stream.audio,
-                output_path,
-                **cfg.video_kwargs(),
-                **cfg.audio_kwargs(),
-            )
-
-        else:
-            stream = ffmpeg.output(
-                video_filtered,
-                output_path,
-                an=None,
-                **cfg.video_kwargs(),
-            )
-
-        (
-            stream.overwrite_output().run(
-                capture_stdout=True,
-                capture_stderr=True,
-            )
-        )
-
-        logger.info(
-            "FFmpeg minterpolate completed: output=%s target_fps=%s",
-            output_path,
-            target_fps,
-        )
-
-    except subprocess.CalledProcessError as exc:
-        logger.error(
-            "FFmpeg minterpolate failed. returncode=%s stderr:\n%s",
-            exc.returncode,
-            exc.stderr,
-        )
-        raise CutMindError(
-            "❌ Erreur FFmpeg lors de la conversion à 60 FPS.",
-            code=ErrCode.FFMPEG,
-            ctx=get_step_ctx(
-                {
-                    "step": "minterpolate",
-                    "video_path": str(video_path),
-                    "output_path": str(output_path),
-                    "returncode": exc.returncode,
-                    "stderr": exc.stderr,
-                }
-            ),
-        ) from exc
-
-    except Exception as exc:
-        raise CutMindError(
-            "❌ Erreur inattendue lors de la conversion à 60 FPS.",
-            code=ErrCode.UNEXPECTED,
-            ctx=get_step_ctx({"video_path": str(video_path)}),
-        ) from exc
+    logger.info(
+        "FFmpeg minterpolate completed: output=%s target_fps=%s",
+        output_path,
+        target_fps,
+    )

@@ -62,7 +62,7 @@ class CheckSegments:
         self.logger.info("🎞️ Vidéo '%s' nb segments: %i", self.video.name, len(self.segments))
         if guard_gpu_or_requeue(logger=self.logger):
             # 3️⃣ Transaction : copie + maj DB
-            with Timer(f"Traitement Comfyui pour la vidéo : {self.video.name}", self.logger):
+            with Timer(f"Traitement Check Segments pour la vidéo : {self.video.name}", self.logger):
                 try:
                     delete_files(path=Path(INPUT_DIR), ext="*.mp4")
 
@@ -175,6 +175,7 @@ class CheckSegments:
                                 history.status = final_status
                                 history.message = final_message
                                 seg.status = SegmentStatus.VALIDATED_CHECK
+                                seg.pipeline_target = SegmentStatus.TO_MOVE
                                 self.repo.update_segment_validation(seg)
                                 processed_count += 1
 

@@ -50,7 +50,6 @@ class CutMindOrchestratorV2:
         # self._maybe_run_cut(video)
 
         # 1️⃣ Move post-cut
-        self._maybe_run_move(video)
 
         # 1️⃣ Enhancement
         self._maybe_run_enhancement(video)
@@ -66,6 +65,8 @@ class CutMindOrchestratorV2:
 
         # 4️⃣ Validation finale
         self._maybe_run_final_check(video)
+
+        self._maybe_run_move(video)
 
         # 5️⃣ Recalcul statut vidéo (projection)
         vid, _seg = self._reload_video_and_segments(video.id)

@@ -210,7 +210,7 @@ def multi_stage_cut(
                     code=ErrCode.CONTEXT,
                     ctx={"video": video_path},
                 )
-            cutter = CutWorker(vid=vid, segments=segments)
+            cutter = CutWorker(vid=vid, segments=segments, logger=logger)
             cutter.run()
             move_to_trash(Path(vid.video_path), TRASH_DIR_SC)
 

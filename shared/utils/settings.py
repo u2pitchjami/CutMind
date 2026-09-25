@@ -29,10 +29,12 @@ class SmartcutCoreSettings:
 
 @dataclass
 class FFSmartcutSettings:
+    encoder: str
     vcodec: str
     preset: str
     pix_fmt: str
     crf: int
+    quality: int
     profile: str
     profile_v: str
     color_primaries: str

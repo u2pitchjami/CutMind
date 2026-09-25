@@ -1,4 +1,5 @@
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 from compil.compilation_builder import make_compilation
@@ -17,6 +18,7 @@ if __name__ == "__main__":
 
     template_path = Path(args.template)
     template = load_template(str(template_path))
+    timestamp = datetime.now().strftime("%y%m%d%H%M%S")
 
     repo = CutMindRepository()
     all_segments = []
@@ -27,7 +29,7 @@ if __name__ == "__main__":
             block_segments = select_segments_for_block(block, repo, logger=logger)
             all_segments.extend(block_segments)
 
-    output_path = Path(f"{EXPORTS_COMPIL}/{template.output_filename}")
+    output_path = Path(EXPORTS_COMPIL) / f"{timestamp}_{template.output_filename}"
     manifest_path = output_path.with_suffix(".json")
 
     make_compilation(

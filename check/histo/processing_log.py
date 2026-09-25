@@ -47,7 +47,7 @@ def processing_step(video: Video, segment: Segment | None, action: str) -> Gener
         history.message = str(exc)
         raise
     finally:
-        history.ended_at = datetime.utcnow()
+        history.ended_at = datetime.now()
         try:
             repo.update_processing_history(history)
         except Exception as update_exc:

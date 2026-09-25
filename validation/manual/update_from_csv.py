@@ -17,8 +17,16 @@ from db.db_connection import db_conn, get_dict_cursor
 from db.repository import CutMindRepository
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.status_orchestrator.statuses import OrchestratorStatus
-from shared.utils.config import CSV_ARCHIVE_PATH, CSV_LOG_PATH, MANUAL_CSV_PATH, TRASH_DIR_SC
+from shared.utils.config import (
+    CSV_ARCHIVE_PATH,
+    CSV_LOG_PATH,
+    MANUAL_CSV_PATH,
+    OUTPUT_DIR_SC,
+    POST_CUT_DIR_SC,
+    TRASH_DIR_SC,
+)
 from shared.utils.logger import LoggerProtocol, ensure_logger
+from shared.utils.remove_empty_dirs import remove_empty_dirs
 from shared.utils.trash import move_to_trash, purge_old_trash
 from validation.manual.manual_utils import (
     archive_csv,
@@ -88,7 +96,7 @@ def update_segments_csv(
 
                         if status in ("ok", "OK"):
                             new_data["status"] = OrchestratorStatus.SEGMENT_CUT_VALIDATED
-                            new_data["pipeline_target"] = OrchestratorStatus.SEGMENT_TO_MOVE
+                            new_data["pipeline_target"] = None
                             if has_category:
                                 new_data["confidence"] = 0.99
                             stats["updated"] += 1
@@ -149,7 +157,7 @@ def update_segments_csv(
                             )
 
                         if has_category and has_description and has_keywords_value and has_confidence:
-                            segment.pipeline_target = None
+                            new_data["pipeline_target"] = None
 
                         if not segment:
                             logger.warning("⚠️ Segment %s non trouvé", seg_id)
@@ -175,6 +183,8 @@ def update_segments_csv(
                 archived_path = archive_csv(Path(manual_csv), CSV_ARCHIVE_PATH, logger)
                 logger.info("🗄️ Fichier CSV archivé vers %s", archived_path)
                 purge_old_trash(CSV_ARCHIVE_PATH, days=60, logger=logger)
+                remove_empty_dirs(root_path=OUTPUT_DIR_SC, logger=logger)
+                remove_empty_dirs(root_path=POST_CUT_DIR_SC, logger=logger)
 
         write_csv_log(csv_log, log_rows)
         summarize_import(stats, csv_log, logger=logger)

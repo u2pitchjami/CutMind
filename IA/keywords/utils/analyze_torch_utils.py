@@ -61,43 +61,31 @@ def vram_gpu() -> tuple[float, float]:
 
 
 def release_gpu_memory(
-    model: PreTrainedModel = None,
-    processor: ProcessorMixin = None,
-    extra_objects: list[object] | None = None,
     logger: LoggerProtocol | None = None,
-    cache_only: bool = True,
 ) -> None:
-    """
-    Libère la mémoire GPU :
-
-    - Si cache_only=True : ne décharge pas le modèle, vide uniquement le cache et les tensors temporaires
-    - Si cache_only=False : décharge aussi le modèle de la VRAM
-    """
+    """Release unused CUDA cache after model references were dropped."""
     logger = ensure_logger(logger, __name__)
-    try:
-        if not cache_only:
-            for obj in [model, processor] + (extra_objects or []):
-                try:
-                    del obj
-                except Exception:
-                    pass
-        else:
-            for obj in extra_objects or []:
-                try:
-                    del obj
-                except Exception:
-                    pass
 
+    try:
         gc.collect()
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         allocated = torch.cuda.memory_allocated() / 1024**2
         reserved = torch.cuda.memory_reserved() / 1024**2
-        logger.info(f"🧹 VRAM libérée → Allocated: {allocated:.2f} MB | Reserved: {reserved:.2f} MB")
 
-    except Exception as exc:
-        logger.warning(f"⚠️ Erreur libération VRAM : {exc}")
+        logger.info(
+            "🧹 CUDA cleanup → allocated=%.2f MiB reserved=%.2f MiB",
+            allocated,
+            reserved,
+        )
+
+    except RuntimeError as exc:
+        logger.warning(
+            "⚠️ CUDA cleanup failed: %s",
+            exc,
+        )
 
 
 def estimate_visual_tokens(num_images: int, model_name: str = "qwen3-vl-instruct-4b") -> tuple[int, int]:

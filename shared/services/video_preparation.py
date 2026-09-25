@@ -8,7 +8,9 @@ from shared.executors.ffprobe_utils import (
 )
 from shared.models.exceptions import CutMindError, ErrCode
 from shared.models.videoprep import VideoPrepared
+from shared.utils.config import ERROR_DIR_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger
+from smartcut.executors.split_utils import move_to_error
 
 # ============================================================
 # 🔧 Étape 1 : Normalisation du format
@@ -99,16 +101,21 @@ def prepare_video(video_path: Path, normalize: bool = False, logger: LoggerProto
     - retour d’un dict directement
     """
     logger = ensure_logger(logger, __name__)
+    video_path_prep = video_path
     if normalize:
         try:
-            video_path = normalize_format(video_path, logger=logger)
+            video_path_prep = normalize_format(video_path_prep, logger=logger)
         except CutMindError as err:
+            error_path = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
+            logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
             raise err.with_context({"pipeline_step": "prepare_video"}) from err
 
     # 1 seul ffprobe
     try:
-        meta = get_metadata_all(video_path)
+        meta = get_metadata_all(video_path_prep)
     except CutMindError as err:
+        error_path = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
+        logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
         raise err.with_context({"pipeline_step": "metadata_extraction"}) from err
 
     # validation (dict-compatible)

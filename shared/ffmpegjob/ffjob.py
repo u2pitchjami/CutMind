@@ -1,14 +1,19 @@
-""" """
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import shlex
 import subprocess
 
 from shared.ffmpegjob.ffmpeg_settings import FFmpegExportSettings
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.logger import LoggerProtocol, ensure_logger
+
+
+@dataclass(slots=True, frozen=True)
+class FFmpegInput:
+    path: Path
+    args: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True, frozen=True)
@@ -20,11 +25,15 @@ class FFmpegJob:
     audio_args: list[str] | None = None
     video_filters: list[str] = field(default_factory=list)
     input_args: list[str] = field(default_factory=list)
+    additional_inputs: list[FFmpegInput] = field(default_factory=list)
     output_args: list[str] = field(default_factory=list)
     use_common_video_args: bool = True
 
 
-def build_ffmpeg_cmd(job: FFmpegJob, cfg: FFmpegExportSettings) -> list[str]:
+def build_ffmpeg_cmd(
+    job: FFmpegJob,
+    cfg: FFmpegExportSettings,
+) -> list[str]:
     cmd: list[str] = [
         "ffmpeg",
         "-y",
@@ -33,8 +42,22 @@ def build_ffmpeg_cmd(job: FFmpegJob, cfg: FFmpegExportSettings) -> list[str]:
         str(job.input_path),
     ]
 
+    for additional_input in job.additional_inputs:
+        cmd.extend(
+            [
+                *additional_input.args,
+                "-i",
+                str(additional_input.path),
+            ]
+        )
+
     if job.video_filters:
-        cmd.extend(["-vf", ",".join(job.video_filters)])
+        cmd.extend(
+            [
+                "-vf",
+                ",".join(job.video_filters),
+            ]
+        )
 
     if job.use_common_video_args:
         cmd.extend(cfg.video_args())
@@ -60,9 +83,17 @@ def run_ffmpeg_job(
     logger = ensure_logger(logger, __name__)
     cfg = FFmpegExportSettings.from_settings()
 
-    job.output_path.parent.mkdir(parents=True, exist_ok=True)
+    job.output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     cmd = build_ffmpeg_cmd(job, cfg)
+
+    logger.debug(
+        "FFmpeg command: %s",
+        shlex.join(cmd),
+    )
 
     try:
         subprocess.run(
@@ -80,6 +111,7 @@ def run_ffmpeg_job(
             exc.returncode,
             exc.stderr,
         )
+
         raise CutMindError(
             f"❌ Erreur FFmpeg pendant l'étape : {job.step}",
             code=ErrCode.FFMPEG,
