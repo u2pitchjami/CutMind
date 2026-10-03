@@ -10,9 +10,10 @@ Envoie automatiquement les segments 'validated' mais hors standard
 - Met à jour les statuts dans la base (segments + vidéos)
 """
 
+from dataclasses import dataclass
 from pathlib import Path
 
-from check.executors.segments import inspect_video, is_video_compliant
+from check.executors.segments import check_video_compliance, inspect_video
 from check.histo.business_rules import BusinessAction, evaluate_segment_business_rules
 from check.histo.processing_checks import evaluate_video_compliance
 from check.histo.processing_log import processing_step
@@ -25,14 +26,36 @@ from shared.services.file_mover import FileMover
 from shared.services.gpu_guard import guard_gpu_or_requeue
 from shared.services.video_preparation import prepare_video
 from shared.status_orchestrator.statuses import OrchestratorStatus, SegmentStatus
-from shared.utils.config import INPUT_DIR, OUTPUT_DIR, TRASH_DIR_SC
+from shared.utils.config import (
+    COLOR_BLUE,
+    COLOR_CYAN,
+    COLOR_GREEN,
+    COLOR_PURPLE,
+    COLOR_RED,
+    COLOR_RESET,
+    COLOR_YELLOW,
+    INPUT_DIR,
+    OUTPUT_DIR,
+    TRASH_DIR_SC,
+)
 from shared.utils.logger import get_logger
 from shared.utils.trash import delete_files, move_to_trash
 
 
+@dataclass(slots=True)
+class CheckSummary:
+    total: int = 0
+    compliant: int = 0
+    normalized: int = 0
+    metadata_fixed: int = 0
+    sent_to_ia: int = 0
+    trashed: int = 0
+    warnings: int = 0
+
+
 class CheckSegments:
     """
-    Gère l'envoi automatique des segments non conformes vers ComfyUI Router.
+    Gère l'envoi automatique des segments non conformes vers le flow adéquat.
     """
 
     def __init__(self, vid: Video, segments: list[Segment]):
@@ -57,6 +80,7 @@ class CheckSegments:
             self.logger.warning("⚠️ Vidéo introuvable")
             return 0
 
+        summary = CheckSummary(total=len(self.segments))
         processed_count = 0
 
         self.logger.info("🎞️ Vidéo '%s' nb segments: %i", self.video.name, len(self.segments))
@@ -79,6 +103,7 @@ class CheckSegments:
                                 )
 
                                 if biz_action == BusinessAction.TRASH:
+                                    summary.trashed += 1
                                     self.logger.warning("🗑️ Segment %s déplacé en corbeille", seg.id)
 
                                     move_to_trash(file_path=Path(seg.output_path), trash_root=TRASH_DIR_SC)
@@ -88,6 +113,7 @@ class CheckSegments:
                                     continue
 
                                 if biz_action == BusinessAction.SEND_TO_IA:
+                                    summary.sent_to_ia += 1
                                     self.logger.info("🔁 Segment %s renvoyé vers IA", seg.id)
 
                                     seg.pipeline_target = OrchestratorStatus.SEGMENT_TO_IA
@@ -101,21 +127,35 @@ class CheckSegments:
                                     self.logger.info("🔧 Correction metadata segment %s", seg.id)
 
                                     self.repo.update_segment_from_metadata(seg.id, metadata_prep)
-
+                                    summary.metadata_fixed += 1
                                     history.status = "fixed_metadata"
                                     history.message = biz_message
 
                                 if biz_action == BusinessAction.WARNING_ONLY:
+                                    summary.warnings += 1
                                     history.status = "warning"
                                     history.message = biz_message
 
                                 metadata = inspect_video(Path(seg.output_path))
 
-                                if is_video_compliant(metadata):
-                                    self.logger.info(f"Video {seg.filename_predicted} est conforme.")
+                                is_compliant, mismatches = check_video_compliance(metadata)
+
+                                if is_compliant:
+                                    summary.compliant += 1
+                                    self.logger.info(
+                                        "Video %s est conforme.",
+                                        seg.filename_predicted,
+                                    )
                                     seg.status = SegmentStatus.VALIDATED_CHECK
+                                    seg.pipeline_target = SegmentStatus.TO_MOVE
                                     self.repo.update_segment_validation(seg)
                                     continue
+
+                                self.logger.info(
+                                    "Video %s non conforme : %s",
+                                    seg.filename_predicted,
+                                    mismatches,
+                                )
 
                                 self.logger.info(f"Video {seg.filename_predicted} n'est pas conforme.")
                                 dst: Path = Path(INPUT_DIR) / f"{seg.filename_predicted}.mp4"
@@ -177,6 +217,7 @@ class CheckSegments:
                                 seg.status = SegmentStatus.VALIDATED_CHECK
                                 seg.pipeline_target = SegmentStatus.TO_MOVE
                                 self.repo.update_segment_validation(seg)
+                                summary.normalized += 1
                                 processed_count += 1
 
                 except CutMindError as err:
@@ -194,9 +235,82 @@ class CheckSegments:
             self.logger.info("📭 Aucun segment traité lors de ce cycle.")
         else:
             self.logger.info("✅ %d segments envoyés et traités via Check Segments.", processed_count)
-
+        self.log_summary(summary)
         self.logger.info("🏁 Cycle Check Segments terminé.")
         return processed_count
+
+    def log_summary(
+        self,
+        summary: CheckSummary,
+    ) -> None:
+        """Log le résumé coloré du contrôle des segments."""
+
+        def color_count(value: int) -> str:
+            return COLOR_GREEN if value > 0 else COLOR_RED
+
+        self.logger.info(
+            "%s🧾 Résumé Check Segments : %s%s%s",
+            COLOR_PURPLE,
+            COLOR_CYAN,
+            self.video.name,
+            COLOR_RESET,
+        )
+
+        self.logger.info(
+            "%s📌 Segments       : %s%d%s",
+            COLOR_BLUE,
+            COLOR_CYAN,
+            summary.total,
+            COLOR_RESET,
+        )
+
+        self.logger.info(
+            "%s📌 Conformes      : %s%d%s",
+            COLOR_BLUE,
+            color_count(summary.compliant),
+            summary.compliant,
+            COLOR_RESET,
+        )
+
+        self.logger.info(
+            "%s📌 Métadonnées    : %s%d corrigée(s)%s",
+            COLOR_BLUE,
+            COLOR_GREEN,
+            summary.metadata_fixed,
+            COLOR_RESET,
+        )
+
+        self.logger.info(
+            "%s📌 Normalisés     : %s%d%s",
+            COLOR_BLUE,
+            color_count(summary.normalized),
+            summary.normalized,
+            COLOR_RESET,
+        )
+
+        self.logger.info(
+            "%s📌 Renvoyés IA    : %s%d%s",
+            COLOR_BLUE,
+            color_count(summary.sent_to_ia),
+            summary.sent_to_ia,
+            COLOR_RESET,
+        )
+
+        self.logger.info(
+            "%s📌 Corbeille      : %s%d%s",
+            COLOR_BLUE,
+            COLOR_RED if summary.trashed > 0 else COLOR_GREEN,
+            summary.trashed,
+            COLOR_RESET,
+        )
+
+        self.logger.info(
+            "%s📌 Avertissements : %s%d%s",
+            COLOR_BLUE,
+            COLOR_YELLOW if summary.warnings > 0 else COLOR_GREEN,
+            summary.warnings,
+            COLOR_RESET,
+        )
 
 
 def merge_check_results(

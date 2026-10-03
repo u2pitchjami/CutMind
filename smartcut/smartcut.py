@@ -23,6 +23,7 @@ from db.repository import CutMindRepository
 from shared.models.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
+from shared.models.videoprep import VideoPrepared
 from shared.services.file_mover import FileMover
 from shared.services.video_preparation import prepare_video
 from shared.status_orchestrator.statuses import OrchestratorStatus, SegmentStatus
@@ -74,21 +75,12 @@ def multi_stage_cut(
             logger.debug("🔍 Session existante : %s", session)
             if not session:
                 # 1. Prépare la vidéo (format, durée, fps, etc.)
-                logger.info("🎞️ Préparation de la vidéo : %s", video_path)
-                prep = prepare_video(video_path, normalize=True, logger=logger)
-                orig = Path(video_path).resolve()
-                safe = Path(prep.path).resolve()
-                output_path = orig
-
-                if orig != safe:
-                    logger.info(f"🎞️ Conversion automatique : {orig.name} → {safe.name}")
-                    move_to_trash(orig, TRASH_DIR_SC)
-                    output_path = safe
+                prep = _prep_video(video_path, logger=logger)
 
                 new_vid = Video(
                     uid=str(uuid.uuid4()),
                     name=video_path.stem,
-                    video_path=str(output_path),
+                    video_path=str(prep.path),
                     duration=prep.duration,
                     fps=prep.fps,
                     nb_frames=prep.nb_frames,
@@ -127,7 +119,10 @@ def multi_stage_cut(
                     logger.warning("🚨 Import rejeté : le nom de la vidéo existe déjà et est terminé : %s", video_path)
                     _ = move_to_error(file_path=Path(video_path), error_root=ERROR_DIR_SC)
                     return
+
                 logger.info("♻️ Reprise de session existante %s : %s", vid.name, vid.status)
+                # 1. Prépare la vidéo (format, durée, fps, etc.)
+                _ = _prep_video(video_path, logger=logger)
 
             # ======================
             # 🎬 Étape 1 : Découpage pyscenedetect
@@ -216,7 +211,6 @@ def multi_stage_cut(
 
             logger.info("───────────────────────────────")
             logger.info("🏁 Traitement terminé pour %s", video_path)
-
             return
 
         except Exception as exc:
@@ -266,3 +260,30 @@ def _reload_video_and_segments(
     )
 
     return video, segments
+
+
+def _prep_video(
+    video_path: Path,
+    logger: LoggerProtocol | None = None,
+) -> VideoPrepared:
+    """Prépare une vidéo pour SmartCut et retourne ses métadonnées."""
+    logger = ensure_logger(logger, __name__)
+
+    prepared = prepare_video(
+        video_path,
+        normalize=True,
+        logger=logger,
+    )
+
+    original_path = video_path.resolve()
+    prepared_path = Path(prepared.path).resolve()
+
+    if original_path != prepared_path:
+        logger.info(
+            "🎞️ Conversion automatique : %s → %s",
+            original_path.name,
+            prepared_path.name,
+        )
+        move_to_trash(original_path, TRASH_DIR_SC)
+
+    return prepared

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import uuid
@@ -15,9 +16,68 @@ from shared.utils.trash import move_to_trash
 from validation.services.ffmpeg_concat_segments import ffmpeg_concat_segments
 
 
+@dataclass(slots=True, frozen=True)
+class MergeRequest:
+    """Paramètres d'une commande de merge issue du CSV."""
+
+    merge_ids: list[int]
+    keep_sources: bool = False
+
+
+def parse_merge_request(status: str) -> MergeRequest | None:
+    """
+    Extrait une commande de merge depuis le champ 'status'.
+
+    Exemples :
+        "merge:12,15"
+            -> MergeRequest([12, 15], keep_sources=False)
+
+        "merge : 3, 9"
+            -> MergeRequest([3, 9], keep_sources=False)
+
+        "MERGE:7"
+            -> MergeRequest([7], keep_sources=False)
+
+        "merge_keep:12,15"
+            -> MergeRequest([12, 15], keep_sources=True)
+
+        "merge_keep : 3, 9"
+            -> MergeRequest([3, 9], keep_sources=True)
+    """
+    if not status:
+        return None
+
+    normalized_status = re.sub(
+        r"\s+",
+        "",
+        status.strip().lower(),
+    )
+
+    if normalized_status.startswith("merge_keep:"):
+        keep_sources = True
+    elif normalized_status.startswith("merge:"):
+        keep_sources = False
+    else:
+        return None
+
+    try:
+        merge_ids = [int(value) for value in re.findall(r"\d+", normalized_status)]
+    except ValueError:
+        return None
+
+    if not merge_ids:
+        return None
+
+    return MergeRequest(
+        merge_ids=merge_ids,
+        keep_sources=keep_sources,
+    )
+
+
 def perform_merge(
     segment: Segment,
     merge_ids: list[int],
+    keep_sources: bool = False,
     logger: LoggerProtocol | None = None,
 ) -> None:
     """
@@ -161,24 +221,42 @@ def perform_merge(
         repo.update_segment_validation(new_seg_load)
         file_mover.safe_replace(src=Path(src_path), dst=Path(new_seg_load.output_path), logger=logger)
 
-        # --- 6️⃣ Nettoyage : suppression des anciens segments ---
-        for seg in ordered_segments:
-            try:
-                move_to_trash(Path(str(seg.output_path)), TRASH_DIR_SC)
-                if not seg.id:
+        # --- 6️⃣ Nettoyage des segments sources ---
+        if not keep_sources:
+            for seg in ordered_segments:
+                if seg.id is None:
+                    logger.warning(
+                        "⚠️ Impossible de supprimer un segment sans ID : %s",
+                        seg.uid,
+                    )
                     continue
-                repo.delete_segment(seg.id)
-            except Exception as exc:
-                logger.warning(
-                    "⚠️ Impossible de supprimer le segment %s : %s",
-                    seg.id,
-                    exc,
-                )
+
+                if not seg.output_path:
+                    logger.warning(
+                        "⚠️ Segment %s sans output_path, suppression ignorée.",
+                        seg.id,
+                    )
+                    continue
+
+                try:
+                    move_to_trash(
+                        Path(seg.output_path),
+                        TRASH_DIR_SC,
+                    )
+                    repo.delete_segment(seg.id)
+
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    logger.warning(
+                        "⚠️ Impossible de supprimer le segment %s : %s",
+                        seg.id,
+                        exc,
+                    )
 
         logger.info(
-            "🔗 Merge OK → nouveau segment %s (%d segments fusionnés)",
+            "🔗 Merge OK → nouveau segment %s (%d segments fusionnés, sources %s)",
             new_seg.uid,
             len(ordered_segments),
+            "conservées" if keep_sources else "supprimées",
         )
 
     except CutMindError as err:
@@ -189,26 +267,3 @@ def perform_merge(
             code=ErrCode.UNEXPECTED,
             ctx=get_step_ctx(),
         ) from exc
-
-
-def parse_merge_ids(status: str) -> list[int]:
-    """
-    Extrait les IDs de segments à merger à partir du champ 'status'.
-
-    Exemples :
-        "merge:12,15"     → [12, 15]
-        "merge : 3, 9"    → [3, 9]
-        "MERGE:7"         → [7]
-    """
-    if not status:
-        return []
-
-    s = re.sub(r"\s+", "", status.strip().lower())
-
-    if not s.startswith("merge:"):
-        return []
-
-    try:
-        return [int(x) for x in re.findall(r"\d+", s)]
-    except ValueError:
-        return []

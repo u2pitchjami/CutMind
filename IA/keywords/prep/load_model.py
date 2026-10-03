@@ -62,7 +62,6 @@ def load_qwen_model(
     BNB_4BIT_COMPUTE_DTYPE_4B = resolve_dtype(settings.generate_keywords.bnb_4bit_compute_dtype_4b)
     DEVICE_MAP_CPU = settings.generate_keywords.device_map_cpu
     ATTN_IMPLEMENTATION = settings.generate_keywords.attn_implementation
-    logger.warning("🚀 Loading model in PID: %s", os.getpid())
 
     # global _MODEL_CACHE, _PROCESSOR_CACHE, _MODEL_NAME_CACHE
     try:
@@ -99,9 +98,6 @@ def load_qwen_model(
         else:
             model_name = MODEL_4B
             quant_config = None
-        logger.debug(f"📍 Model  : {model_name}")
-        logger.debug(f"📍 quant_config  : {quant_config}")
-        logger.warning("🚀 Loading model in PID: %s", os.getpid())
         # --- Chargement du modèle --- #
         model: PreTrainedModel = Qwen3VLForConditionalGeneration.from_pretrained(
             model_name,
@@ -115,15 +111,10 @@ def load_qwen_model(
         logger.debug(f"📍 device_map    :  {DEVICE_MAP if torch.cuda.is_available() else DEVICE_MAP_CPU}")
         logger.debug(f"📍 attn_implementation    :  {ATTN_IMPLEMENTATION}")
         logger.debug(f"📍 quantization_config    :  {quant_config}")
-        logger.warning("🚀 Loading model in PID: %s", os.getpid())
+        logger.debug("🚀 Loading model in PID: %s", os.getpid())
 
         processor: ProcessorMixin = AutoProcessor.from_pretrained(model_name)
         model.eval()
-
-        # --- Debug allocations --- #
-        # first_param = next(model.parameters())
-        # logger.debug(f"📍 Device : {first_param.device}")
-        # logger.debug(f"📍 Dtype : {first_param.dtype}")
 
         return processor, model, model_name
 
@@ -144,8 +135,6 @@ def load_and_batches(
     logger = ensure_logger(logger, __name__)
     settings = get_settings()
     SAFETY_MARGIN = settings.analyse_segment.safety_margin_gb
-    logger.debug(f"💡 SSAFETY_MARGIN {SAFETY_MARGIN}")
-    logger.debug(f"💡 free_gb {free_gb}")
     try:
         processor, model, model_name = load_qwen_model(free_vram=free_gb, logger=logger)
         # 🔥 Stabilisation mémoire GPU

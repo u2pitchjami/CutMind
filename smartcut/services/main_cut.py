@@ -80,6 +80,7 @@ class CutWorker:
                     error_path = move_to_error(file_path=Path(self.video.video_path), error_root=ERROR_DIR_SC)
                     self.video.video_path = str(error_path)
                     self.video.status = OrchestratorStatus.VIDEO_SMARTCUT_ERROR
+                    seg.pipeline_target = OrchestratorStatus.SEGMENT_CUT_ERROR
                     self.logger.info(f"🗑️ Fichier déplacé vers le dossier Error : {error_path}")
                 self.repo.update_video(self.video)
                 self.logger.error(f"Erreur durant le cut : {err}")

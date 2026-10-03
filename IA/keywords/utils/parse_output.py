@@ -31,6 +31,9 @@ def parse_json_ai_output(
             description = data.get("description")
             if isinstance(description, str) and description.strip():
                 result["description"] = description.strip()
+            category = data.get("category")
+            if isinstance(category, str) and category.strip():
+                result["category"] = category.strip()
 
             keywords = data.get("keywords")
             if isinstance(keywords, list):

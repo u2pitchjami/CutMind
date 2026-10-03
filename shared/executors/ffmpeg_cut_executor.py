@@ -51,9 +51,11 @@ class FfmpegCutExecutor:
             step="ffmpeg_cut",
             input_path=input_file,
             output_path=output_file,
-            output_args=[
+            input_args=[
                 "-ss",
                 f"{start:.6f}",
+            ],
+            output_args=[
                 "-t",
                 f"{duration:.6f}",
             ],

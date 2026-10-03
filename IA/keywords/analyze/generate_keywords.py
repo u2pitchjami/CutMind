@@ -126,9 +126,6 @@ def generate_keywords_from_frames(
             pad_token_id=processor.tokenizer.pad_token_id,
         )
 
-        logger.info("EOS: %s", processor.tokenizer.eos_token_id)
-        logger.info("PAD: %s", processor.tokenizer.pad_token_id)
-
         # Retrait du prompt d'entrée (comme dans le node)
         trimmed_ids = [out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids, strict=False)]
 
@@ -138,17 +135,8 @@ def generate_keywords_from_frames(
             clean_up_tokenization_spaces=CLEAN_UP_TOKENIZATION_SPACES,
         )[0]
 
-        logger.debug(f"decoded_text: {decoded_text}")
-        # time.sleep(60)
         ai_result: AIResult = parse_json_ai_output(decoded_text, output_type)
-
         logger.debug(f"ai_result: {ai_result}")
-
-        # Nettoyage du texte
-        # if "</think>" in output_text:
-        #     output_text = output_text.split("</think>")[-1]
-
-        # output_text = re.sub(r"^[\s\u200b\xa0]+", "", output_text)
 
         return ai_result
     except Exception as exc:

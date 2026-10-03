@@ -21,12 +21,18 @@ class FFmpegJob:
     step: str
     input_path: Path
     output_path: Path
+
     include_audio: bool = True
     audio_args: list[str] | None = None
+
     video_filters: list[str] = field(default_factory=list)
+    filter_complex: str | None = None
+    maps: list[str] = field(default_factory=list)
+
     input_args: list[str] = field(default_factory=list)
     additional_inputs: list[FFmpegInput] = field(default_factory=list)
     output_args: list[str] = field(default_factory=list)
+
     use_common_video_args: bool = True
 
 
@@ -51,11 +57,30 @@ def build_ffmpeg_cmd(
             ]
         )
 
+    if job.video_filters and job.filter_complex is not None:
+        raise ValueError("FFmpegJob cannot use both video_filters and filter_complex.")
+
     if job.video_filters:
         cmd.extend(
             [
                 "-vf",
                 ",".join(job.video_filters),
+            ]
+        )
+
+    if job.filter_complex is not None:
+        cmd.extend(
+            [
+                "-filter_complex",
+                job.filter_complex,
+            ]
+        )
+
+    for stream_map in job.maps:
+        cmd.extend(
+            [
+                "-map",
+                stream_map,
             ]
         )
 

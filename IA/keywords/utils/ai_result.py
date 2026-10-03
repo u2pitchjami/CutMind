@@ -4,6 +4,7 @@ from typing import TypedDict
 
 class AIResult(TypedDict, total=False):
     description: str | None
+    category: str | None
     keywords: list[str] | None
     quality_rating: float | None
     interest_rating: float | None

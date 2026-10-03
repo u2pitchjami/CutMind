@@ -48,8 +48,8 @@ def cleanup_enhanced_dirs(
             KEEP_TEMP_FILES,
             logger,
         )
-        logger.info("🚚  %d fichiers temporaires supprimés.", files_deleted)
-        logger.info("🚚  %d dossiers temporaires supprimés.", directories_deleted)
+        logger.debug("🚚  %d fichiers temporaires supprimés.", files_deleted)
+        logger.debug("🚚  %d dossiers temporaires supprimés.", directories_deleted)
 
         for folder in (OUTPUT_DIR, INPUT_DIR):
             root = Path(folder)
@@ -65,14 +65,14 @@ def cleanup_enhanced_dirs(
                 else:
                     files_to_trash += 1
 
-        logger.info(
+        logger.debug(
             "Corbeille : %s fichiers, %s dossiers déplacés vers la corbeille.",
             files_to_trash,
             directories_to_trash,
         )
 
         purge_old_trash(trash_root=TRASH_DIR, days=PURGE_DAYS, logger=logger)
-        logger.info("🧹 Nettoyage des fichiers intermédiaires terminé")
+        logger.debug("🧹 Nettoyage des fichiers intermédiaires terminé")
         return
 
     except CutMindError:

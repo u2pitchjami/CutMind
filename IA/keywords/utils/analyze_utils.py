@@ -128,7 +128,7 @@ def merge_keywords_across_batches(
 
         # ✨ Application de la normalisation (si fourni)
         if normalizer:
-            normalized_keywords = normalizer.normalize_keywords(raw_keywords, logger)
+            normalized_keywords = normalizer.normalize_keywords(raw_keywords)
         else:
             normalized_keywords = raw_keywords
 

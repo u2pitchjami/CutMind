@@ -9,6 +9,7 @@ from db.repository import CutMindRepository
 from IA.keywords.IA_analyze import analyze_IA
 from IA.keywords.prep.load_model import load_and_batches
 from IA.keywords.prep.prep_analyze import cleanup_temp
+from IA.keywords.utils.ai_result import AIResult
 from IA.keywords.utils.analyze_torch_utils import (
     ModelManager,
     release_gpu_memory,
@@ -20,7 +21,14 @@ from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.models.timer_manager import Timer
 from shared.services.gpu_guard import guard_gpu_or_requeue
 from shared.status_orchestrator.statuses import SegmentStatus
-from shared.utils.config import BATCH_FRAMES_DIR_SC
+from shared.utils.config import (
+    BATCH_FRAMES_DIR_SC,
+    COLOR_BLUE,
+    COLOR_GREEN,
+    COLOR_PURPLE,
+    COLOR_RED,
+    COLOR_RESET,
+)
 from shared.utils.logger import get_logger
 from shared.utils.remove_empty_dirs import remove_empty_dirs
 from shared.utils.settings import get_settings
@@ -93,23 +101,20 @@ class IAWorker:
 
             free_gb, total_gb = vram_gpu()
 
-            self.logger.info(
+            self.logger.debug(
                 "📊 VRAM avant GPU guard : %.2f Go / %.2f Go",
                 free_gb,
                 total_gb,
             )
-
             if not guard_gpu_or_requeue(logger=self.logger):
                 self.logger.warning("⚠️ GPU indisponible après expiration du GPU guard. Cycle IA abandonné.")
                 return 0
-
             # -------------------------------------------------
             # 2. Charger le modèle uniquement APRÈS le guard
             # -------------------------------------------------
 
             free_gb, total_gb = vram_gpu()
-
-            self.logger.info(
+            self.logger.debug(
                 "📊 VRAM avant chargement modèle : %.2f Go / %.2f Go",
                 free_gb,
                 total_gb,
@@ -128,7 +133,7 @@ class IAWorker:
 
             free_gb, total_gb = vram_gpu()
 
-            self.logger.info(
+            self.logger.debug(
                 "📊 VRAM après chargement modèle : %.2f Go / %.2f Go",
                 free_gb,
                 total_gb,
@@ -174,17 +179,24 @@ class IAWorker:
                                 logger=self.logger,
                             )
 
-                            self.logger.info(
+                            self.logger.debug(
                                 "Résultat IA : description=%s, category=%s, keywords=%s, rating=%s",
                                 seg.description,
                                 seg.category,
                                 seg.keywords,
                                 seg.rating,
                             )
+                            response: AIResult = {
+                                "description": seg.description,
+                                "category": seg.category,
+                                "keywords": seg.keywords,
+                                "quality_rating": seg.quality_score,
+                                "interest_rating": seg.rating,
+                            }
 
                             seg.status = SegmentStatus.IA_DONE
+                            seg.pipeline_target = SegmentStatus.TO_CONFIDENCE
                             seg.ai_model = self.model_name
-                            seg.pipeline_target = None
 
                             self.logger.debug(
                                 "Segment après analyse IA : %s",
@@ -214,7 +226,6 @@ class IAWorker:
 
                                 seg.keywords = normalizer.normalize_keywords(
                                     seg.keywords,
-                                    logger=self.logger,
                                 )
 
                                 self.logger.debug(
@@ -234,9 +245,7 @@ class IAWorker:
                                 )
 
                             processed_count += 1
-
                             status, message = evaluate_ia_output(seg)
-
                             history.status = status
                             history.message = message
 
@@ -254,16 +263,16 @@ class IAWorker:
                                     self.logger.warning("🚨 Segment en erreur IA (1ère tentative)")
 
                                 else:
-                                    seg.status = SegmentStatus.IA_ERROR
-                                    seg.pipeline_target = None
-
+                                    # seg.status = SegmentStatus.IA_ERROR
+                                    seg.pipeline_target = SegmentStatus.IA_ERROR
                                     self.logger.warning("🚨 Segment en erreur IA (2e tentative) — statut mis à jour")
 
                                 self.repo.update_segment_validation(seg)
+                            self.log_ai_summary(response)
 
                     free_gb, total_gb = vram_gpu()
 
-                    self.logger.info(
+                    self.logger.debug(
                         "📊 VRAM après segment : %.2f Go / %.2f Go",
                         free_gb,
                         total_gb,
@@ -293,7 +302,7 @@ class IAWorker:
                 self.logger.exception("❌ Erreur inattendue avant le traitement du premier segment.")
 
         finally:
-            self.logger.info("🧹 Déchargement du modèle IA...")
+            self.logger.debug("🧹 Déchargement du modèle IA...")
 
             # Cleanup du ModelManager existant
             self.model_manager.unload()
@@ -309,7 +318,7 @@ class IAWorker:
 
             free_gb, total_gb = vram_gpu()
 
-            self.logger.info(
+            self.logger.debug(
                 "🧹 VRAM nettoyée ('full release') → VRAM libre : %.2f Go / %.2f Go",
                 free_gb,
                 total_gb,
@@ -358,11 +367,96 @@ class IAWorker:
             seg.pipeline_target = SegmentStatus.TO_IA
             self.logger.warning("🚨 Segment en erreur IA (1ère tentative)")
         else:
-            seg.status = SegmentStatus.IA_ERROR
-            seg.pipeline_target = None
+            # seg.status = SegmentStatus.IA_ERROR
+            seg.pipeline_target = SegmentStatus.IA_ERROR
             self.logger.warning("🚨 Segment en erreur IA (2e tentative) — statut mis à jour")
 
         self.repo.update_segment_validation(seg)
 
         # Enrichissement contexte global avant relance de l'erreur
         raise exc.with_context(get_step_ctx({"video.name": self.video.name, "video.status": self.video.status}))
+
+    def log_ai_summary(
+        self,
+        response: AIResult,
+    ) -> None:
+        """Log un résumé coloré du résultat de l'analyse IA."""
+
+        def format_value(value: str | float | None) -> tuple[str, str]:
+            """Retourne la valeur formatée et sa couleur."""
+            if value is None:
+                return "N/A", COLOR_RED
+
+            if isinstance(value, str):
+                value = value.strip()
+                if not value:
+                    return "N/A", COLOR_RED
+                return value, COLOR_GREEN
+
+            return f"{value:.2f}", COLOR_GREEN
+
+        def format_keywords(
+            keywords: list[str] | None,
+        ) -> tuple[str, str]:
+            """Formate la liste des mots-clés."""
+            if not keywords:
+                return "N/A", COLOR_RED
+
+            cleaned = [keyword.strip() for keyword in keywords if keyword and keyword.strip()]
+
+            if not cleaned:
+                return "N/A", COLOR_RED
+
+            return ", ".join(cleaned), COLOR_GREEN
+
+        category, category_color = format_value(response.get("category"))
+        description, description_color = format_value(response.get("description"))
+        keywords, keywords_color = format_keywords(response.get("keywords"))
+        quality, quality_color = format_value(response.get("quality_rating"))
+        interest, interest_color = format_value(response.get("interest_rating"))
+
+        self.logger.info(
+            "%s🤖 Résumé analyse IA%s",
+            COLOR_PURPLE,
+            COLOR_RESET,
+        )
+
+        self.logger.info(
+            "%s📌 Category    : %s%s%s",
+            COLOR_BLUE,
+            category_color,
+            category,
+            COLOR_RESET,
+        )
+
+        self.logger.info(
+            "%s📌 Description : %s%s%s",
+            COLOR_BLUE,
+            description_color,
+            description,
+            COLOR_RESET,
+        )
+
+        self.logger.info(
+            "%s📌 Keywords    : %s%s%s",
+            COLOR_BLUE,
+            keywords_color,
+            keywords,
+            COLOR_RESET,
+        )
+
+        self.logger.info(
+            "%s📌 Qualité     : %s%s%s",
+            COLOR_BLUE,
+            quality_color,
+            quality,
+            COLOR_RESET,
+        )
+
+        self.logger.info(
+            "%s📌 Intérêt     : %s%s%s",
+            COLOR_BLUE,
+            interest_color,
+            interest,
+            COLOR_RESET,
+        )

@@ -241,6 +241,7 @@ def _ensure_handlers(base: logging.Logger, global_log_file: str, script_log_file
 
     # ✅ Console output toujours active
     stream = logging.StreamHandler()
+    stream.setLevel(logging.INFO)
     stream.setFormatter(formatter)
     base.addHandler(stream)
 

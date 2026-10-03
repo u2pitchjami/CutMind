@@ -75,7 +75,7 @@ def release_gpu_memory(
         allocated = torch.cuda.memory_allocated() / 1024**2
         reserved = torch.cuda.memory_reserved() / 1024**2
 
-        logger.info(
+        logger.debug(
             "🧹 CUDA cleanup → allocated=%.2f MiB reserved=%.2f MiB",
             allocated,
             reserved,
@@ -116,7 +116,7 @@ def auto_clean_gpu(max_wait_sec: int = 30, logger: LoggerProtocol | None = None)
         if waited >= max_wait_sec:
             logger.warning(f"❌ GPU non détecté après {max_wait_sec}s.")
             return
-        logger.info("⏳ En attente du GPU CUDA...")
+        logger.debug("⏳ En attente du GPU CUDA...")
         time.sleep(2)
         waited += 2
 
@@ -125,7 +125,7 @@ def auto_clean_gpu(max_wait_sec: int = 30, logger: LoggerProtocol | None = None)
         torch.cuda.synchronize()
         gc.collect()
         free, total = torch.cuda.mem_get_info()
-        logger.info(f"🧹 GPU nettoyé : {free / 1e9:.2f} Go libres / {total / 1e9:.2f} Go totaux")
+        logger.debug(f"🧹 GPU nettoyé : {free / 1e9:.2f} Go libres / {total / 1e9:.2f} Go totaux")
     except CutMindError as err:
         raise err.with_context(get_step_ctx()) from err
     except Exception as exc:

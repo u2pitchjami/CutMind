@@ -1,123 +1,174 @@
+from __future__ import annotations
+
 import json
 from pathlib import Path
 import subprocess
-from typing import Literal
+from typing import Any
 
+from shared.ffmpegjob.ffjob import FFmpegInput, FFmpegJob, run_ffmpeg_job
 from shared.models.db_models import Segment
-from shared.utils.config import EXPORTS_COMPIL, TEMP_COMPIL
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.utils.logger import LoggerProtocol, ensure_logger
 
 
-@with_child_logger
+def _has_audio_stream(
+    path: Path,
+    logger: LoggerProtocol,
+) -> bool:
+    """Return True when the media file contains at least one audio stream."""
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "a:0",
+        "-show_entries",
+        "stream=index",
+        "-of",
+        "csv=p=0",
+        str(path),
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        logger.error(
+            "FFprobe failed for %s: %s",
+            path,
+            exc.stderr,
+        )
+        raise CutMindError(
+            f"Impossible d'analyser les flux audio : {path}",
+            code=ErrCode.FFMPEG,
+            ctx=get_step_ctx(
+                {
+                    "step": "probe_compilation_segment",
+                    "input_path": str(path),
+                    "returncode": exc.returncode,
+                    "stderr": exc.stderr,
+                }
+            ),
+        ) from exc
+
+    return bool(result.stdout.strip())
+
+
+def _build_video_filter(segment_count: int) -> str:
+    """Build the normalized video concat filter graph."""
+    filters = [
+        (
+            f"[{index}:v:0]"
+            "setpts=PTS-STARTPTS,"
+            "scale=1920:1080:force_original_aspect_ratio=decrease,"
+            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,"
+            "setsar=1/1,"
+            "fps=60,"
+            "format=yuv420p"
+            f"[v{index}]"
+        )
+        for index in range(segment_count)
+    ]
+
+    inputs = "".join(f"[v{index}]" for index in range(segment_count))
+
+    filters.append(f"{inputs}concat=n={segment_count}:v=1:a=0[vout]")
+
+    return ";".join(filters)
+
+
+def _write_manifest(
+    segments: list[Segment],
+    manifest_path: Path,
+) -> None:
+    """Write the compilation manifest."""
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+
+    manifest_data: list[dict[str, Any]] = [
+        {
+            "uid": segment.uid,
+            "category": segment.category,
+            "duration": segment.duration,
+            "keywords": segment.keywords,
+            "filename": str(segment.output_path),
+        }
+        for segment in segments
+    ]
+
+    with manifest_path.open("w", encoding="utf-8") as file:
+        json.dump(
+            manifest_data,
+            file,
+            indent=2,
+            ensure_ascii=False,
+        )
+
+
 def make_compilation(
     segments: list[Segment],
-    output_path: Path = EXPORTS_COMPIL,
-    temp_path: Path = TEMP_COMPIL,
-    manifest_path: Path | None = EXPORTS_COMPIL,
-    compress: Literal["copy", "cpu", "cuda"] = "cuda",
+    output_path: Path,
+    manifest_path: Path | None = None,
     logger: LoggerProtocol | None = None,
 ) -> None:
+    """Generate a video compilation and its optional JSON manifest."""
     logger = ensure_logger(logger, __name__)
+
     if not segments:
         logger.warning("❌ Aucun segment à compiler.")
         return
 
-    concat_file = output_path.with_suffix(".txt")
-    with open(concat_file, "w", encoding="utf-8") as f:
-        for seg in segments:
-            f.write(f"file '{Path(str(seg.output_path)).as_posix()}'\n")
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-    # --- Choix de l'encodage
-    if compress == "copy":
-        cmd = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file), "-c", "copy", str(output_path)]
+    logger.info(
+        "Préparation de la compilation : segments=%d output=%s",
+        len(segments),
+        output_path,
+    )
 
-    elif compress == "cuda":
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            str(concat_file),
-            "-c:v",
-            "h264_nvenc",
-            "-preset",
-            "p4",
-            "-cq",
-            "19",
-            "-pix_fmt",
-            "yuv420p",
-            "-profile:v",
-            "high",
-            "-movflags",
-            "+faststart",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-ar",
-            "48000",
-            "-ac",
-            "2",
-            str(output_path),
-        ]
+    segment_paths = [Path(str(segment.output_path)) for segment in segments]
 
-    else:  # fallback CPU
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            str(concat_file),
-            "-c:v",
-            "libx264",
-            "-preset",
-            "medium",
-            "-crf",
-            "23",
-            "-pix_fmt",
-            "yuv420p",
-            "-profile:v",
-            "high",
-            "-movflags",
-            "+faststart",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-ar",
-            "48000",
-            "-ac",
-            "2",
-            str(output_path),
-        ]
+    for segment_path in segment_paths:
+        if not segment_path.is_file():
+            raise FileNotFoundError(f"Segment introuvable : {segment_path}")
 
-    try:
-        subprocess.run(cmd, check=True)
-        logger.info("✅ Compilation générée : %s", output_path)
+    filter_complex = _build_video_filter(
+        segment_count=len(segment_paths),
+    )
 
-    except subprocess.CalledProcessError as e:
-        logger.error("❌ Erreur lors de la compilation : %s", e)
-        return
+    job = FFmpegJob(
+        step="make_compilation",
+        input_path=segment_paths[0],
+        additional_inputs=[FFmpegInput(path=path) for path in segment_paths[1:]],
+        output_path=output_path,
+        filter_complex=filter_complex,
+        maps=["[vout]"],
+        include_audio=False,
+    )
 
-    # --- Manifest JSON
-    if manifest_path:
-        log_data = [
-            {
-                "uid": s.uid,
-                "category": s.category,
-                "duration": s.duration,
-                "keywords": s.keywords,
-                "filename": s.output_path,
-            }
-            for s in segments
-        ]
+    run_ffmpeg_job(
+        job=job,
+        logger=logger,
+    )
 
-        with open(manifest_path, "w", encoding="utf-8") as f:
-            json.dump(log_data, f, indent=2)
-        logger.info("📄 Manifest sauvegardé : %s", manifest_path)
+    logger.info(
+        "✅ Compilation générée : %s",
+        output_path,
+    )
+
+    if manifest_path is not None:
+        _write_manifest(
+            segments=segments,
+            manifest_path=manifest_path,
+        )
+
+        logger.info(
+            "📄 Manifest sauvegardé : %s",
+            manifest_path,
+        )

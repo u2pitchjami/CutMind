@@ -12,7 +12,7 @@ from validation.validation import validation_cut, validation_db
 def validation(
     vid: Video,
     segments: list[Segment],
-    status: str = SegmentStatus.CONFIDENCE_DONE,
+    status: str = SegmentStatus.TO_VALIDATION,
 ) -> None:
     logger = get_logger("CutMind-Validation")
     logger.info("🚀 Démarrage de la Validation")
@@ -22,7 +22,7 @@ def validation(
         # --- Validation automatique ---
         try:
             with Timer(f"Traitement de Validation : {vid.name}", logger):
-                if status == SegmentStatus.CONFIDENCE_DONE:
+                if status == SegmentStatus.TO_VALIDATION:
                     result = validation_db(video=vid, segments=segments, min_confidence=MIN_CONFIDENCE, logger=logger)
                 else:
                     result = validation_cut(video=vid, segments=segments, min_confidence=MIN_CONFIDENCE, logger=logger)

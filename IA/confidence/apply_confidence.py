@@ -39,7 +39,7 @@ def apply_confidence_to_session(
 
     try:
         free_gb, total_gb = vram_gpu()
-        logger.info(f"📊 VRAM avant chargement : {free_gb:.2f} Go / {total_gb:.2f} Go")
+        logger.debug(f"📊 VRAM avant chargement : {free_gb:.2f} Go / {total_gb:.2f} Go")
 
         auto_keywords = extract_keywords_from_filename(base_name)
         logger.debug(f"🔑 Mots-clés automatiques extraits du nom de la vidéo : {auto_keywords}")
@@ -56,7 +56,7 @@ def apply_confidence_to_session(
         logger.debug(f"result : {results}")
         release_gpu_memory(logger=logger)
         free, total = vram_gpu()
-        logger.info(
+        logger.debug(
             "🧹 VRAM nettoyée ('cache_only') → VRAM libre : %.2f Go / %.2f Go",
             free,
             total,
@@ -64,15 +64,14 @@ def apply_confidence_to_session(
 
         # 🔁 Mise à jour de la session
         for res in results:
-            logger.debug(f"res : {res}")
             seg = next((s for s in segments if s.id == res.segment_id), None)
-            logger.debug(f"seg : {seg}")
             if seg is None or not seg.id:
                 continue
 
             seg.confidence = res.confidence
             seg.keywords = res.merged_keywords
             seg.status = SegmentStatus.CONFIDENCE_DONE
+            seg.pipeline_target = SegmentStatus.TO_VALIDATION
             seg.last_updated = datetime.now().isoformat()
 
             repo.update_segment_validation(seg)

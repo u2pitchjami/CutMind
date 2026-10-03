@@ -3,10 +3,10 @@ RouterWorker
 ============
 
 Envoie automatiquement les segments 'validated' mais hors standard
-(résolution < 1080p ou fps != 60) vers ComfyUI-Router.
+(résolution < 1080p ou fps != 60) vers Enhancer Worker.
 
 - Sélectionne les vidéos concernées
-- Copie les fichiers dans le répertoire d'import de Router
+- Copie les fichiers dans le répertoire d'import de Enhancer Worker
 - Met à jour les statuts dans la base (segments + vidéos)
 """
 
@@ -31,7 +31,7 @@ from video_enhancer.models_cr.processor import VideoProcessor
 
 class EnhancerWorker:
     """
-    Gère l'envoi automatique des segments non conformes vers ComfyUI Router.
+    Gère l'envoi automatique des segments non conformes vers Enhancer Worker.
     """
 
     def __init__(self, vid: Video, segments: list[Segment]):
@@ -45,7 +45,7 @@ class EnhancerWorker:
     # ---------------------------------------------------------
     def run(self) -> int:
         """
-        Exécute un cycle complet d'envoi vers Router.
+        Exécute un cycle complet d'envoi vers Enhancer Worker.
 
         Retourne le nombre total de segments envoyés pour traitement.
         """
@@ -61,31 +61,37 @@ class EnhancerWorker:
 
         # 1️⃣ Sélectionner les vidéos concernées
         repo = CutMindRepository()
-        self.logger.info("🎞️ Vidéo '%s' nb segments: %i", self.video.name, len(self.segments))
         # 1️⃣ Sélectionner les vidéos concernées
         if guard_gpu_or_requeue(logger=self.logger):
             # 3️⃣ Transaction : copie + maj DB
-            with Timer(f"Traitement Comfyui pour la vidéo : {self.video.name}", self.logger):
+            with Timer(
+                f"Traitement Enhancement pour la 🎞️ Vidéo {self.video.name}\
+                nb segments: {len(self.segments)}",
+                self.logger,
+            ):
                 try:
                     for seg, src, dst in prepared:
-                        with processing_step(self.video, seg, action="Enhancer Router") as history:
+                        with processing_step(self.video, seg, action="Enhancer Worker") as history:
                             self.file_mover.safe_copy(src, dst)
                             seg.source_flow = "enhancer_router"
                             repo.update_segment_validation(seg)
-                            with Timer(f"Traitement du segment : {seg.filename_predicted}", self.logger):
+                            with Timer(
+                                f"🎞️ Traitement du segment {seg.filename_predicted} : \
+                                       {seg.resolution} - {seg.fps} fps",
+                                self.logger,
+                            ):
                                 processor = VideoProcessor(segment=seg, logger=self.logger)
                                 new_seg = processor.process(Path(dst), FORCE_DEINTERLACE, logger=self.logger)
                                 repo.update_segment_postprocess(new_seg)
-                                self.logger.debug(f"new_seg {new_seg}")
                                 processed_count += 1
                                 status, message = evaluate_enhancer_output(new_seg.fps, new_seg.resolution)
                                 history.status = status
                                 history.message = message
                 except Exception as exc:
-                    self.logger.exception("💥 Erreur Comfyui Router")
+                    self.logger.exception("💥 Erreur Enhancer Worker")
                     log_exception(self.logger, exc)
                     raise CutMindError(
-                        "❌ Erreur inatendue durant l'envoi à Processor Comfyui.",
+                        "❌ Erreur inatendue durant l'envoi à Enhancer Worker.",
                         code=ErrCode.UNEXPECTED,
                         ctx=get_step_ctx({"video.name": self.video.name, "video.status": self.video.status}),
                     ) from exc
@@ -118,7 +124,7 @@ class EnhancerWorker:
                 self.logger.debug("🧩 Segment à router : %s → %s", src, dst)
             except Exception as exc:
                 raise CutMindError(
-                    "❌ Erreur inatendue lors de la préparation du segement pour : Processor Comfyui.",
+                    "❌ Erreur inatendue lors de la préparation du segement pour : Enhancer Worker.",
                     code=ErrCode.UNEXPECTED,
                     ctx=get_step_ctx({"seg.uid": seg.uid}),
                 ) from exc

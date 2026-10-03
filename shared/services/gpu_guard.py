@@ -135,7 +135,7 @@ def is_gpu_available(
         gpu_util = get_gpu_util_percent()
         gpu_temp = get_gpu_temperature_celsius()
 
-        logger.info(
+        logger.debug(
             "[GPU CHECK] free=%d MiB used=%d MiB util=%d%% temp=%d°C",
             free_vram,
             used_vram,
@@ -194,7 +194,7 @@ def guard_gpu_or_requeue(
 
             return False
 
-        logger.info(
+        logger.debug(
             "[GPU GUARD] GPU unavailable. Retrying in %d sec...",
             check_interval_sec,
         )

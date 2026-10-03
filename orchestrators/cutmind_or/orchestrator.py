@@ -14,7 +14,6 @@ from shared.services.file_mover import CUTMIND_BASEDIR, FileMover, sanitize
 from shared.status_orchestrator.statuses import SegmentStatus
 from shared.utils.logger import LoggerProtocol, ensure_logger
 from shared.utils.settings import get_settings
-from smartcut.services.main_cut import CutWorker
 from validation.main_validation import validation
 from video_enhancer.enhancer_worker import EnhancerWorker
 
@@ -46,11 +45,6 @@ class CutMindOrchestratorV2:
             raise ValueError("Video must have an ID to run the orchestrator.")
         self.logger.info("🎛️ Orchestration V2 démarrée pour video %s", video.id)
 
-        # 1️⃣ Move post-cut
-        # self._maybe_run_cut(video)
-
-        # 1️⃣ Move post-cut
-
         # 1️⃣ Enhancement
         self._maybe_run_enhancement(video)
 
@@ -66,10 +60,19 @@ class CutMindOrchestratorV2:
         # 4️⃣ Validation finale
         self._maybe_run_final_check(video)
 
+        # 5️⃣ Move post-cut
         self._maybe_run_move(video)
 
-        # 5️⃣ Recalcul statut vidéo (projection)
-        vid, _seg = self._reload_video_and_segments(video.id)
+    # ------------------------------------------------------------------
+    # Statut recalc
+    # ------------------------------------------------------------------
+    def _recalc_video_status(self, video: Video) -> None:
+        """
+        Recalcule le statut de la vidéo en fonction des segments.
+        """
+        if not video or not video.id:
+            raise ValueError("Video must have an ID to run the orchestrator.")
+        vid, _seg = self._reload_video_and_segments(video)
         new_status = compute_video_status(vid)
         if new_status != vid.status:
             self.logger.info(
@@ -80,29 +83,6 @@ class CutMindOrchestratorV2:
             )
             vid.status = new_status
             self.repo.update_video(vid)
-
-        self.logger.info("✅ Orchestration V2 terminée pour video %s", video.id)
-
-    # ------------------------------------------------------------------
-    # Cut
-    # ------------------------------------------------------------------
-
-    def _maybe_run_cut(self, video: Video) -> None:
-        settings = get_settings()
-        CUT_ENABLED = settings.router_orchestrator.cut
-        if not CUT_ENABLED:
-            self.logger.info("🚫 Cut est désactivé dans les settings. Cut inactive.")
-            return
-        if not video.id:
-            raise CutMindError("❌ Erreur fichier prédit manquant pour le déplacement post-cut.", code=ErrCode.NOFILE)
-        vid, vid_seg = self._reload_video_and_segments(video.id)
-        segments = [s for s in vid_seg if s.pipeline_target == SegmentStatus.TO_CUT]
-        self.logger.debug("🔍 Segments à cut : %s", [s.id for s in segments])
-        if not segments:
-            return
-
-        cutter = CutWorker(vid=vid, segments=segments)
-        cutter.run()
 
     # ------------------------------------------------------------------
     # Move post-cut
@@ -116,7 +96,7 @@ class CutMindOrchestratorV2:
             return
         if not video.id:
             raise CutMindError("❌ Erreur fichier prédit manquant pour le déplacement post-cut.", code=ErrCode.NOFILE)
-        vid, vid_seg = self._reload_video_and_segments(video.id)
+        vid, vid_seg = self._reload_video_and_segments(video)
         segments = [s for s in vid_seg if s.pipeline_target == SegmentStatus.TO_MOVE]
         self.logger.debug("🔍 Segments à déplacer post-cut : %s", [s.id for s in segments])
         if not segments:
@@ -139,7 +119,7 @@ class CutMindOrchestratorV2:
             dst_rel = dst_final
             planned_targets[seg.uid] = dst_rel
 
-        moved_ok = self.mover.move_video_files(vid, planned_targets, self.logger)
+        moved_ok = self.mover.move_video_files(vid, planned_targets)
         self.logger.debug("🔍 Résultat du déplacement des fichiers : %s", moved_ok)
 
         if not moved_ok:
@@ -158,6 +138,8 @@ class CutMindOrchestratorV2:
                 seg.pipeline_target = None
                 self.repo.update_segment_validation(seg)
 
+        self._recalc_video_status(video)
+
     # ------------------------------------------------------------------
     # Enhancement
     # ------------------------------------------------------------------
@@ -175,8 +157,8 @@ class CutMindOrchestratorV2:
         if not enhancer_allowed:
             self.logger.info("🌙 Plage horaire silencieuse Enhancement n'est pas autorisée à cette heure.")
             return
-        vid_seg = self._reload_video_with_segments(video)
-        segments = [s for s in vid_seg if s.status == SegmentStatus.CUT_VALIDATED]
+        _, vid_seg = self._reload_video_and_segments(video)
+        segments = [s for s in vid_seg if s.pipeline_target == SegmentStatus.TO_ENHANCE]
         self.logger.debug("🔍 Segments à enhanced : %s", [s.id for s in segments])
         if not segments:
             return
@@ -189,6 +171,7 @@ class CutMindOrchestratorV2:
 
         worker = EnhancerWorker(vid=video, segments=segments)
         worker.run()
+        self._recalc_video_status(video)
 
     # ------------------------------------------------------------------
     # IA
@@ -207,11 +190,11 @@ class CutMindOrchestratorV2:
         if not IA_allowed:
             self.logger.info("🌙 Plage horaire silencieuse IA n'est pas autorisée à cette heure. IA inactive.")
             return
-        vid_seg = self._reload_video_with_segments(video)
+        _, vid_seg = self._reload_video_and_segments(video)
         segments = [
             s
             for s in vid_seg
-            if s.status == SegmentStatus.ENHANCED or s.pipeline_target == "IA" or s.pipeline_target == "RATINGS"
+            if s.pipeline_target == SegmentStatus.TO_IA or s.pipeline_target == SegmentStatus.TO_IA_RATINGS
         ]
         self.logger.debug("🔍 Segments analyse ia : %s", [s.id for s in segments])
         if not segments:
@@ -224,6 +207,7 @@ class CutMindOrchestratorV2:
         # p.start()
         # p.join()
         run_ia_for_video(video, segments, self.logger)
+        self._recalc_video_status(video)
 
     # ------------------------------------------------------------------
     # Confidence
@@ -235,8 +219,8 @@ class CutMindOrchestratorV2:
         if not CONFIDENCE_ENABLED:
             self.logger.info("🚫 Confidence est désactivé dans les settings. Confidence inactive.")
             return
-        vid_seg = self._reload_video_with_segments(video)
-        segments = [s for s in vid_seg if s.status == SegmentStatus.IA_DONE]
+        _, vid_seg = self._reload_video_and_segments(video)
+        segments = [s for s in vid_seg if s.pipeline_target == SegmentStatus.TO_CONFIDENCE]
         self.logger.debug("🔍 Segments confidence : %s", [s.id for s in segments])
         if not segments:
             return
@@ -257,6 +241,7 @@ class CutMindOrchestratorV2:
             segments=segments,
             model_name=settings.analyse_confidence.model_confidence,
         )
+        self._recalc_video_status(video)
 
     # ------------------------------------------------------------------
     # Validation finale
@@ -268,8 +253,8 @@ class CutMindOrchestratorV2:
         if not VALIDATION_ENABLED:
             self.logger.info("🚫 Validation est désactivé dans les settings. Validation inactive.")
             return
-        vid_seg = self._reload_video_with_segments(video)
-        segments = [s for s in vid_seg if s.status == SegmentStatus.CONFIDENCE_DONE]
+        _, vid_seg = self._reload_video_and_segments(video)
+        segments = [s for s in vid_seg if s.pipeline_target == SegmentStatus.TO_VALIDATION]
         self.logger.debug("🔍 Segments à valider : %s", [s.id for s in segments])
         if not segments:
             return
@@ -284,13 +269,14 @@ class CutMindOrchestratorV2:
         validation(
             vid=video,
             segments=segments,
-            status=SegmentStatus.CONFIDENCE_DONE,
+            status=SegmentStatus.TO_VALIDATION,
         )
 
         # ⚠️ La validation peut :
         # - mettre SEGMENT_VALIDATED
         # - ou poser pipeline_target="IA" pour rework
         # self.repo.update_segments(segments)
+        self._recalc_video_status(video)
 
     # ------------------------------------------------------------------
     # Final_Check
@@ -302,53 +288,38 @@ class CutMindOrchestratorV2:
         if not FINAL_CHECK_ENABLED:
             self.logger.info("🚫 Final Check est désactivé dans les settings. Final Check inactive.")
             return
-        vid_seg = self._reload_video_with_segments(video)
-        segments = [s for s in vid_seg if s.status == SegmentStatus.VALIDATED]
+        _, vid_seg = self._reload_video_and_segments(video)
+        segments = [s for s in vid_seg if s.pipeline_target == SegmentStatus.TO_CHECK]
         self.logger.debug("🔍 Segments à checker : %s", [s.id for s in segments])
         if not segments:
             return
 
         self.logger.info(
-            "🏁 Check Final pour Validation (%s segments) pour video %s",
+            "🏁 Check Final (%s segments) pour video %s",
             len(segments),
             video.id,
         )
 
         checker = CheckSegments(vid=video, segments=segments)
         checker.run()
+        self._recalc_video_status(video)
 
-    def _reload_video_with_segments(self, video: Video) -> list[Segment]:
-        """
-        Recharge la vidéo et ses segments depuis la base de données.
+    # ------------------------------------------------------------------
+    # Private helpers
 
-        À utiliser après une étape pouvant modifier la DB hors process (IA, worker async, etc.).
-        """
-        fetched = self.repo.get_video_with_segments(video_id=video.id)
-        if fetched is None:
-            raise ValueError(f"Video with id {video.id} not found in repository.")
-
-        segments = list(fetched.segments)
-        self.logger.debug(
-            "🔄 Reload video %s | segments status=%s",
-            fetched.id,
-            [s.status for s in segments],
-        )
-
-        return segments
-
-    def _reload_video_and_segments(self, video_id: int) -> tuple[Video, list[Segment]]:
+    def _reload_video_and_segments(self, video: Video) -> tuple[Video, list[Segment]]:
         """
         Recharge la vidéo et retourne explicitement la liste des segments.
         """
-        video = self.repo.get_video_with_segments(video_id=video_id)
-        if video is None:
-            raise ValueError(f"Video with id {video_id} not found in repository.")
+        vid = self.repo.get_video_with_segments(video_id=video.id)
+        if vid is None:
+            raise ValueError(f"Video with id {video.id} not found in repository.")
 
-        segments = list(video.segments)
+        segments = list(vid.segments)
         self.logger.debug(
             "🔄 Reload video %s | segments status=%s",
-            video.id,
+            vid.id,
             [s.status for s in segments],
         )
 
-        return video, segments
+        return vid, segments

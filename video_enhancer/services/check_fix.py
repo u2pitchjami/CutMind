@@ -55,15 +55,7 @@ def check_fix_workflow(
             job.fps_out = get_fps(job.path)
 
         # 🧩 Étape 6 : Smart Recut
-        logger.info(f"🔧 Fichier à recouper intelligemment : {job.path}")
-        logger.info(
-            "smart_recut_hybrid input | exists=%s size=%d path=%s",
-            job.path.exists(),
-            job.path.stat().st_size if job.path.exists() else -1,
-            job.path,
-        )
         job.path = smart_recut_hybrid(job.path, use_cuda=cuda, cleanup=CLEANUP, logger=logger)
-        logger.info(f"✅ Smart recut terminé : {job.path}")
 
         if meta.duration and segment.duration:
             expected = round(segment.duration, 3)

@@ -8,6 +8,7 @@ class ProcessedSegment:
 
     # --- Nouveau statut après traitement ---
     status: str
+    pipeline_target: str | None = None
     source_flow: str = "enhancer_router"
 
     # --- Métadonnées modifiées par ComfyUI ---

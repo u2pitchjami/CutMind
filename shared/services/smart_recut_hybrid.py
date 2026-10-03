@@ -14,10 +14,9 @@ from shared.executors.smart_recut_hybrid_exec import (
 )
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.config import TRASH_DIR
-from shared.utils.logger import LoggerProtocol, ensure_logger, with_child_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger
 
 
-@with_child_logger
 def smart_recut_hybrid(
     video_path: Path,
     threshold: float = 0.005,
@@ -30,12 +29,7 @@ def smart_recut_hybrid(
     """
     logger = ensure_logger(logger, __name__)
     logger.debug("Début de la découpe de %s", video_path)
-    logger.info(
-        "smart_recut_hybrid input | exists=%s size=%d path=%s",
-        video_path.exists(),
-        video_path.stat().st_size if video_path.exists() else -1,
-        video_path,
-    )
+
     executor = FfmpegCutExecutor()
 
     try:
@@ -67,11 +61,10 @@ def smart_recut_hybrid(
         executor.cut(str(video_path), start_time, end_time, str(output_path), logger=logger)
 
         logger.info(
-            "Découpage : début %.3fs / fin %.3fs (durée originale %.3fs) → %s",
+            "🔧 Découpage : début %.3fs / fin %.3fs (durée originale %.3fs)",
             start_time,
             end_time,
             duration,
-            output_path.name,
         )
 
         if cleanup:
@@ -81,7 +74,7 @@ def smart_recut_hybrid(
             except Exception as e:
                 logger.warning(f"⚠️ Impossible de déplacer {video_path.name} : {e}")
 
-        logger.info("✅ Recut terminé : %s", output_path)
+        logger.debug("✅ Recut terminé : %s", output_path)
         return output_path
     except Exception as exc:
         raise CutMindError(

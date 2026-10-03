@@ -64,10 +64,6 @@ class VideoProcessor:
                 ctx=get_step_ctx({"video_path": str(video_path)}),
             )
 
-        logger.info(
-            f"🎞️ Traitement de {self.segment.filename_predicted} : {self.segment.resolution} - {self.segment.fps} fps"
-        )
-
         try:
             job = VideoJob(
                 path=video_path,
@@ -95,7 +91,7 @@ class VideoProcessor:
             )
 
             logger.info(
-                "Processing plan | upscale=%s | interpolation_method=%s | rife_passes=%s",
+                "⚙️ Processing plan | upscale=%s | interpolation_method=%s | rife_passes=%s",
                 job.upscale_factor,
                 job.interpolation_method,
                 job.rife_passes,
@@ -124,14 +120,13 @@ class VideoProcessor:
                 )
 
             # 🧩 Étape 4 : Move
-            logger.debug(f"for _notif -> final_output : {job.path}")
             self._notify_cutmind(job, logger=logger)
-            logger.debug("sortie notify")
 
             # 🧩 Étape 5 : Mise à jour DB
             new_seg = ProcessedSegment(
                 id=self.segment.id,
                 status=OrchestratorStatus.SEGMENT_ENHANCED,
+                pipeline_target=OrchestratorStatus.SEGMENT_TO_IA,
                 source_flow=f"upscale_factor={job.upscale_factor} | rife_passes={job.rife_passes}",
                 fps=job.fps_out,
                 resolution=meta.resolution,
@@ -144,15 +139,13 @@ class VideoProcessor:
                 processed_by="enhancer_router",
                 output_path=Path(self.segment.output_path),
             )
-            logger.debug(f"new_seg : {new_seg}")
             self.log_summary(job=job, meta=meta, logger=logger)
-            logger.debug("sortie summary")
 
             # 🧩 Étape 6 : Nettoyage
             if CLEANUP:
                 cleanup_enhanced_dirs(logger=logger)
 
-            logger.info(f"✅ Terminé : {job.path.name}")
+            logger.debug(f"✅ Terminé : {job.path.name}")
             return new_seg
 
         except CutMindError:
@@ -195,13 +188,8 @@ class VideoProcessor:
 
             # --- 🛠️ Remplacement
             try:
-                logger.debug(
-                    "appel safe_replace : final_output=%s, target_path=%s",
-                    job.path,
-                    target_path,
-                )
                 FileMover.safe_replace(job.path, target_path, logger)
-                logger.info(
+                logger.debug(
                     "📦 Fichier remplacé (via safe_copy) : %s → %s",
                     job.path.name,
                     target_path,
@@ -245,10 +233,9 @@ class VideoProcessor:
 
     def log_summary(self, job: VideoJob, meta: VideoPrepared, logger: LoggerProtocol | None = None) -> None:
         """
-        Log un résumé coloré du traitement ComfyUI avec gestion robuste des valeurs None.
+        Log un résumé coloré du traitement Enhancer Worker avec gestion robuste des valeurs None.
         """
         logger = ensure_logger(logger, __name__)
-        logger.debug("entrée summary")
 
         # Helpers sûrs
         def fmt_float(v: float | int | None) -> str:
@@ -259,19 +246,18 @@ class VideoProcessor:
             except Exception:
                 return "N/A"
 
-        logger.debug("fin fmt_float")
-
         def fmt_tuple(t: tuple[int, int] | None) -> str:
             if isinstance(t, tuple) and len(t) == 2:
                 return f"{t[0]}x{t[1]}"
             return "N/A"
 
-        logger.debug("fin fmt_str")
-
         def fmt_str(v: str | None) -> str:
             return v if isinstance(v, str) else "N/A"
 
-        logger.info(f"{COLOR_PURPLE}🧾 Résumé traitement ComfyUI pour : {COLOR_CYAN}{job.path.name}{COLOR_RESET}")
+        logger.info(
+            f"{COLOR_PURPLE}🧾 Résumé traitement Enhancer Worker pour :\
+                    {COLOR_CYAN}{job.path.name}{COLOR_RESET}"
+        )
 
         # 📌 FPS
         logger.info(

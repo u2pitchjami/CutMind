@@ -85,10 +85,12 @@ def run_master_test(logger: LoggerProtocol | None = None) -> None:
         path_out=IMPORT_DIR_SC,
         logger=logger,
     )
+    iteration = 0
 
     while True:
         try:
-            logger.info("🔄 Lancement d'une itération")
+            iteration += 1
+            log_iteration_start(logger, iteration)
             # ----------------------------------------------------------
             # 1️⃣ Validation CUT (SmartCut)
             # ----------------------------------------------------------
@@ -137,9 +139,8 @@ def run_master_test(logger: LoggerProtocol | None = None) -> None:
             launcher = VideoFlowLauncherV2(logger=cm_logger)
             if launcher:
                 logger.info("📂 Traitement CutMind: lancement du launcher")
-                cm_logger.info("📂 Traitement CutMind: lancement du launcher")
+                # cm_logger.info("📂 Traitement CutMind: lancement du launcher")
                 launcher.run(limit=1)
-                logger.info("✅ CutMind batch traité")
                 continue
 
         except CutMindError:
@@ -149,3 +150,12 @@ def run_master_test(logger: LoggerProtocol | None = None) -> None:
             logger.exception("💥 Erreur inattendue CutMind")
 
         time.sleep(SCAN_INTERVAL)
+
+
+def log_iteration_start(
+    logger: LoggerProtocol,
+    iteration: int,
+) -> None:
+    """Log une séparation visuelle entre deux itérations."""
+    logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    logger.info("🔄 ORCHESTRATEUR — Itération #%d", iteration)

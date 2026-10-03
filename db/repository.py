@@ -18,6 +18,7 @@ from typing import Any
 from pymysql.connections import Connection
 
 from check.histo.processing_histo import ProcessingHistory
+from compil.compil_db_model import Compilation
 from db.db_connection import db_conn, get_dict_cursor
 from db.db_utils import safe_execute_dict, to_db_json
 from db.models.cursor_protocol import DictCursorProtocol
@@ -25,7 +26,7 @@ from IA.keywords.frames.frames_hash import SegmentFrameHash
 from shared.models.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.services.video_preparation import VideoPrepared
-from shared.status_orchestrator.statuses import OrchestratorStatus, SegmentStatus
+from shared.status_orchestrator.statuses import OrchestratorStatus
 from shared.utils.logger import get_logger
 from video_enhancer.models_cr.processed_segment import ProcessedSegment
 
@@ -532,6 +533,120 @@ class CutMindRepository:
                 ctx=get_step_ctx({"id": history.id, "action": history.action}),
             ) from exc
 
+    def insert_compilation_with_segments(
+        self,
+        compilation: Compilation,
+    ) -> int:
+        """Insert a compilation and its associated segments."""
+        compilation_id: int | None = None
+
+        try:
+            with db_conn(logger=self.logger) as conn:
+                with get_dict_cursor(conn) as cur:
+                    # --- Compilation ---
+                    safe_execute_dict(
+                        cur,
+                        """
+                        INSERT INTO compilations (
+                            title,
+                            filename,
+                            output_path,
+                            manifest_path,
+                            template_name
+                        )
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (
+                            compilation.title,
+                            compilation.filename,
+                            str(compilation.output_path),
+                            (str(compilation.manifest_path) if compilation.manifest_path is not None else None),
+                            compilation.template_name,
+                        ),
+                    )
+
+                    compilation_id = cur.lastrowid
+
+                    if not compilation_id:
+                        raise CutMindError(
+                            "❌ Erreur Repo insert_compilation_with_segments : ID non retourné.",
+                            code=ErrCode.DB,
+                            ctx=get_step_ctx(
+                                {
+                                    "compilation_id": compilation_id,
+                                    "filename": compilation.filename,
+                                }
+                            ),
+                        )
+
+                    # --- Segments ---
+                    for position, segment in enumerate(
+                        compilation.segments,
+                        start=1,
+                    ):
+                        if segment.id is None:
+                            raise CutMindError(
+                                "❌ Impossible d'associer un segment sans ID à une compilation.",
+                                code=ErrCode.DB,
+                                ctx=get_step_ctx(
+                                    {
+                                        "compilation_id": compilation_id,
+                                        "segment_uid": segment.uid,
+                                        "position": position,
+                                    }
+                                ),
+                            )
+
+                        safe_execute_dict(
+                            cur,
+                            """
+                            INSERT INTO compilation_segments (
+                                compilation_id,
+                                segment_id,
+                                position
+                            )
+                            VALUES (%s, %s, %s)
+                            """,
+                            (
+                                compilation_id,
+                                segment.id,
+                                position,
+                            ),
+                        )
+
+                    conn.commit()
+
+                    self.logger.info(
+                        "Compilation enregistrée : id=%d segments=%d filename=%s",
+                        compilation_id,
+                        len(compilation.segments),
+                        compilation.filename,
+                    )
+
+                    return compilation_id
+
+        except CutMindError as err:
+            raise err.with_context(
+                get_step_ctx(
+                    {
+                        "compilation_id": compilation_id,
+                        "filename": compilation.filename,
+                    }
+                )
+            ) from err
+
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur Repo insert_compilation_with_segments.",
+                code=ErrCode.DB,
+                ctx=get_step_ctx(
+                    {
+                        "compilation_id": compilation_id,
+                        "filename": compilation.filename,
+                    }
+                ),
+            ) from exc
+
     # -------------------------------------------------------------
     # 🔎 Récupération d’une vidéo complète (segments + keywords)
     # -------------------------------------------------------------
@@ -889,53 +1004,26 @@ class CutMindRepository:
 
     def get_active_videos(
         self,
-        excluded_statuses: tuple[SegmentStatus, ...],
     ) -> list[Video]:
         """
         Retourne les vidéos pouvant avancer automatiquement :
 
         - au moins un segment actif
-        - aucun segment actif en attente de validation humaine
 
-        Args:
-            excluded_statuses:
-                Statuts à exclure de la sélection.
         """
         try:
-            placeholders = ", ".join(["%s"] * len(excluded_statuses))
-
-            query = f"""
+            query = """
                 SELECT v.*
                 FROM videos v
                 WHERE EXISTS (
                     SELECT 1
                     FROM segments s
                     WHERE s.video_id = v.id
-                    AND (
-                        s.status NOT IN ({placeholders})
-                        OR s.pipeline_target IN ('IA', 'RATINGS')
-                    )
-                )
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM segments s
-                    WHERE s.video_id = v.id
-                    AND s.status NOT IN ({placeholders})
-                    AND s.pipeline_target IN (
-                        'VALIDATION',
-                        'VALIDATION_CUT'
-                    )
+                    AND s.pipeline_target IS NOT NULL
                 )
             """
-
-            params = (
-                *excluded_statuses,
-                *excluded_statuses,
-            )
-
             rows = self._fetch_all(
                 query,
-                params,
             )
 
             return [Video.from_row(row) for row in rows]
@@ -1092,6 +1180,7 @@ class CutMindRepository:
                     processed_by=%s,
                     tags=%s,
                     nb_frames=%s,
+                    pipeline_target=%s,
                     last_updated=NOW()
                 WHERE id=%s
                 """,
@@ -1107,6 +1196,7 @@ class CutMindRepository:
                     seg.processed_by,
                     to_db_json(seg.tags),
                     seg.nb_frames,
+                    seg.pipeline_target,
                     seg.id,
                 ),
                 conn=conn,
@@ -1195,11 +1285,13 @@ class CutMindRepository:
                         cur,
                         """
                         UPDATE segments
-                        SET description=%s, confidence=%s, status=%s, pipeline_target=%s, category=%s,
+                        SET video_id=%s, description=%s, confidence=%s, status=%s,
+                            pipeline_target=%s, category=%s,
                             source_flow='manual_csv', last_updated=NOW()
                         WHERE id=%s
                         """,
                         (
+                            new_data["video_id"],
                             new_data["description"],
                             new_data["confidence"],
                             new_data["status"],
@@ -1275,6 +1367,32 @@ class CutMindRepository:
         except Exception as exc:
             raise CutMindError(
                 "❌ Erreur Repo update_video.",
+                code=ErrCode.DB,
+                ctx=get_step_ctx({"video.name": video.name}),
+            ) from exc
+
+    def update_video_name(self, video: Video) -> None:
+        """
+        Met à jour le nom d’une vidéo.
+        """
+        try:
+            with db_conn(logger=self.logger) as conn:
+                with get_dict_cursor(conn) as cur:
+                    safe_execute_dict(
+                        cur,
+                        """
+                        UPDATE videos
+                        SET name=%s,
+                            last_updated=NOW()
+                        WHERE id=%s
+                        """,
+                        (video.name, video.id),
+                    )
+        except CutMindError as err:
+            raise err.with_context(get_step_ctx({"video.name": video.name})) from err
+        except Exception as exc:
+            raise CutMindError(
+                "❌ Erreur Repo update_video_name.",
                 code=ErrCode.DB,
                 ctx=get_step_ctx({"video.name": video.name}),
             ) from exc

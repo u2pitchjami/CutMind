@@ -66,12 +66,29 @@ def _clean_raw_str(value: str | None) -> str:
 
 
 def normalize_csv_value(value: str | None) -> str:
-    s = _clean_raw_str(value).lower()
-    if not s or re.fullmatch(r"(none|null|nan|n/a)(\s+(none|null|nan|n/a))*", s):
+    """Nettoie une valeur CSV sans modifier sa casse."""
+    cleaned = _clean_raw_str(value)
+
+    if not cleaned:
         return ""
-    if s in NULL_EQUIVALENTS:
+
+    lowered = cleaned.lower()
+
+    if re.fullmatch(
+        r"(none|null|nan|n/a)(\s+(none|null|nan|n/a))*",
+        lowered,
+    ):
         return ""
-    return s
+
+    if lowered in NULL_EQUIVALENTS:
+        return ""
+
+    return cleaned
+
+
+def normalize_csv_lower(value: str | None) -> str:
+    """Nettoie une valeur CSV et la normalise en minuscules."""
+    return normalize_csv_value(value).lower()
 
 
 def normalize_db_value(value: str) -> str:
@@ -81,6 +98,24 @@ def normalize_db_value(value: str) -> str:
     if s in NULL_EQUIVALENTS:
         return ""
     return s
+
+
+def normalize_csv_int(value: str | None) -> int | None:
+    """Normalize a CSV value to an integer or None."""
+    cleaned = normalize_csv_value(value)
+
+    if not cleaned:
+        return None
+
+    try:
+        number = float(cleaned)
+    except ValueError as exc:
+        raise ValueError(f"Invalid integer value: {value!r}") from exc
+
+    if not number.is_integer():
+        raise ValueError(f"Expected an integer, got: {value!r}")
+
+    return int(number)
 
 
 def keywords_to_list_from_str(s: str | None) -> list[str]:
@@ -95,10 +130,14 @@ def keywords_to_list_from_str(s: str | None) -> list[str]:
 
 def build_new_data_from_csv_row(row: dict[str, Any]) -> dict[str, Any]:
     try:
-        status = normalize_csv_value(row.get("status")) or "manual_review"
-        description = normalize_csv_value(row.get("description"))
-        category = normalize_csv_value(row.get("category"))
-        pipeline_target = normalize_csv_value(row.get("pipeline_target")).upper()
+        status = normalize_csv_lower(row.get("status")) or "manual_review"
+        description = normalize_csv_lower(row.get("description"))
+        category = normalize_csv_lower(row.get("category"))
+        raw_pipeline_target = normalize_csv_value(row.get("pipeline_target"))
+        video_id = normalize_csv_int(row.get("video_id"))
+        video_name = normalize_csv_value(row.get("video_name"))
+        pipeline_target: str | None = raw_pipeline_target.upper() if raw_pipeline_target else None
+        action = normalize_csv_lower(row.get("action"))
 
         try:
             conf = safe_to_float(row.get("confidence"))
@@ -116,7 +155,10 @@ def build_new_data_from_csv_row(row: dict[str, Any]) -> dict[str, Any]:
             "status": status,
             "pipeline_target": pipeline_target,
             "category": category,
+            "video_id": video_id,
+            "video_name": video_name,
             "keywords": keywords_list,
+            "action": action,
         }
 
     except Exception as exc:

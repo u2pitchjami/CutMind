@@ -62,21 +62,42 @@ def inspect_video(video_path: Path) -> dict[str, Any]:
     return dict(first_stream)
 
 
-def is_video_compliant(metadata: dict[str, Any]) -> bool:
-    """
-    Check if video matches CutMind internal standard.
-    """
+def _normalize_codec_name(encoder: str) -> str:
+    """Convert an FFmpeg encoder name to its resulting codec name."""
+    encoder_to_codec = {
+        "hevc_nvenc": "hevc",
+        "libx265": "hevc",
+        "h264_nvenc": "h264",
+        "libx264": "h264",
+    }
+    return encoder_to_codec.get(encoder, encoder)
+
+
+def check_video_compliance(
+    metadata: dict[str, Any],
+) -> tuple[bool, dict[str, tuple[Any, Any]]]:
+    """Check whether a video can be used without re-encoding."""
     settings = get_settings()
 
-    expected_codec = settings.ffsmartcut.vcodec.replace("libx265", "hevc")
+    expected = {
+        "codec_name": _normalize_codec_name(settings.ffsmartcut.vcodec),
+        "profile": settings.ffsmartcut.profile.lower(),
+        "pix_fmt": settings.ffsmartcut.pix_fmt,
+        "color_space": settings.ffsmartcut.colorspace,
+        "codec_tag_string": settings.ffsmartcut.tag,
+        "r_frame_rate": "60/1",
+    }
 
-    return (
-        metadata.get("codec_name") == expected_codec
-        and metadata.get("profile") == settings.ffsmartcut.profile
-        and metadata.get("pix_fmt") == settings.ffsmartcut.pix_fmt
-        and metadata.get("color_space") == settings.ffsmartcut.colorspace
-        and metadata.get("color_transfer") == settings.ffsmartcut.color_trc
-        and metadata.get("color_primaries") == settings.ffsmartcut.color_primaries
-        and metadata.get("codec_tag_string") == settings.ffsmartcut.tag
-        and metadata.get("r_frame_rate") == "60/1"
-    )
+    normalized_metadata = dict(metadata)
+
+    profile = normalized_metadata.get("profile")
+    if isinstance(profile, str):
+        normalized_metadata["profile"] = profile.lower()
+
+    mismatches = {
+        key: (normalized_metadata.get(key), expected_value)
+        for key, expected_value in expected.items()
+        if normalized_metadata.get(key) != expected_value
+    }
+
+    return not mismatches, mismatches

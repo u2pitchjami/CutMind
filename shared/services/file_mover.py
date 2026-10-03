@@ -7,9 +7,17 @@ import shutil
 
 from shared.models.db_models import Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
-from shared.utils.config import CUTMIND_BASEDIR
+from shared.utils.config import (
+    COLOR_BLUE,
+    COLOR_CYAN,
+    COLOR_GREEN,
+    COLOR_PURPLE,
+    COLOR_RED,
+    COLOR_RESET,
+    CUTMIND_BASEDIR,
+)
 from shared.utils.fs import safe_file_check
-from shared.utils.logger import LoggerProtocol, ensure_logger
+from shared.utils.logger import LoggerProtocol, ensure_logger, get_logger
 
 
 def sanitize(name: str) -> str:
@@ -30,20 +38,19 @@ class FileMover:
     """
 
     def __init__(self) -> None:
-        pass
+        self.logger = get_logger("CutMind-Mover")
 
     def move_video_files(
         self,
         video: Video,
         planned_targets: dict[str, Path],
-        logger: LoggerProtocol | None = None,
     ) -> bool:
         """
         Déplace de manière atomique les fichiers segments planifiés pour une vidéo.
 
         Seuls les segments présents dans planned_targets sont traités.
         """
-        logger = ensure_logger(logger, __name__)
+        logger = ensure_logger(self.logger, __name__)
         logger.debug("🔍 Déplacement des fichiers pour la vidéo : %s", video.name)
         logger.debug(f"planned_targets : {planned_targets}")
 
@@ -61,7 +68,9 @@ class FileMover:
             # Phase PREPARE
             # ------------------------------------------------------------------
             for seg_uid, dst_rel in planned_targets.items():
+                logger.debug("🔍 Traitement du segment %s → Destination planifiée : %s", seg_uid, dst_rel)
                 seg = segments_by_uid.get(seg_uid)
+                logger.debug(f"segments_by_uid.get({seg_uid}) : {seg}")
                 if seg is None:
                     raise CutMindError(
                         f"Segment inconnu dans planned_targets : {seg_uid}",
@@ -109,6 +118,7 @@ class FileMover:
 
                 prepared.append((src_abs, dst_temp, dst_final))
 
+            total_size_bytes = sum(src_abs.stat().st_size for src_abs, _, _ in prepared)
             # ------------------------------------------------------------------
             # Phase COMMIT (atomique)
             # ------------------------------------------------------------------
@@ -121,6 +131,12 @@ class FileMover:
                 "✅ Déplacement réussi : %s (%d fichiers)",
                 video.name,
                 len(prepared),
+            )
+            self.log_summary(
+                video=video,
+                prepared=prepared,
+                total_size_bytes=total_size_bytes,
+                logger=logger,
             )
             return True
 
@@ -135,6 +151,52 @@ class FileMover:
                 code=ErrCode.UNEXPECTED,
                 ctx=get_step_ctx({"video.name": video.name}),
             ) from exc
+
+    def log_summary(
+        self,
+        video: Video,
+        prepared: list[tuple[Path, Path, Path]],
+        total_size_bytes: int,
+        logger: LoggerProtocol | None = None,
+    ) -> None:
+        """Log un résumé coloré des fichiers déplacés."""
+        logger = ensure_logger(logger, __name__)
+
+        file_count = len(prepared)
+        destination = prepared[0][2].parent if prepared else None
+        total_size_mb = total_size_bytes / (1024 * 1024)
+
+        logger.info(
+            "%s📦 Résumé déplacement : %s%s%s",
+            COLOR_PURPLE,
+            COLOR_CYAN,
+            video.name,
+            COLOR_RESET,
+        )
+
+        logger.info(
+            "%s📌 Fichiers    : %s%d%s",
+            COLOR_BLUE,
+            COLOR_GREEN if file_count > 0 else COLOR_RED,
+            file_count,
+            COLOR_RESET,
+        )
+
+        logger.info(
+            "%s📌 Volume      : %s%.2f MB%s",
+            COLOR_BLUE,
+            COLOR_GREEN if total_size_bytes > 0 else COLOR_RED,
+            total_size_mb,
+            COLOR_RESET,
+        )
+
+        logger.info(
+            "%s📌 Destination : %s%s%s",
+            COLOR_BLUE,
+            COLOR_GREEN if destination is not None else COLOR_RED,
+            str(destination) if destination is not None else "N/A",
+            COLOR_RESET,
+        )
 
     @staticmethod
     def safe_copy(src: Path, dst: Path) -> None:
