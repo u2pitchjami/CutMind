@@ -7,7 +7,10 @@ Doit être initialisé UNE seule fois via init_settings(config) dans main().
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
+import os
 from typing import Any
+from urllib.parse import urlparse
 
 # ==========================================================
 #               SMARTCUT — DATACLASSES
@@ -99,6 +102,44 @@ class GenerateKeywordsSettings:
     device_map: str
     device_map_cpu: str
     attn_implementation: str
+    backend: str = "transformers"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = ""
+    ollama_timeout: float = 180.0
+    ollama_think: bool = False
+    ollama_num_ctx: int = 16384
+    ollama_batch_size: int = 6
+    ollama_keep_alive: str = "1m"
+
+    def __post_init__(self) -> None:
+        # Le .env est chargé par shared.utils.config au démarrage.
+        self.backend = os.getenv("KEYWORDS_BACKEND", self.backend).strip().lower()
+        self.ollama_base_url = os.getenv("OLLAMA_BASE_URL", self.ollama_base_url).strip().rstrip("/")
+        self.ollama_model = os.getenv("OLLAMA_MODEL", self.ollama_model).strip()
+        self.ollama_timeout = float(os.getenv("OLLAMA_TIMEOUT", str(self.ollama_timeout)))
+        raw_think = os.getenv("OLLAMA_THINK")
+        if raw_think is not None:
+            normalized_think = raw_think.strip().lower()
+            if normalized_think not in {"true", "false", "1", "0", "yes", "no"}:
+                raise ValueError("OLLAMA_THINK doit valoir true ou false.")
+            self.ollama_think = normalized_think in {"true", "1", "yes"}
+        self.ollama_num_ctx = int(os.getenv("OLLAMA_NUM_CTX", str(self.ollama_num_ctx)))
+        self.ollama_batch_size = int(os.getenv("OLLAMA_BATCH_SIZE", str(self.ollama_batch_size)))
+        self.ollama_keep_alive = os.getenv("OLLAMA_KEEP_ALIVE", self.ollama_keep_alive).strip()
+        if self.backend not in {"transformers", "ollama"}:
+            raise ValueError("KEYWORDS_BACKEND doit valoir transformers ou ollama.")
+        if self.backend == "ollama":
+            url = urlparse(self.ollama_base_url)
+            if url.scheme not in {"http", "https"} or not url.netloc or url.query or url.fragment:
+                raise ValueError("OLLAMA_BASE_URL doit être une URL HTTP(S) sans query ni fragment.")
+            if not self.ollama_model:
+                raise ValueError("OLLAMA_MODEL est requis avec le moteur ollama (modèle vision).")
+            if not math.isfinite(self.ollama_timeout) or self.ollama_timeout <= 0:
+                raise ValueError("OLLAMA_TIMEOUT doit être strictement positif et fini.")
+            if self.ollama_num_ctx < 1:
+                raise ValueError("OLLAMA_NUM_CTX doit être supérieur ou égal à 1.")
+            if self.ollama_batch_size < 1:
+                raise ValueError("OLLAMA_BATCH_SIZE doit être supérieur ou égal à 1.")
 
 
 @dataclass

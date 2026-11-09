@@ -53,3 +53,8 @@ Optimisation & assistance technique : DevOps Assistant 🧠
 
 ## 📄 Licence
 MIT
+
+## Analyse IA : Transformers ou Ollama
+
+Le moteur de génération est configurable ; Transformers reste utilisé par défaut.
+Voir [la configuration Ollama et les consignes de comparaison](docs/keywords-ollama.md).

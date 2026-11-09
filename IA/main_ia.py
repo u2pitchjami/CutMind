@@ -99,45 +99,51 @@ class IAWorker:
             # 1. Attendre que le GPU soit réellement disponible
             # -------------------------------------------------
 
-            free_gb, total_gb = vram_gpu()
+            if settings.generate_keywords.backend == "ollama":
+                self.model_name = settings.generate_keywords.ollama_model
+                self.model_precision = "ollama"
+                self.batch_size = settings.generate_keywords.ollama_batch_size
+                self.logger.info("Moteur Ollama : modèle=%s, images/appel=%d", self.model_name, self.batch_size)
+            else:
+                free_gb, total_gb = vram_gpu()
 
-            self.logger.debug(
-                "📊 VRAM avant GPU guard : %.2f Go / %.2f Go",
-                free_gb,
-                total_gb,
-            )
-            if not guard_gpu_or_requeue(logger=self.logger):
-                self.logger.warning("⚠️ GPU indisponible après expiration du GPU guard. Cycle IA abandonné.")
-                return 0
-            # -------------------------------------------------
-            # 2. Charger le modèle uniquement APRÈS le guard
-            # -------------------------------------------------
+                self.logger.debug(
+                    "📊 VRAM avant GPU guard : %.2f Go / %.2f Go",
+                    free_gb,
+                    total_gb,
+                )
+                if not guard_gpu_or_requeue(logger=self.logger):
+                    self.logger.warning("⚠️ GPU indisponible après expiration du GPU guard. Cycle IA abandonné.")
+                    return 0
+                # -------------------------------------------------
+                # 2. Charger le modèle uniquement APRÈS le guard
+                # -------------------------------------------------
 
-            free_gb, total_gb = vram_gpu()
-            self.logger.debug(
-                "📊 VRAM avant chargement modèle : %.2f Go / %.2f Go",
-                free_gb,
-                total_gb,
-            )
+                free_gb, total_gb = vram_gpu()
+                self.logger.debug(
+                    "📊 VRAM avant chargement modèle : %.2f Go / %.2f Go",
+                    free_gb,
+                    total_gb,
+                )
 
-            (
-                self.processor,
-                self.model,
-                self.model_name,
-                self.batch_size,
-                self.model_precision,
-            ) = load_and_batches(
-                free_gb=free_gb,
-                logger=self.logger,
-            )
+                (
+                    self.processor,
+                    self.model,
+                    self.model_name,
+                    self.batch_size,
+                    self.model_precision,
+                ) = load_and_batches(
+                    free_gb=free_gb,
+                    logger=self.logger,
+                )
 
-            free_gb, total_gb = vram_gpu()
+                free_gb, total_gb = vram_gpu()
 
-            self.logger.debug(
-                "📊 VRAM après chargement modèle : %.2f Go / %.2f Go",
-                free_gb,
-                total_gb,
-            )
+                self.logger.debug(
+                    "📊 VRAM après chargement modèle : %.2f Go / %.2f Go",
+                    free_gb,
+                    total_gb,
+                )
 
             # -------------------------------------------------
             # 3. Traitement IA des segments
@@ -295,34 +301,35 @@ class IAWorker:
                 self.handle_ia_failure(
                     current_segment,
                     exc,
-                    message=("❌ Erreur inattendue durant l'envoi au modèle HF."),
+                    message=("❌ Erreur inattendue durant l'appel au moteur IA."),
                     code=ErrCode.UNEXPECTED,
                 )
             else:
                 self.logger.exception("❌ Erreur inattendue avant le traitement du premier segment.")
 
         finally:
-            self.logger.debug("🧹 Déchargement du modèle IA...")
+            if settings.generate_keywords.backend == "transformers":
+                self.logger.debug("🧹 Déchargement du modèle IA...")
 
-            # Cleanup du ModelManager existant
-            self.model_manager.unload()
+                # Cleanup du ModelManager existant
+                self.model_manager.unload()
 
-            # IMPORTANT : supprimer aussi les références détenues par IAWorker
-            self.model = None
-            self.processor = None
+                # IMPORTANT : supprimer aussi les références détenues par IAWorker
+                self.model = None
+                self.processor = None
 
-            # Puis libérer le cache CUDA devenu inutilisé
-            release_gpu_memory(
-                logger=self.logger,
-            )
+                # Puis libérer le cache CUDA devenu inutilisé
+                release_gpu_memory(
+                    logger=self.logger,
+                )
 
-            free_gb, total_gb = vram_gpu()
+                free_gb, total_gb = vram_gpu()
 
-            self.logger.debug(
-                "🧹 VRAM nettoyée ('full release') → VRAM libre : %.2f Go / %.2f Go",
-                free_gb,
-                total_gb,
-            )
+                self.logger.debug(
+                    "🧹 VRAM nettoyée ('full release') → VRAM libre : %.2f Go / %.2f Go",
+                    free_gb,
+                    total_gb,
+                )
             # Nettoyage répertoires temporaires
             cleanup_temp()
             remove_empty_dirs(root_path=BATCH_FRAMES_DIR_SC, logger=self.logger)

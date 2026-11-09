@@ -9,17 +9,17 @@ from transformers import (
     ProcessorMixin,
 )
 
-from IA.keywords.analyze.generate_keywords import generate_keywords_from_frames
 from IA.keywords.utils.ai_result import AIOutputType, AIResult
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 from shared.utils.logger import LoggerProtocol, ensure_logger
+from shared.utils.settings import get_settings
 
 
 def generate_keywords_for_segment(
     segment_id: str,
     frame_dir: Path,
-    processor: ProcessorMixin,
-    model: PreTrainedModel,
+    processor: ProcessorMixin | None,
+    model: PreTrainedModel | None,
     num_frames: int,
     output_type: AIOutputType,
     prompt_name: str = "keywords",
@@ -31,6 +31,22 @@ def generate_keywords_for_segment(
     """
     try:
         logger = ensure_logger(logger, __name__)
+        if get_settings().generate_keywords.backend == "ollama":
+            from IA.keywords.analyze.ollama_keywords import generate_keywords_with_ollama
+
+            return generate_keywords_with_ollama(
+                frame_dir,
+                segment_id,
+                num_frames,
+                output_type,
+                prompt_name=prompt_name,
+                system_prompt=system_prompt,
+                logger=logger,
+            )
+        if processor is None or model is None:
+            raise CutMindError("Modèle Transformers non chargé.", code=ErrCode.IAERROR)
+        from IA.keywords.analyze.generate_keywords import generate_keywords_from_frames
+
         response: AIResult = generate_keywords_from_frames(
             frame_dir,
             processor,
