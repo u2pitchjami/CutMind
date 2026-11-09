@@ -134,6 +134,7 @@ def generate_keywords_from_frames(
             skip_special_tokens=SKIP_SPECIAL_TOKENS,
             clean_up_tokenization_spaces=CLEAN_UP_TOKENIZATION_SPACES,
         )[0]
+        logger.debug(f"decoded_text: {decoded_text}")
 
         ai_result: AIResult = parse_json_ai_output(decoded_text, output_type)
         logger.debug(f"ai_result: {ai_result}")

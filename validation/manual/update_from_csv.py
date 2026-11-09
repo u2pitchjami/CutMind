@@ -158,7 +158,7 @@ def _process_csv_row(
         if action in ("rename", "to_rename"):
             new_video_name = new_data["video_name"].strip()
 
-            if new_video_name != video.name.strip():
+            if new_video_name != video.name:
                 moved_count = perform_video_rename(
                     video_id=video_id,
                     new_name=new_video_name,
@@ -244,6 +244,10 @@ def _process_csv_row(
 
         if action in ("move", "to_move"):
             new_data["pipeline_target"] = OrchestratorStatus.SEGMENT_TO_MOVE
+            logger.info(
+                "✏️ segment %s à déplacer.",
+                segment_id,
+            )
             stats.updated += 1
             log_rows.append(
                 {

@@ -26,12 +26,12 @@ class VideoFlowLauncherV2:
         self.logger = logger or ensure_logger(logger, __name__)
         self.orchestrator = orchestrator or CutMindOrchestratorV2(repo=self.repo, logger=self.logger)
 
-    def run(self, *, limit: int = 1, randomize: bool = True) -> None:
+    def run(self, *, limit: int = 1, randomize: bool = True) -> bool:
         videos = self.repo.get_active_videos()
 
         if not videos:
             self.logger.debug("⏸️ Aucune vidéo active à orchestrer")
-            return
+            return False
 
         if randomize:
             random.shuffle(videos)
@@ -48,3 +48,5 @@ class VideoFlowLauncherV2:
             self.orchestrator.run(video)
 
             self.logger.info("✅ Traitement de la vidéo id %s : %s terminé", video.id, video.name)
+
+        return True

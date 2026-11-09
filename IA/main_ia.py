@@ -91,7 +91,7 @@ class IAWorker:
         self.logger.info(
             "🎞️ Vidéo '%s' (%d segments)",
             self.video.name,
-            len(self.video.segments),
+            len(self.segments),
         )
 
         try:

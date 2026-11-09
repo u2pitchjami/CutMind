@@ -107,6 +107,16 @@ def adaptive_scene_split_v2(
             initial_elapsed,
             len(scenes),
         )
+        logger.info("🎬 %d segments détectés :", len(scenes))
+
+        for index, (start, end) in enumerate(scenes, start=1):
+            logger.info(
+                "  Segment %03d : début %.3f s → fin %.3f s | durée %.3f s",
+                index,
+                start,
+                end,
+                end - start,
+            )
 
         #
         # Si aucune coupure n'est trouvée, on considère toute
@@ -155,6 +165,14 @@ def adaptive_scene_split_v2(
             first_refinement_elapsed,
             len(refined),
         )
+        for index, (start, end) in enumerate(refined, start=1):
+            logger.debug(
+                "first_refinement Segment %03d : début %.3f s → fin %.3f s | durée %.3f s",
+                index,
+                start,
+                end,
+                end - start,
+            )
 
         #
         # 5. COMBLER LES ÉVENTUELS TROUS
@@ -163,6 +181,14 @@ def adaptive_scene_split_v2(
             refined,
             duration,
         )
+        for index, (start, end) in enumerate(refined, start=1):
+            logger.debug(
+                "fill_missing Segment %03d : début %.3f s → fin %.3f s | durée %.3f s",
+                index,
+                start,
+                end,
+                end - start,
+            )
 
         #
         # 6. SECOND RAFFINAGE — TOUJOURS EN RAM
@@ -185,6 +211,14 @@ def adaptive_scene_split_v2(
             second_refinement_elapsed,
             len(refined),
         )
+        for index, (start, end) in enumerate(refined, start=1):
+            logger.debug(
+                "second_refinement Segment %03d : début %.3f s → fin %.3f s | durée %.3f s",
+                index,
+                start,
+                end,
+                end - start,
+            )
 
         refined = sorted(
             refined,

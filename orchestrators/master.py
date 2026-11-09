@@ -140,8 +140,11 @@ def run_master_test(logger: LoggerProtocol | None = None) -> None:
             if launcher:
                 logger.info("📂 Traitement CutMind: lancement du launcher")
                 # cm_logger.info("📂 Traitement CutMind: lancement du launcher")
-                launcher.run(limit=1)
-                continue
+                if not launcher.run(limit=1):
+                    logger.warning("⏸️ Aucune vidéo active à orchestrer")
+                else:
+                    logger.info("✅ Launcher démarré avec succès")
+                    continue
 
         except CutMindError:
             logger.exception("❌ Erreur Cutmind inattendue")

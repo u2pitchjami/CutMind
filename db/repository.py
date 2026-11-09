@@ -1020,6 +1020,7 @@ class CutMindRepository:
                     FROM segments s
                     WHERE s.video_id = v.id
                     AND s.pipeline_target IS NOT NULL
+                    AND s.pipeline_target NOT IN ('CUT_VALIDATION', 'VALIDATION', 'IA_error', 'ERROR')
                 )
             """
             rows = self._fetch_all(

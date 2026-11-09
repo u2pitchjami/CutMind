@@ -28,6 +28,12 @@ def refine_long_segments(
     try:
         for start, end in scenes:
             duration = end - start
+            logger.info(
+                "refine_long_segments : début %.3f s → fin %.3f s | durée %.3f s",
+                start,
+                end,
+                duration,
+            )
 
             if duration <= 0.0:
                 logger.warning(
@@ -76,6 +82,14 @@ def refine_long_segments(
                     len(sub_scenes),
                     threshold,
                 )
+                for index, (start, end) in enumerate(sub_scenes, start=1):
+                    logger.info(
+                        "  Segment %03d : début %.3f s → fin %.3f s | durée %.3f s",
+                        index,
+                        start,
+                        end,
+                        end - start,
+                    )
                 break
 
             if not sub_scenes:

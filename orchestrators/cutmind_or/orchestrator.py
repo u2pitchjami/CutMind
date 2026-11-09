@@ -43,8 +43,7 @@ class CutMindOrchestratorV2:
     def run(self, video: Video) -> None:
         if not video or not video.id:
             raise ValueError("Video must have an ID to run the orchestrator.")
-        self.logger.info("🎛️ Orchestration V2 démarrée pour video %s", video.id)
-
+        self.logger.info("🎛️ Orchestration V2 démarrée pour video %s - statut: %s", video.id, video.status)
         # 1️⃣ Enhancement
         self._maybe_run_enhancement(video)
 
@@ -75,7 +74,7 @@ class CutMindOrchestratorV2:
         vid, _seg = self._reload_video_and_segments(video)
         new_status = compute_video_status(vid)
         if new_status != vid.status:
-            self.logger.info(
+            self.logger.debug(
                 "🔄 Video %s statut mis à jour: %s → %s",
                 vid.id,
                 vid.status,
@@ -164,13 +163,13 @@ class CutMindOrchestratorV2:
             return
 
         self.logger.info(
-            "🎨 Enhancement (%s segments) pour video %s",
+            "🎨 Enhancement pour %s segments",
             len(segments),
-            video.id,
         )
 
         worker = EnhancerWorker(vid=video, segments=segments)
-        worker.run()
+        processed_count = worker.run()
+        self.logger.info("✅ %d segments traités via Enhancer Worker.", processed_count)
         self._recalc_video_status(video)
 
     # ------------------------------------------------------------------
@@ -295,7 +294,7 @@ class CutMindOrchestratorV2:
             return
 
         self.logger.info(
-            "🏁 Check Final (%s segments) pour video %s",
+            "⚒️ Check Final (%s segments) pour video %s",
             len(segments),
             video.id,
         )
