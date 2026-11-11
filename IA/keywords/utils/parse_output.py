@@ -11,6 +11,13 @@ from IA.keywords.utils.ai_result import AIOutputType, AIResult
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 
 
+def normalize_category(category: str | None) -> str | None:
+    if not isinstance(category, str):
+        return None
+    category = category.strip()
+    return None if category.lower() in {"", "none", "null"} else category
+
+
 def parse_json_ai_output(
     decoded_text: str,
     output_type: AIOutputType,
@@ -32,8 +39,8 @@ def parse_json_ai_output(
             if isinstance(description, str) and description.strip():
                 result["description"] = description.strip()
             category = data.get("category")
-            if isinstance(category, str) and category.strip():
-                result["category"] = category.strip()
+            if "category" in data:
+                result["category"] = normalize_category(category)
 
             keywords = data.get("keywords")
             if isinstance(keywords, list):

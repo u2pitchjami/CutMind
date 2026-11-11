@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import base64
+from datetime import UTC, datetime
 from io import BytesIO
+import json
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 import time
 from typing import Any
 
@@ -23,7 +26,7 @@ def output_schema(output_type: AIOutputType) -> dict[str, Any]:
     if output_type == AIOutputType.SCENE_ANALYSIS:
         properties = {
             "description": {"type": "string"},
-            "category": {"type": "string"},
+            "category": {"type": ["string", "null"]},
             "keywords": {"type": "array", "items": {"type": "string"}},
         }
     elif output_type == AIOutputType.SCENE_RATING:
@@ -34,6 +37,50 @@ def output_schema(output_type: AIOutputType) -> dict[str, Any]:
     else:
         raise ValueError(f"Type de sortie IA inconnu : {output_type}")
     return {"type": "object", "properties": properties, "required": list(properties), "additionalProperties": False}
+
+
+def save_truncated_response(data: dict[str, Any], metadata: dict[str, Any], logger: LoggerProtocol) -> Path | None:
+    """Conserver la sortie textuelle complète, sans images ni contenu de raisonnement."""
+    try:
+        directory = Path("/app/logs/cutmind")
+        directory.mkdir(parents=True, exist_ok=True)
+        message = data.get("message")
+        diagnostic = {
+            "created_at": datetime.now(UTC).isoformat(),
+            **metadata,
+            "response": {
+                key: data.get(key)
+                for key in (
+                    "model",
+                    "done",
+                    "done_reason",
+                    "prompt_eval_count",
+                    "eval_count",
+                    "total_duration",
+                    "load_duration",
+                    "prompt_eval_duration",
+                    "eval_duration",
+                )
+            },
+            "content": message.get("content") if isinstance(message, dict) else None,
+            "has_thinking": isinstance(message, dict) and bool(message.get("thinking")),
+        }
+        with NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=directory,
+            prefix=datetime.now(UTC).strftime("truncated_%Y%m%dT%H%M%S_"),
+            suffix=".json",
+            delete=False,
+        ) as diagnostic_file:
+            path = Path(diagnostic_file.name)
+            json.dump(diagnostic, diagnostic_file, ensure_ascii=False, indent=2)
+            diagnostic_file.write("\n")
+        logger.warning("Réponse Ollama tronquée sauvegardée : %s", path)
+        return path
+    except (OSError, TypeError, ValueError) as exc:
+        logger.warning("Impossible de sauvegarder le diagnostic Ollama : %s", exc)
+        return None
 
 
 def generate_keywords_with_ollama(
@@ -105,18 +152,48 @@ def generate_keywords_with_ollama(
 
         if not isinstance(data, dict):
             raise ValueError("La réponse Ollama n'est pas un objet JSON.")
+        message = data.get("message")
+        logger.debug(
+            "Ollama réponse batch segment=%s prompt=%s modèle=%s done=%s raison=%s content=%s",
+            segment_id,
+            prompt_name,
+            settings.ollama_model,
+            data.get("done"),
+            data.get("done_reason"),
+            message.get("content") if isinstance(message, dict) else None,
+        )
         if data.get("error"):
             raise ValueError(f"Erreur retournée par Ollama : {data['error']}")
         if data.get("done") is not True or data.get("done_reason") == "length":
             message = data.get("message")
             has_thinking = isinstance(message, dict) and bool(message.get("thinking"))
+            diagnostic_path = save_truncated_response(
+                data,
+                {
+                    **context,
+                    "prompt_name": prompt_name,
+                    "system_prompt_name": system_prompt,
+                    "output_type": output_type.value,
+                    "image_count": len(images),
+                    "options": payload["options"],
+                    "think": settings.ollama_think,
+                },
+                logger,
+            )
+            if diagnostic_path is not None:
+                context["diagnostic_path"] = str(diagnostic_path)
+            diagnostic_hint = (
+                f"Diagnostic : {diagnostic_path}."
+                if diagnostic_path is not None
+                else "Diagnostic non sauvegardé (voir les logs)."
+            )
             raise ValueError(
                 "Réponse Ollama incomplète ou limite de tokens atteinte "
                 f"(done={data.get('done')}, raison={data.get('done_reason')}, "
                 f"tokens générés={data.get('eval_count')}, limite={settings.max_new_tokens}, "
                 f"contexte={settings.ollama_num_ctx}, think={settings.ollama_think}, "
                 f"raisonnement présent={has_thinking}). "
-                "Vérifier OLLAMA_THINK=false ou augmenter generate_keywords.max_new_tokens."
+                f"{diagnostic_hint} Examiner la sortie avant de modifier generate_keywords.max_new_tokens."
             )
         message = data.get("message")
         content = message.get("content") if isinstance(message, dict) else None
@@ -124,7 +201,7 @@ def generate_keywords_with_ollama(
             raise ValueError("Réponse Ollama vide ou sans message.content.")
         result = parse_json_ai_output(content, output_type)
         required = output_schema(output_type)["required"]
-        if any(result.get(key) is None for key in required):
+        if any(key not in result or (key != "category" and result.get(key) is None) for key in required):
             raise ValueError("Réponse Ollama ne contenant pas tous les champs attendus.")
         logger.info(
             "Ollama modèle=%s images=%d durée=%.2fs tokens entrée=%s sortie=%s",

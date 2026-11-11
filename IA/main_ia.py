@@ -200,6 +200,19 @@ class IAWorker:
                                 "interest_rating": seg.rating,
                             }
 
+                            if not seg.category:
+                                history.status = "partial"
+                                self.logger.warning(
+                                    "Segment %s : aucune catégorie attribuée, passage au segment suivant.", seg.id
+                                )
+                                self.record_ia_failure(seg)
+                                history.message = (
+                                    "Aucune catégorie attribuée ; deuxième échec, pipeline_target=IA_error."
+                                    if seg.pipeline_target == SegmentStatus.IA_ERROR
+                                    else "Aucune catégorie attribuée ; analyse à retenter."
+                                )
+                                continue
+
                             seg.status = SegmentStatus.IA_DONE
                             seg.pipeline_target = SegmentStatus.TO_CONFIDENCE
                             seg.ai_model = self.model_name
@@ -262,18 +275,7 @@ class IAWorker:
                                     message,
                                 )
 
-                                if "IA_error" not in seg.tags:
-                                    seg.add_tag("IA_error")
-                                    seg.pipeline_target = SegmentStatus.TO_IA
-
-                                    self.logger.warning("🚨 Segment en erreur IA (1ère tentative)")
-
-                                else:
-                                    # seg.status = SegmentStatus.IA_ERROR
-                                    seg.pipeline_target = SegmentStatus.IA_ERROR
-                                    self.logger.warning("🚨 Segment en erreur IA (2e tentative) — statut mis à jour")
-
-                                self.repo.update_segment_validation(seg)
+                                self.record_ia_failure(seg)
                             self.log_ai_summary(response)
 
                     free_gb, total_gb = vram_gpu()
@@ -350,6 +352,20 @@ class IAWorker:
 
         return processed_count
 
+    def record_ia_failure(self, seg: Segment) -> None:
+        """Enregistre une tentative échouée sans interrompre le cycle."""
+        # Gestion des tags / statut segment
+        if "IA_error" not in seg.tags:
+            seg.add_tag("IA_error")
+            seg.pipeline_target = SegmentStatus.TO_IA
+            self.logger.warning("🚨 Segment en erreur IA (1ère tentative)")
+        else:
+            # seg.status = SegmentStatus.IA_ERROR
+            seg.pipeline_target = SegmentStatus.IA_ERROR
+            self.logger.warning("🚨 Segment en erreur IA (2e tentative) — statut mis à jour")
+
+        self.repo.update_segment_validation(seg)
+
     def handle_ia_failure(
         self, seg: Segment, exc: Exception, message: str | None = None, code: ErrCode = ErrCode.IAERROR
     ) -> None:
@@ -368,17 +384,7 @@ class IAWorker:
             )
             raise exc from exc  # ce "from exc" va utiliser l'ancien `exc` comme cause
 
-        # Gestion des tags / statut segment
-        if "IA_error" not in seg.tags:
-            seg.add_tag("IA_error")
-            seg.pipeline_target = SegmentStatus.TO_IA
-            self.logger.warning("🚨 Segment en erreur IA (1ère tentative)")
-        else:
-            # seg.status = SegmentStatus.IA_ERROR
-            seg.pipeline_target = SegmentStatus.IA_ERROR
-            self.logger.warning("🚨 Segment en erreur IA (2e tentative) — statut mis à jour")
-
-        self.repo.update_segment_validation(seg)
+        self.record_ia_failure(seg)
 
         # Enrichissement contexte global avant relance de l'erreur
         raise exc.with_context(get_step_ctx({"video.name": self.video.name, "video.status": self.video.status}))

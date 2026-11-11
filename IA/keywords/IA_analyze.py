@@ -18,6 +18,7 @@ from IA.keywords.utils.analyze_torch_utils import (
     release_gpu_memory,
     vram_gpu,
 )
+from IA.keywords.utils.parse_output import normalize_category
 from shared.executors.ffmpeg_utils import get_duration
 from shared.models.db_models import Segment
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
@@ -162,7 +163,7 @@ def analyze_IA(
         if force:
             seg.category = context.category
         else:
-            if is_empty(seg.category) and context.category:
+            if normalize_category(seg.category) is None:
                 seg.category = context.category
         if context.keywords:
             seg.keywords = context.keywords or []
@@ -297,7 +298,7 @@ def merge_category(batches: list[AIResult]) -> str | None:
     categories: list[str] = []
 
     for batch in batches:
-        category = batch.get("category")
+        category = normalize_category(batch.get("category"))
         if category:
             categories.append(category)
 
@@ -356,6 +357,7 @@ def run_ai_pipeline_v25(
 ) -> AIContext:
     context = AIContext()
 
+    categ = normalize_category(categ)
     if categ:
         context.category = categ
     else:
@@ -393,6 +395,7 @@ def run_ai_pipeline_v25(
 
     if not context.category:
         logger.warning("⚠️ Aucune catégorie détectée, on arrête le pipeline IA ici.")
+        return context
 
     else:
         if analyzetype == "full":

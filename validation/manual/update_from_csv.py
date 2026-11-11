@@ -14,10 +14,12 @@ Gère notamment :
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 import csv
 from dataclasses import dataclass
 from pathlib import Path
 
+from check.histo.processing_log import processing_step
 from db.db_connection import db_conn, get_dict_cursor
 from db.repository import CutMindRepository
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
@@ -269,18 +271,27 @@ def _process_csv_row(
         if action.lower() == "ok":
             new_data["status"] = OrchestratorStatus.SEGMENT_CUT_VALIDATED
             new_data["pipeline_target"] = OrchestratorStatus.SEGMENT_TO_ENHANCE
+            new_data["description"] = ""
+            new_data["keywords"] = []
+            has_description = False
+            has_keywords_value = False
 
             if has_category:
                 new_data["confidence"] = 0.99
 
-            stats.updated += 1
-            log_rows.append(
-                {
-                    "segment_id": str(segment_id),
-                    "action": "Cut Validation OK",
-                    "differences": "status",
-                }
-            )
+        if action == "val":
+            missing = []
+            if not has_category:
+                missing.append("catégorie")
+            if not has_description:
+                missing.append("description")
+            if not has_keywords_value:
+                missing.append("mots-clés")
+            if missing:
+                raise ValueError("Validation finale refusée : données manquantes : " + ", ".join(missing))
+            new_data["status"] = OrchestratorStatus.SEGMENT_VALIDATED
+            new_data["pipeline_target"] = OrchestratorStatus.SEGMENT_TO_CHECK
+            new_data["confidence"] = segment.confidence
 
         # --------------------------------------------------------------
         # Décision de pipeline IA
@@ -332,18 +343,28 @@ def _process_csv_row(
             )
             return
 
-        repo.update_segment_from_csv(
-            segment,
-            new_data,
-            diffs,
-        )
-        repo.update_video(video)
+        with (
+            processing_step(video, segment, action="Validation finale manuelle via CSV")
+            if action == "val"
+            else nullcontext()
+        ) as history:
+            repo.update_segment_from_csv(segment, new_data, diffs)
+            repo.update_video(video)
+            if history is not None:
+                history.status = "ok"
+                history.message = "Validation finale approuvée manuellement via CSV ; confidence conservée."
 
         stats.updated += 1
         log_rows.append(
             {
                 "segment_id": str(segment_id),
-                "action": "updated",
+                "action": (
+                    "Validation finale manuelle via CSV"
+                    if action == "val"
+                    else "Cut Validation OK"
+                    if action == "ok"
+                    else "updated"
+                ),
                 "differences": ", ".join(diffs),
             }
         )

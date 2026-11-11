@@ -107,12 +107,20 @@ class OllamaTests(unittest.TestCase):
                     "system_keywords": "système",
                     "ratings": "notes",
                     "system_ratings": "évaluation",
-                }
+                },
             ),
             "shared.utils.logger": SimpleNamespace(LoggerProtocol=Any, ensure_logger=lambda *_: self.logger),
         }
         self.client = load_isolated_module("IA/keywords/analyze/ollama_keywords.py", stubs)
         self.client.get_settings = lambda: SimpleNamespace(generate_keywords=self.settings)
+        self.diagnostic_dir = self.frame_dir / "logs" / "cutmind"
+        self.enterContext(
+            patch.object(
+                self.client,
+                "Path",
+                side_effect=lambda value: self.diagnostic_dir if value == "/app/logs/cutmind" else Path(value),
+            )
+        )
         self.post = self.enterContext(patch.object(self.client.requests, "post"))
         self.response = self.post.return_value.__enter__.return_value
         self.analysis = {"description": " Une scène ", "category": "nature", "keywords": ["lac"]}
@@ -144,6 +152,18 @@ class OllamaTests(unittest.TestCase):
         self.assertEqual(payload["options"]["num_ctx"], 16384)
         self.assertEqual(payload["format"]["required"], ["description", "category", "keywords"])
 
+    def test_batch_response_is_logged_at_debug(self) -> None:
+        self.generate()
+        self.logger.debug.assert_called_once_with(
+            "Ollama réponse batch segment=%s prompt=%s modèle=%s done=%s raison=%s content=%s",
+            "segment",
+            "keywords",
+            "vision:test",
+            True,
+            None,
+            json.dumps(self.analysis),
+        )
+
     def test_ratings_and_custom_prompts(self) -> None:
         self.set_response({"quality_rating": 4, "interest_rating": 8})
         result = self.generate(AIOutputType.SCENE_RATING, prompt_name="ratings", system_prompt="system_ratings")
@@ -151,6 +171,15 @@ class OllamaTests(unittest.TestCase):
         payload = self.post.call_args.kwargs["json"]
         self.assertEqual(payload["messages"][1]["content"], "notes")
         self.assertEqual(payload["format"]["required"], ["quality_rating", "interest_rating"])
+
+    def test_absent_category_is_a_business_result(self) -> None:
+        for category in [None, "None", " none "]:
+            with self.subTest(category=category):
+                self.set_response({"description": "Une scène", "category": category, "keywords": []})
+                self.assertIsNone(self.generate()["category"])
+        self.set_response({"description": "Une scène", "keywords": []})
+        with self.assertRaises(CutMindError):
+            self.generate()
 
     def test_bad_responses(self) -> None:
         cases = [
@@ -190,6 +219,46 @@ class OllamaTests(unittest.TestCase):
         self.assertIn("raison=length", str(raised.exception))
         self.assertIn("tokens générés=128", str(raised.exception))
         self.assertIn("raisonnement présent=True", str(raised.exception))
+
+    def test_truncated_output_saved_without_images_or_thinking(self) -> None:
+        content = '{"description": "' + "répétition " * 100
+        self.response.json.return_value = {
+            "done": True,
+            "done_reason": "length",
+            "eval_count": 128,
+            "message": {"content": content, "thinking": "private reasoning"},
+        }
+        paths = []
+        for _ in range(2):
+            with self.assertRaises(CutMindError) as raised:
+                self.generate()
+            path = Path(raised.exception.ctx["diagnostic_path"])
+            paths.append(path)
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["content"], content)
+            self.assertEqual(saved["segment_id"], "segment")
+            self.assertEqual(saved["model"], "vision:test")
+            self.assertEqual(saved["prompt_name"], "keywords")
+            self.assertEqual(saved["options"]["num_predict"], 128)
+            self.assertEqual(saved["response"]["done_reason"], "length")
+            self.assertTrue(saved["has_thinking"])
+            self.assertNotIn("private reasoning", path.read_text())
+            self.assertNotIn("images", saved)
+            self.assertIn(str(path), str(raised.exception))
+        self.assertNotEqual(paths[0], paths[1])
+
+    def test_diagnostic_write_failure_keeps_original_error(self) -> None:
+        self.response.json.return_value = {"done": True, "done_reason": "length", "eval_count": 128}
+        with patch.object(Path, "mkdir", side_effect=PermissionError("read only")):
+            with self.assertRaises(CutMindError) as raised:
+                self.generate()
+        self.assertIn("raison=length", str(raised.exception))
+        self.assertIn("Diagnostic non sauvegardé", str(raised.exception))
+        self.assertNotIn("diagnostic_path", raised.exception.ctx)
+
+    def test_success_does_not_write_diagnostic(self) -> None:
+        self.generate()
+        self.assertFalse(self.diagnostic_dir.exists())
 
     def test_thinking_can_be_enabled(self) -> None:
         self.settings.ollama_think = True

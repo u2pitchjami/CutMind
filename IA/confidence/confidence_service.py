@@ -7,6 +7,7 @@ from check.histo.processing_log import processing_step
 from IA.confidence.confidence_executor import ConfidenceExecutor
 from shared.models.db_models import Segment, Video
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
+from shared.utils.settings import get_settings
 
 
 @dataclass
@@ -25,7 +26,15 @@ class ConfidenceService:
 
     def __init__(self, model_name: str):
         self.model_name = model_name
-        self.executor = ConfidenceExecutor(model_name, force_device="cpu")
+        settings = get_settings().analyse_confidence
+        self.executor: ConfidenceExecutor | OllamaConfidenceExecutor
+        if settings.backend == "ollama":
+            from IA.confidence.ollama_confidence import OllamaConfidenceExecutor
+
+            self.model_name = settings.ollama_model
+            self.executor = OllamaConfidenceExecutor(settings)
+        else:
+            self.executor = ConfidenceExecutor(model_name, force_device="cpu")
 
     def compute_for_segments(
         self,

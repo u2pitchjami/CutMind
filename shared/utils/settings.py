@@ -147,12 +147,64 @@ class KeywordNormalizerSettings:
     model_name_key: str
     mode: str
     similarity_threshold: float
+    backend: str = "transformers"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = ""
+    ollama_timeout: float = 180.0
+    ollama_keep_alive: str = "1m"
+
+    def __post_init__(self) -> None:
+        self.backend = os.getenv("KEYWORD_NORMALIZER_BACKEND", self.backend).strip().lower()
+        self.ollama_base_url = (
+            os.getenv("KEYWORD_NORMALIZER_OLLAMA_BASE_URL", os.getenv("OLLAMA_BASE_URL", self.ollama_base_url))
+            .strip()
+            .rstrip("/")
+        )
+        self.ollama_model = os.getenv("KEYWORD_NORMALIZER_OLLAMA_MODEL", self.ollama_model).strip()
+        self.ollama_timeout = float(os.getenv("KEYWORD_NORMALIZER_OLLAMA_TIMEOUT", str(self.ollama_timeout)))
+        self.ollama_keep_alive = os.getenv("KEYWORD_NORMALIZER_OLLAMA_KEEP_ALIVE", self.ollama_keep_alive).strip()
+        if self.backend not in {"transformers", "ollama"}:
+            raise ValueError("KEYWORD_NORMALIZER_BACKEND doit valoir transformers ou ollama.")
+        if self.backend == "ollama":
+            url = urlparse(self.ollama_base_url)
+            if url.scheme not in {"http", "https"} or not url.netloc or url.query or url.fragment:
+                raise ValueError("KEYWORD_NORMALIZER_OLLAMA_BASE_URL doit être une URL HTTP(S) sans query ni fragment.")
+            if not self.ollama_model:
+                raise ValueError("KEYWORD_NORMALIZER_OLLAMA_MODEL est requis (modèle d'embeddings).")
+            if not math.isfinite(self.ollama_timeout) or self.ollama_timeout <= 0:
+                raise ValueError("KEYWORD_NORMALIZER_OLLAMA_TIMEOUT doit être strictement positif et fini.")
 
 
 @dataclass
 class AnalyseConfidenceSettings:
     model_confidence: str
     device: str
+    backend: str = "transformers"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = ""
+    ollama_timeout: float = 180.0
+    ollama_keep_alive: str = "1m"
+
+    def __post_init__(self) -> None:
+        self.backend = os.getenv("CONFIDENCE_BACKEND", self.backend).strip().lower()
+        self.ollama_base_url = (
+            os.getenv("CONFIDENCE_OLLAMA_BASE_URL", os.getenv("OLLAMA_BASE_URL", self.ollama_base_url))
+            .strip()
+            .rstrip("/")
+        )
+        self.ollama_model = os.getenv("CONFIDENCE_OLLAMA_MODEL", self.ollama_model).strip()
+        self.ollama_timeout = float(os.getenv("CONFIDENCE_OLLAMA_TIMEOUT", str(self.ollama_timeout)))
+        self.ollama_keep_alive = os.getenv("CONFIDENCE_OLLAMA_KEEP_ALIVE", self.ollama_keep_alive).strip()
+        if self.backend not in {"transformers", "ollama"}:
+            raise ValueError("CONFIDENCE_BACKEND doit valoir transformers ou ollama.")
+        if self.backend == "ollama":
+            url = urlparse(self.ollama_base_url)
+            if url.scheme not in {"http", "https"} or not url.netloc or url.query or url.fragment:
+                raise ValueError("CONFIDENCE_OLLAMA_BASE_URL doit être une URL HTTP(S) sans query ni fragment.")
+            if not self.ollama_model:
+                raise ValueError("CONFIDENCE_OLLAMA_MODEL est requis (modèle d'embeddings).")
+            if not math.isfinite(self.ollama_timeout) or self.ollama_timeout <= 0:
+                raise ValueError("CONFIDENCE_OLLAMA_TIMEOUT doit être strictement positif et fini.")
 
 
 # ==========================================================

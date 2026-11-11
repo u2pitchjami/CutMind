@@ -34,8 +34,8 @@ modèle. Le nombre maximal de frames par appel est `OLLAMA_BATCH_SIZE` ; commenc
 petit puis ajuster selon la mémoire et le contexte du modèle. Les images sont
 redimensionnées aux dimensions `sizeh`/`sizel` existantes et envoyées en base64.
 Les options Qwen de budget de pixels et de quantification restent propres à
-Transformers. Les autres composants locaux, dont le normaliseur de mots-clés,
-restent inchangés et peuvent encore utiliser leurs propres modèles.
+Transformers. Le normaliseur de mots-clés et confidence disposent de choix de backend
+indépendants, décrits ci-dessous.
 
 L’appel utilise `/api/chat` sans streaming avec un schéma JSON propre au prompt.
 Le délai configuré est le délai de lecture HTTP (connexion : 10 secondes), pas
@@ -81,3 +81,113 @@ d’arrêt, le nombre de tokens générés, les limites et la présence éventue
 raisonnement sans en journaliser le contenu. Si la limite est encore atteinte
 avec `OLLAMA_THINK=false`, augmenter `generate_keywords.max_new_tokens` dans
 `smartcut.yaml`, en laissant assez de contexte pour les entrées et la sortie.
+
+## Confidence via Ollama
+
+Les trois passes (catégorie, mots-clés et ratings) suivent `KEYWORDS_BACKEND`.
+Le calcul de confidence dispose d'un choix indépendant :
+
+```dotenv
+CONFIDENCE_BACKEND=ollama
+CONFIDENCE_OLLAMA_MODEL=nom-exact-du-modele-embeddings-installe
+# Facultatif : reprend OLLAMA_BASE_URL si absent
+CONFIDENCE_OLLAMA_BASE_URL=http://localhost:11434
+CONFIDENCE_OLLAMA_TIMEOUT=180
+CONFIDENCE_OLLAMA_KEEP_ALIVE=1m
+```
+
+Redémarrer CutMind après modification. Le modèle doit accepter les embeddings
+textuels ; le modèle vision de `OLLAMA_MODEL` n'est pas repris automatiquement.
+Aucun téléchargement automatique n'est effectué.
+
+Les mêmes champs (`backend`, `ollama_model`, `ollama_base_url`, `ollama_timeout`,
+`ollama_keep_alive`) sont disponibles dans `analyse_confidence` du YAML.
+Les variables d'environnement ont priorité. Sans configuration supplémentaire,
+`transformers` conserve le modèle `model_confidence` existant.
+
+CutMind envoie la description et les mots-clés joints par des virgules dans un
+seul appel `/api/embed`, puis calcule leur similarité cosinus, arrondie à trois
+décimales et bornée entre 0 et 1 comme auparavant. Les entrées trop longues
+sont rejetées (`truncate=false`). Les erreurs remontent sans repli automatique.
+Le modèle SentenceTransformer de confidence n'est pas chargé avec ce backend.
+La fusion des mots-clés et les segments déjà validés à 0.99 restent inchangés.
+
+Un changement de modèle d'embeddings peut modifier la distribution des scores :
+comparer sur les mêmes segments et vérifier les seuils de validation existants.
+Les scores déjà enregistrés ne sont pas recalculés automatiquement.
+Pour revenir au calcul local : `CONFIDENCE_BACKEND=transformers`.
+
+API de référence : https://docs.ollama.com/api/embed
+
+
+## Harmonisation des mots-clés via Ollama
+
+```dotenv
+KEYWORD_NORMALIZER_BACKEND=ollama
+KEYWORD_NORMALIZER_OLLAMA_MODEL=nom-exact-du-modele-embeddings-installe
+# Facultatif : reprend OLLAMA_BASE_URL si absent
+KEYWORD_NORMALIZER_OLLAMA_BASE_URL=http://localhost:11434
+KEYWORD_NORMALIZER_OLLAMA_TIMEOUT=180
+KEYWORD_NORMALIZER_OLLAMA_KEEP_ALIVE=1m
+```
+
+Redémarrer CutMind après modification. Le modèle doit produire des embeddings
+textuels et être déjà installé. Il peut être le même que celui de confidence.
+Le choix reste indépendant de `CONFIDENCE_BACKEND` et `KEYWORDS_BACKEND`.
+Par défaut, `KEYWORD_NORMALIZER_BACKEND=transformers` conserve le modèle local
+`model_name_key`. Aucun modèle SentenceTransformer du normaliseur n'est chargé
+avec le backend Ollama.
+
+Les mêmes champs (`backend`, `ollama_model`, `ollama_base_url`, `ollama_timeout`,
+`ollama_keep_alive`) sont disponibles dans `keyword_normalizer` du YAML.
+Les variables d'environnement ont priorité.
+
+Le mapping manuel, les mots interdits, les modes `full`, `strict`, `mixed` et
+`similarity_threshold` sont conservés. Pour les mots sans correspondance manuelle,
+CutMind demande les embeddings du mot et des candidats dans un appel `/api/embed`,
+puis choisit le candidat de similarité cosinus maximale s'il atteint le seuil.
+Sans candidat, le mot reste inchangé. Une erreur Ollama remonte sans repli local.
+Le seuil peut nécessiter un ajustement après comparaison des modèles.
+
+Le cache Ollama est limité à l'instance du normaliseur en mémoire : le cache
+Transformers sur disque n'est ni réutilisé ni écrasé. Cela évite de reprendre
+les rapprochements sémantiques d'un autre modèle et permet de revenir au backend
+local sans altérer son cache.
+
+
+## Catégorie non attribuée
+
+Une catégorie JSON `null`, vide ou égale à `"None"` / `"null"` (sans distinction
+majuscule/minuscule) est traitée comme une absence de catégorie. Si aucun batch
+ne fournit de catégorie exploitable, les passes mots-clés et ratings du segment
+sont arrêtées. L'historique indique cette absence, puis le segment suivant est
+traité sans exception pour ce résultat métier.
+
+La règle de reprise reste identique : premier échec, tag `IA_error` et cible
+`TO_IA` ; deuxième échec, cible `IA_error`. Un nom de catégorie valide fourni
+manuellement continue de sélectionner directement son prompt. Les erreurs
+techniques (connexion, JSON invalide, prompt inconnu, etc.) conservent leur
+gestion existante.
+
+## Diagnostic des réponses tronquées
+
+Si la réponse est incomplète (`done` différent de `true`) ou si `done_reason`
+vaut `length`, CutMind sauvegarde un fichier JSON unique dans
+`/app/logs/cutmind/`. Le chemin est indiqué dans le message
+d'erreur et les logs. Avec le montage Docker du projet, le dossier est :
+
+- conteneur : `/app/logs/cutmind/` ;
+- hôte : `/home/pipo/data/logs/cutmind/logs/cutmind/`.
+
+Le fichier contient la sortie `message.content` complète telle que reçue (dans
+le champ `content`), l'identifiant du segment/batch, le modèle, les noms des
+prompts, les options de génération, le nombre d'images et les compteurs et
+raisons d'arrêt Ollama. Les images base64, le texte des prompts et le contenu
+`thinking` ne sont pas sauvegardés ; seule sa présence est indiquée.
+
+Examiner `content` pour distinguer une réponse longue de répétitions ou de
+marqueurs de conversation inattendus avant d'augmenter `max_new_tokens`.
+La réponse tronquée reste rejetée. Si le fichier ne peut pas être écrit,
+l'erreur initiale reste signalée avec un avertissement dans les logs.
+Les réponses réussies ne créent pas de fichier de diagnostic. Ces fichiers
+ne sont pas purgés automatiquement par ce mécanisme.

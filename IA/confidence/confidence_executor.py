@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from sentence_transformers import SentenceTransformer, util
-import torch
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 from shared.models.exceptions import CutMindError, ErrCode, get_step_ctx
 
@@ -26,6 +28,9 @@ class ConfidenceExecutor:
             return self._model
 
         try:
+            from sentence_transformers import SentenceTransformer
+            import torch
+
             device = self.force_device
             if device is None:
                 if torch.cuda.is_available():
@@ -52,6 +57,8 @@ class ConfidenceExecutor:
             return 0.0
 
         try:
+            from sentence_transformers import util
+
             model = self._load()
             text_kw = ", ".join(keywords)
 

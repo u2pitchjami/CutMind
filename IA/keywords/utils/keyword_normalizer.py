@@ -7,10 +7,10 @@ Normalisation des mots-clés avec mapping manuel + embeddings + modes de filtrag
 import json
 from pathlib import Path
 
-from sentence_transformers import SentenceTransformer, util
-
+from IA.ollama_embeddings import OllamaEmbeddingClient, cosine_similarity
 from shared.utils.config import KW_CACHE_FILE_SC, KW_FORBIDDEN_FILE_SC, KW_MAPPING_FILE_SC
 from shared.utils.logger import LoggerProtocol, ensure_logger
+from shared.utils.settings import get_settings
 
 
 class KeywordNormalizer:
@@ -28,11 +28,18 @@ class KeywordNormalizer:
         logger: LoggerProtocol | None = None,
     ) -> None:
         self.logger = ensure_logger(logger, __name__)
-        self.model = SentenceTransformer(model_name)
+        settings = get_settings().keyword_normalizer
+        self.embedding_client = OllamaEmbeddingClient(settings) if settings.backend == "ollama" else None
+        self.model = None
+        if self.embedding_client is None:
+            from sentence_transformers import SentenceTransformer
+
+            self.model = SentenceTransformer(model_name)
         self.threshold = threshold
         self.mapping = self._load_mapping(mapping_path)
         self.forbidden = self._load_forbidden(forbidden_path)
-        self.cache = self._load_cache()
+        # Les décisions sémantiques ne sont pas transférables entre modèles.
+        self.cache = {} if self.embedding_client is not None else self._load_cache()
         self.mode = mode
         # Tri et sauvegarde automatique des fichiers au démarrage
         self._save_mapping()
@@ -134,6 +141,8 @@ class KeywordNormalizer:
         """
         Sauvegarde le cache trié alphabétiquement dans keyword_cache.json.
         """
+        if self.embedding_client is not None:
+            return  # Cache Ollama en mémoire ; préserver le cache Transformers sur disque.
         try:
             sorted_cache = dict(sorted(self.cache.items()))
             with open(KW_CACHE_FILE_SC, "w", encoding="utf-8") as f:
@@ -148,6 +157,17 @@ class KeywordNormalizer:
         """
         Compare un mot avec les candidats via embeddings et retourne le plus proche.
         """
+        if not candidates:
+            return word
+        if self.embedding_client is not None:
+            word_emb, *candidate_embeddings = self.embedding_client.embed([word, *candidates])
+            similarities = [cosine_similarity(word_emb, candidate) for candidate in candidate_embeddings]
+            best_idx = max(range(len(candidates)), key=similarities.__getitem__)
+            return candidates[best_idx] if similarities[best_idx] >= self.threshold else word
+
+        from sentence_transformers import util
+
+        assert self.model is not None
         word_emb = self.model.encode(word, convert_to_tensor=True)
         if len(word_emb.shape) > 1 and word_emb.shape[0] > 1:
             self.logger.debug(f"⚙️ Moyenne des {word_emb.shape[0]} tokens pour '{word}'.")
@@ -204,7 +224,7 @@ class KeywordNormalizer:
             self.cache[word] = norm
             return norm
 
-        candidates = list(set(self.mapping.values()))
+        candidates = sorted(set(self.mapping.values()))
         norm = self._normalize_with_embeddings(word, candidates)
         self.cache[word] = norm
         self._save_cache()
